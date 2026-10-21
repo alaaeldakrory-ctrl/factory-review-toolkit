@@ -85,4 +85,11 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:   # noqa: BLE001  known, explained failures: one line, no traceback
+        from frt_core.usdio import SwapFailed
+        if isinstance(e, (SwapFailed, FileNotFoundError, KeyError, ValueError)):
+            print("error:", e)
+            sys.exit(1)
+        raise

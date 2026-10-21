@@ -84,6 +84,13 @@ def params_from_drawing(e, defaults):
         p.update(bays=bays, bay_width=round((L - 8) / bays, 1), depth=round(D))
     elif e.catalog == "conveyor":
         p.update(length=round(L), width=max(30, round(D - 12)))
+    elif e.catalog == "bin_rack":
+        p["bays"] = max(1, round((L - 4) / 100.0))
+        p.update(width=round((L - 4) / p["bays"], 1), depth=round(D))
+    elif e.catalog == "jib_crane":
+        p["boom"] = round(max(L, D) / 2)                  # drawn as its swing circle
+    elif e.catalog == "bridge_crane":
+        p.update(span=round(L - 50), runway=round(D))
     elif e.catalog == "pallet_rack":
         bw = p.get("bay_width", 270.0)
         p["bays"] = max(1, round((L - 8) / (bw + 8)))

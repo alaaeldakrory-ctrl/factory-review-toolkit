@@ -72,11 +72,14 @@ def check_support(stage, fl, rules):
 def check_overlaps(stage, fl, rules):
     ignore = set(rules.get("validate.overlap_ignore_roles", [])) | STRUCTURE
     min_v = rules.get("validate.overlap_min_cm3", 2000.0)
+    overhead = set(rules.get("validate.overhead_roles", []))
     boxes = [b for b in _boxes(stage) if b[1] not in ignore]
     for i in range(len(boxes)):
         p, rp, lo, hi = boxes[i]
         for j in range(i + 1, len(boxes)):
             q, rq, qlo, qhi = boxes[j]
+            if (rp in overhead) != (rq in overhead):          # a table under a crane is the point of the crane
+                continue
             d = [min(hi[k], qhi[k]) - max(lo[k], qlo[k]) for k in range(3)]
             if min(d) <= 0:
                 continue

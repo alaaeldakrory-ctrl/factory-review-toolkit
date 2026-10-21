@@ -17,6 +17,7 @@ from frt_core import package as PKG
 from frt_core import recipe as RCP
 from frt_core import revision as REV
 from frt_core import tags as T
+from frt_core import usdio
 from frt_core import validate as VAL
 from frt_core.findings import FindingList
 
@@ -179,6 +180,7 @@ class ReviewWindow:
             self._build_lbl.text = "Closing the scene to rebuild it..."
             await ctx.new_stage_async()
             await self._frames(3)
+            usdio.clear_open(out)                        # closed now; our own marker must not block the build
         self._build_lbl.text = "Building... (reading the drawing, placing the building and equipment)"
         await self._frames(2)
         lines = []

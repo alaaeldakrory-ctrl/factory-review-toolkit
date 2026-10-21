@@ -47,7 +47,30 @@ def load(path, page=0, scale=None, calibration=None):
         width = float(d.get("width") or 0.0) * PT_MM            # mm on paper
         fill = d.get("fill") is not None
         ref = f"pdf:{page}:{i}"
-        pts, chain = [], []
+        c_col = tuple(col) if col else None
+        ops = {it[0] for it in d["items"]}
+        if "c" in ops and ops <= {"l", "c"}:
+            # a path with curves (circles, arcs, rounded shapes): flatten the Beziers; closed -> one polygon
+            chain = [P(d["items"][0][1])]
+            for it in d["items"]:
+                if it[0] == "l":
+                    chain.append(P(it[2]))
+                else:
+                    p0, p1, p2, p3 = (P(q) for q in it[1:5])
+                    for k8 in range(1, 9):
+                        t = k8 / 8.0
+                        u = 1 - t
+                        chain.append(tuple(u ** 3 * a + 3 * u * u * t * b + 3 * u * t * t * c + t ** 3 * e
+                                           for a, b, c, e in zip(p0, p1, p2, p3)))
+            ends_meet = abs(chain[0][0] - chain[-1][0]) + abs(chain[0][1] - chain[-1][1]) < 1.0
+            closed = bool(d.get("closePath")) or ends_meet
+            if closed and len(chain) > 3:
+                dr.polys.append(Poly(chain[:-1] if ends_meet else chain, True, "",
+                                     c_col if col else (tuple(d["fill"]) if fill else None), width, fill, ref))
+            else:
+                for a, b in zip(chain, chain[1:]):
+                    dr.segs.append(Seg(a, b, "", c_col, width, ref))
+            continue
         for it in d["items"]:
             op = it[0]
             if op == "l":

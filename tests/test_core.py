@@ -11,7 +11,7 @@ from frt_core import revision, rules, tags, usdio, validate
 from frt_core.geom import Shapes
 from frt_core.materials import MaterialLibrary
 
-PARAMETRIC = ["industrial_table", "lift_table", "flow_rack", "conveyor", "pallet_rack"]
+PARAMETRIC = ["industrial_table", "lift_table", "flow_rack", "conveyor", "pallet_rack", "bin_rack", "bridge_crane"]
 
 
 def _bound(prim):
@@ -37,6 +37,28 @@ def test_params_are_clamped_and_checked():
     assert p["levels"] == 2 and p["bays"] == it.params["bays"].default
     with pytest.raises((ValueError, KeyError)):
         it.resolve({"no_such_param": 1})
+
+
+def test_jib_crane_hook_and_swing(stage):
+    prim, p = CAT.place(stage, "/World", "jib_crane", "JC1", params={"boom": 400, "height": 450, "slew": 90})
+    r = _bound(prim)
+    assert r.GetMin()[1] == pytest.approx(0, abs=1.0)
+    assert r.GetMax()[2] < 50 and r.GetMin()[2] < -350             # slew 90 swings the boom toward -Z
+    assert CAT.CATALOG["jib_crane"].footprint(p) == (800, 800)
+    hook = stage.GetPrimAtPath("/World/JC1/Attach/hook")
+    assert hook and UsdGeom.Xformable(hook).GetLocalTransformation().ExtractTranslation()[1] == pytest.approx(180)
+
+
+def test_symbol_priority_by_legend_order():
+    import importlib
+    I = importlib.import_module("frt_core.drawing.interpret")        # the package re-exports a function of that name
+    lg = I.load_legend()
+    assert I._symbol("LIFT TABLE", lg, labels=True) == "lift_table"
+    assert I._symbol("BIN RACK", lg, labels=True) == "bin_rack"
+    assert I._symbol("BRIDGE CRANE | TABLE | T7", lg, labels=True) == "bridge_crane"
+    assert I._symbol("TABLE", lg, labels=True) == "industrial_table"
+    assert I._symbol("PALLET RACK", lg, labels=True) == "pallet_rack"
+    assert I._symbol("PALLETISER", lg, labels=True) is None             # whole words only
 
 
 @needs_packs
@@ -146,3 +168,18 @@ def test_safe_stage_refreshes_cached_layer(tmp_path):
     again = Usd.Stage.Open(out)
     assert again.GetPrimAtPath("/New") and not again.GetPrimAtPath("/Old")
     del held
+
+
+def test_safe_stage_refuses_scene_open_elsewhere(tmp_path):
+    out = str(tmp_path / "scene.usd")
+    with usdio.safe_stage(out) as st:
+        UsdGeom.Xform.Define(st, "/A")
+    usdio.mark_open(out)                                   # this (live) process "has it open"
+    with pytest.raises(usdio.SwapFailed):
+        with usdio.safe_stage(out) as st:
+            UsdGeom.Xform.Define(st, "/B")
+    with open(usdio.marker_path(out), "w") as fh:          # a marker left by a process that is gone: ignored
+        fh.write("999999")
+    with usdio.safe_stage(out) as st:
+        UsdGeom.Xform.Define(st, "/C")
+    assert not os.path.exists(usdio.marker_path(out))

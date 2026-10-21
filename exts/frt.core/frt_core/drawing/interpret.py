@@ -324,8 +324,10 @@ def _floor(dr, lg, plant):
 # ------------------------------------------------------------------------------------------ equipment
 def _symbol(name, lg, labels=False):
     for s in lg.get("symbols", []):
-        if labels:
-            if any(name.upper() == l.upper() for l in s.get("labels", [])):
+        if labels:                  # a label anywhere in the text, as whole words; legend order sets priority
+            up = name.upper()
+            if any(re.search(r"(?<![A-Z0-9])" + re.escape(l.upper()) + r"(?![A-Z0-9])", up)
+                   for l in s.get("labels", [])):
                 return s["catalog"]
         elif _match(name, s["match"]):
             return s["catalog"]
@@ -384,8 +386,8 @@ def _equipment(dr, lg, plant):
             if w < 30 or h < 30 or w > 5000 or h > 5000:
                 continue
             inside = [t for t in dr.texts if x0 <= t.pos[0] <= x1 and y0 <= t.pos[1] <= y1]
-            words = " ".join(t.text for t in sorted(inside, key=lambda t: t.pos[0]))
-            cat = _symbol(words, lg, labels=True) or next((_symbol(t.text, lg, labels=True) for t in inside if _symbol(t.text, lg, labels=True)), None)
+            words = " | ".join(ph for ph, _ in phrases(inside))
+            cat = _symbol(words, lg, labels=True)
             if not cat:
                 if inside:
                     plant.unknown.append({"what": "labelled rectangle", "label": words, "pos": ((x0 + x1) / 2, (y0 + y1) / 2), "ref": p.ref})

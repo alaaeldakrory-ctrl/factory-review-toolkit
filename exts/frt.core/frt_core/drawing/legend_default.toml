@@ -26,7 +26,20 @@ match = ["ROLLUP*", "ROLL-UP*", "*OVERHEAD*", "*SECTIONAL*"]
 kind = "door"
 match = ["DOOR*", "*PERSONNEL*", "*EXIT*", "*MAN DOOR*"]
 
-# equipment symbols: block-name patterns (DXF) and label words (PDF) -> catalog item
+# equipment symbols: block-name patterns (DXF) and label words (PDF) -> catalog item. The first entry that matches
+# wins, so longer / more specific names come first (LIFT TABLE before TABLE, BIN RACK before RACK).
+[[symbols]]
+catalog = "jib_crane"
+match = ["JIB*", "*JIBCRANE*", "*JIB_CRANE*"]
+labels = ["JIB CRANE", "JIB"]
+[[symbols]]
+catalog = "bridge_crane"
+match = ["BRIDGECRANE*", "*BRIDGE_CRANE*", "OHC*", "CRANE*", "*WORKSTATION_CRANE*"]
+labels = ["BRIDGE CRANE", "OVERHEAD CRANE", "WORKSTATION CRANE", "CRANE"]
+[[symbols]]
+catalog = "bin_rack"
+match = ["BINRACK*", "BIN_RACK*", "BIN-RACK*", "*SHELV*"]
+labels = ["BIN RACK", "BINS", "SHELVING"]
 [[symbols]]
 catalog = "conveyor"
 match = ["CONV*", "*CONVEYOR*"]

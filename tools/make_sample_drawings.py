@@ -8,7 +8,8 @@ Plant: a 60 x 40 m lift assembly hall, 10 m column grid A-G x 1-5, three docks a
 doors, a 4 m main aisle with a cross aisle, a walkway. Line 1 (scissor lifts): Stations 1-4 with a table, a lift
 table and a line-side flow rack each. Line 2 (boom lifts / telehandlers): Stations 5-7, labelled beside the station
 rectangle. Pallet racking (two single rows, one back-to-back double row), a kitting conveyor, a receiving area
-(pallets, crates, forklift). Revision B widens Station 3 and shifts Station 4, moves table T3, extends rack R1 by a
+(pallets, crates, forklift). Bin racks at stations 1-4, jib cranes at stations 5-6, a workstation bridge crane over
+station 7. Revision B widens Station 3 and shifts Station 4, moves table T3, extends rack R1 by a
 bay, adds flow rack FR5 and removes pallet P4.
 """
 import os
@@ -49,10 +50,15 @@ def equipment(rev):
         cx = (x0 + x1) / 2
         eq += [(f"T{s}", "TABLE", cx + (800 if rev == "B" and s == 3 else 0), 27200, 1800, 800, 0),
                (f"LT{s}", "LIFTTABLE", cx, 25200, 1300, 800, 0),
-               (f"FR{s}", "FLOWRACK", cx, 29600, 3680, 1800, 0)]
+               (f"FR{s}", "FLOWRACK", cx, 29600, 3680, 1800, 0),
+               (f"BR{s}", "BINRACK", x0 + 700, 25500, 1000, 500, 0)]
     for name, _, x0, y0, x1, y1, _ in stations(rev)[4:]:
         s = int(name.split()[1])
         eq.append((f"T{s}", "TABLE", x0 + 1500, 11700, 1800, 800, 0))
+        if s < 7:                                   # jib crane per boom-lift station, drawn as its swing circle
+            eq.append((f"JC{s}", "JIBCRANE", x0 + 5000, 14000, 5000, 5000, 0))
+        else:                                       # station 7 (telehandler) has a workstation bridge crane
+            eq.append(("BC1", "BRIDGECRANE", x0 + 4000, 14000, 8400, 6000, 0))
     bays1 = 10 if rev == "B" else 9
     eq += [
         ("R1", "PALLETRACK", 2000 + (bays1 * 2700 + (bays1 + 1) * 80) / 2, 8000, bays1 * 2700 + (bays1 + 1) * 80, 1100, 0),
@@ -111,8 +117,15 @@ def write_dxf(path, rev):
         if name in blocks:
             continue
         b = doc.blocks.new(name)
+        if kind == "JIBCRANE":                      # swing circle + pillar
+            b.add_circle((0, 0), L / 2)
+            b.add_lwpolyline([(-200, -200), (200, -200), (200, 200), (-200, 200)], close=True)
+            b.add_text(kind, dxfattribs={"height": 150}).set_placement((0, 300))
+            blocks[name] = b
+            continue
         b.add_lwpolyline([(-L / 2, -D / 2), (L / 2, -D / 2), (L / 2, D / 2), (-L / 2, D / 2)], close=True)
-        b.add_line((-L / 2, -D / 2), (L / 2, D / 2))
+        if kind != "BRIDGECRANE":
+            b.add_line((-L / 2, -D / 2), (L / 2, D / 2))
         b.add_text(kind, dxfattribs={"height": 150}).set_placement((0, 0))
         blocks[name] = b
     # outline as loose lines: one duplicated, one corner 3 mm short (a gap)
@@ -230,11 +243,19 @@ def write_pdf(path, rev, scale=200.0):
     c.setStrokeColor(Color(0.1, 0.1, 0.6))
     c.setLineWidth(0.5)
     label = {"CONVEYOR": "CONVEYOR", "TABLE": "TABLE", "LIFTTABLE": "LIFT TABLE", "FLOWRACK": "FLOW RACK",
-             "PALLET": "PALLET", "CRATE": "CRATE", "FORKLIFT": "FORKLIFT", "PALLETRACK": "PALLET RACK"}
+             "PALLET": "PALLET", "CRATE": "CRATE", "FORKLIFT": "FORKLIFT", "PALLETRACK": "PALLET RACK",
+             "BINRACK": "BIN RACK", "JIBCRANE": "JIB CRANE", "BRIDGECRANE": "BRIDGE CRANE"}
     for eid, kind, x, y, L, D, rot in equipment(rev):
         if rot % 180 == 90:
             L, D = D, L
-        c.rect(*P(x - L / 2, y - D / 2), S(L), S(D))
+        if kind == "JIBCRANE":
+            c.circle(*P(x, y), S(L / 2))
+        elif kind == "BRIDGECRANE":                 # cranes drawn dashed, as is usual
+            c.setDash(4, 2)
+            c.rect(*P(x - L / 2, y - D / 2), S(L), S(D))
+            c.setDash()
+        else:
+            c.rect(*P(x - L / 2, y - D / 2), S(L), S(D))
         c.setFont("Helvetica", 4)
         cx, cy = P(x, y)
         c.drawCentredString(cx, cy - 1.5, label[kind])

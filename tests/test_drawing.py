@@ -39,11 +39,16 @@ def test_stations(plant):
 
 def test_equipment(plant):
     ids = {e.id: e for e in plant.equipment}
-    assert len(ids) == 27
+    assert len(ids) == 34
     assert {k for k, e in ids.items() if e.catalog == "pallet_rack"} == {"R1", "R2", "R3"}
     assert ids["R2"].depth > 200                                      # double row, back to back
     assert ids["FL1"].catalog == "forklift"
     assert ids["CR1"].rot == pytest.approx(90)
+    assert {k for k, e in ids.items() if e.catalog == "bin_rack"} == {"BR1", "BR2", "BR3", "BR4"}
+    assert ids["JC5"].catalog == ids["JC6"].catalog == "jib_crane"      # swing circles (curves in the PDF)
+    assert ids["JC5"].length == pytest.approx(500, abs=5)
+    assert ids["BC1"].catalog == "bridge_crane"                          # dashed, drawn around table T7
+    assert ids["T7"].catalog == "industrial_table"
 
 
 def test_dxf_and_pdf_agree():

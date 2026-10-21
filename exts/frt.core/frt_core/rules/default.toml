@@ -6,6 +6,7 @@ floating_tolerance_cm = 1.0        # an unsupported object may sit at most this 
 sunk_tolerance_cm = 1.0            # ... or this far below the floor / its support
 overlap_min_cm3 = 2000.0           # ignore box overlaps smaller than this (touching parts)
 overlap_ignore_roles = ["floor", "building", "aisle", "walkway", "zone", "keepout", "camera", "column", "wall", "door", "dock"]
+overhead_roles = ["crane_bridge", "crane_jib"]   # work over other equipment by design: their boxes may overlap floor items
 absolute_paths = "warning"         # severity for asset paths that only work on this PC
 
 # expected size ranges per role (largest plan dimension and height, cm); outside the range = probably wrong units

@@ -5,3 +5,4 @@ __pycache__/
 *.building.usd*
 *.lockcheck
 .pytest_cache/
+*.usd.open
