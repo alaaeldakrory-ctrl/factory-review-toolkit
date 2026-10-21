@@ -54,6 +54,15 @@ def build_studio(out, key, params=None, age=1.0, turntable=0, rig=True):
         lib = MaterialLibrary(st, "/World/Looks", age=age)
         UsdGeom.Xform.Define(st, "/World/Asset")
         prim, p = CAT.place(st, "/World/Asset", key, "Item", (0, 0, 0), 0.0, params or {}, lib)
+        dress(st, lib, prim, key=key, turntable=turntable, rig=rig)
+    return out
+
+
+def dress(st, lib, prim, key=None, turntable=0, rig=False):
+    """Studio around what is under /World/Asset (prim = the thing to frame): cyclorama, softbox environment,
+    key / fill / rim lights, square hero camera, optional turntable (and rig animation for known items)."""
+    from . import textures as GT
+    if True:
         bc = UsdGeom.BBoxCache(0, ["default", "render"])
         box = bc.ComputeWorldBound(prim).ComputeAlignedRange()
         mn, mx = box.GetMin(), box.GetMax()
@@ -121,4 +130,3 @@ def build_studio(out, key, params=None, age=1.0, turntable=0, rig=True):
                 from .rig import lift_table as RL
                 RL.animate(st, "/World/Asset/Item", [(0, {"lift": 0}), (turntable * 0.35, {"lift": 1}),
                                                      (turntable * 0.65, {"lift": 1}), (turntable, {"lift": 0})])
-    return out

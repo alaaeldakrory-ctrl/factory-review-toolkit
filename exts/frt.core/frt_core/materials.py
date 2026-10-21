@@ -89,6 +89,14 @@ LOOKS = {
     "lamp_green": (_rgb("#35d45a"), 0.20, 0.0, None, 0.0, 0.0),
     "lamp_white": (_rgb("#fff6e8"), 0.20, 0.0, None, 0.0, 0.0),
     "pu_red": (_rgb("#a3241c"), 0.45, 0.0, None, 0.0, 0.0),                   # polyurethane castor tread
+    "hivis_yellow": (_rgb("#c9d72c"), 0.75, 0.0, "satin_n", 0.6, 0.2),        # fluorescent vest fabric
+    "reflective": (_rgb("#c8cbcd"), 0.30, 0.0, None, 0.0, 0.0),               # retro-reflective tape
+    "fabric_navy": (_rgb("#253048"), 0.80, 0.0, "satin_n", 0.5, 0.2),        # work shirt
+    "fabric_dark": (_rgb("#2e3136"), 0.82, 0.0, "satin_n", 0.5, 0.2),        # work trousers
+    "skin": (_rgb("#b98a6e"), 0.55, 0.0, None, 0.0, 0.0),
+    "hair_dark": (_rgb("#2a2420"), 0.70, 0.0, None, 0.0, 0.0),
+    "glove": (_rgb("#3b3f44"), 0.70, 0.0, "rubber_n", 0.5, 0.2),             # nitrile-dipped work glove
+    "boot": (_rgb("#1e1c1b"), 0.55, 0.0, "rubber_n", 0.4, 0.2),              # safety boot
     "studio_grey": (_rgb("#3a3b3e"), 0.85, 0.0, None, 0.0, 0.0),              # seamless studio backdrop
     "hole": (_rgb("#0a0b0c"), 0.95, 0.0, None, 0.0, 0.0),                    # punched holes, recesses (seen as shadow)
     "nylon_white": (_rgb("#dcd9cf"), 0.38, 0.0, None, 0.0, 0.0),             # flow wheels, ball cages

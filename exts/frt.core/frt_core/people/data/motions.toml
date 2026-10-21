@@ -1,0 +1,2421 @@
+# Manufacturing motion catalog for frt_core.people (one [[motion]] per movement).
+# Generated once by tools/make_motion_catalog.py; edit freely - this file is the source of truth.
+# Fields: see docs/people/DESIGN.md. uas = MTM-UAS building blocks (times come from the plant card).
+version = 1
+
+# ---------------------------------------------------------------- Basic elements (MTM-UAS building blocks)
+[[motion]]
+id = "basic.reach_grasp.near"
+name = "Reach and grasp, near (<20 cm)"
+category = "basic"
+hands = "either"
+tools = []
+object = "part"
+postures = ["standing", "seated"]
+pattern = "reach_place"
+uas = ["GP[d<20,w<1kg,easy]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "basic.reach_grasp.mid"
+name = "Reach and grasp, mid (20-50 cm)"
+category = "basic"
+hands = "either"
+tools = []
+object = "part"
+postures = ["standing", "seated"]
+pattern = "reach_place"
+uas = ["GP[d20-50,w<1kg,easy]"]
+params = {}
+risks = ["reach_zone"]
+
+[[motion]]
+id = "basic.reach_grasp.far"
+name = "Reach and grasp, far (50-80 cm)"
+category = "basic"
+hands = "either"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[d50-80,w<1kg,easy]"]
+params = {}
+risks = ["reach_zone", "trunk_flexion"]
+
+[[motion]]
+id = "basic.grasp.difficult"
+name = "Grasp jumbled / small part"
+category = "basic"
+hands = "one"
+tools = []
+object = "small_part"
+postures = ["standing", "seated"]
+pattern = "reach_place"
+uas = ["GP[d20-50,w<1kg,difficult]"]
+params = {}
+risks = ["pinch_grip"]
+
+[[motion]]
+id = "basic.place.loose"
+name = "Place loosely"
+category = "basic"
+hands = "either"
+tools = []
+object = "part"
+postures = ["standing", "seated"]
+pattern = "reach_place"
+uas = ["PL[loose]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "basic.place.precise"
+name = "Place with alignment"
+category = "basic"
+hands = "either"
+tools = []
+object = "part"
+postures = ["standing", "seated"]
+pattern = "reach_place"
+uas = ["PL[tight]"]
+params = {}
+risks = ["wrist_deviation"]
+
+[[motion]]
+id = "basic.place.two_hands"
+name = "Get and place with both hands"
+category = "basic"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[d20-50,w1-8kg,two_hands]"]
+params = {}
+risks = ["load"]
+
+[[motion]]
+id = "basic.regrasp"
+name = "Regrasp / change grip"
+category = "basic"
+hands = "one"
+tools = []
+object = "part"
+postures = ["standing", "seated"]
+pattern = "reach_place"
+uas = ["GP[d<20,regrasp]"]
+params = {}
+risks = ["waste_regrasp"]
+
+[[motion]]
+id = "basic.transfer_hands"
+name = "Pass part to other hand"
+category = "basic"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing", "seated"]
+pattern = "reach_place"
+uas = ["GP[d<20,transfer]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "basic.release"
+name = "Release"
+category = "basic"
+hands = "either"
+tools = []
+object = "part"
+postures = ["standing", "seated"]
+pattern = "reach_place"
+uas = ["PL[release]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "basic.hold"
+name = "Hold part in position"
+category = "basic"
+hands = "either"
+tools = []
+object = "part"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "operate"
+uas = ["PL[hold]"]
+params = { seconds = 3 }
+risks = ["static_hold"]
+
+[[motion]]
+id = "basic.visual_check"
+name = "Look / visual check"
+category = "basic"
+hands = "none"
+tools = []
+object = "point"
+postures = ["standing", "kneeling", "squatting", "seated"]
+pattern = "inspect"
+uas = ["VC"]
+params = {}
+risks = ["neck_flexion"]
+
+[[motion]]
+id = "basic.read_document"
+name = "Read work instruction / label"
+category = "basic"
+hands = "one"
+tools = []
+object = "document"
+postures = ["standing", "seated"]
+pattern = "inspect"
+uas = ["VC", "GP[d20-50]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "basic.press_button"
+name = "Press push button"
+category = "basic"
+hands = "one"
+tools = []
+object = "button"
+postures = ["standing", "seated"]
+pattern = "operate"
+uas = ["OP[button]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "basic.turn_knob"
+name = "Turn knob / selector"
+category = "basic"
+hands = "one"
+tools = []
+object = "knob"
+postures = ["standing", "seated"]
+pattern = "operate"
+uas = ["OP[turn]"]
+params = {}
+risks = ["wrist_deviation"]
+
+[[motion]]
+id = "basic.operate_lever"
+name = "Operate lever"
+category = "basic"
+hands = "one"
+tools = []
+object = "lever"
+postures = ["standing", "seated"]
+pattern = "operate"
+uas = ["OP[lever]"]
+params = { force_n = 50 }
+risks = ["force"]
+
+[[motion]]
+id = "basic.apply_pressure"
+name = "Apply pressure (press in)"
+category = "basic"
+hands = "either"
+tools = []
+object = "part"
+postures = ["standing", "kneeling"]
+pattern = "operate"
+uas = ["OP[apply_pressure]"]
+params = { force_n = 80 }
+risks = ["force", "thumb"]
+
+[[motion]]
+id = "body.bend_arise"
+name = "Bend and arise"
+category = "basic"
+hands = "none"
+tools = []
+object = "floor"
+postures = ["standing"]
+pattern = "body"
+uas = ["BM[bend]"]
+params = {}
+risks = ["trunk_flexion", "repetition"]
+
+[[motion]]
+id = "body.kneel_one"
+name = "Kneel on one knee and arise"
+category = "basic"
+hands = "none"
+tools = []
+object = "floor"
+postures = ["standing", "kneeling"]
+pattern = "body"
+uas = ["BM[kneel_one]"]
+params = {}
+risks = ["knee_contact"]
+
+[[motion]]
+id = "body.kneel_both"
+name = "Kneel on both knees and arise"
+category = "basic"
+hands = "none"
+tools = []
+object = "floor"
+postures = ["standing", "kneeling"]
+pattern = "body"
+uas = ["BM[kneel_both]"]
+params = {}
+risks = ["knee_contact"]
+
+[[motion]]
+id = "body.squat"
+name = "Squat and arise"
+category = "basic"
+hands = "none"
+tools = []
+object = "floor"
+postures = ["standing", "squatting"]
+pattern = "body"
+uas = ["BM[squat]"]
+params = {}
+risks = ["knee_flexion"]
+
+[[motion]]
+id = "body.sit_stand"
+name = "Sit down / stand up"
+category = "basic"
+hands = "none"
+tools = []
+object = "seat"
+postures = ["standing", "seated"]
+pattern = "body"
+uas = ["BM[sit]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "body.turn"
+name = "Turn body 90 deg"
+category = "basic"
+hands = "none"
+tools = []
+object = "direction"
+postures = ["standing"]
+pattern = "body"
+uas = ["BM[turn]"]
+params = { angle_deg = 90 }
+risks = ["twist_with_load"]
+
+[[motion]]
+id = "body.step"
+name = "Step (side / forward)"
+category = "basic"
+hands = "none"
+tools = []
+object = "point"
+postures = ["standing"]
+pattern = "walk"
+uas = ["BM[step]"]
+params = { steps = 1 }
+risks = []
+
+[[motion]]
+id = "body.reach_overhead"
+name = "Reach overhead"
+category = "basic"
+hands = "either"
+tools = []
+object = "point"
+postures = ["standing", "on_stand"]
+pattern = "reach_place"
+uas = ["GP[d50-80,overhead]"]
+params = {}
+risks = ["shoulder_elevation"]
+
+[[motion]]
+id = "body.lie_creeper"
+name = "Get on / off creeper"
+category = "basic"
+hands = "none"
+tools = ["creeper"]
+object = "floor"
+postures = ["lying"]
+pattern = "body"
+uas = ["BM[lie]"]
+params = {}
+risks = ["neck_extension"]
+
+# ---------------------------------------------------------------- Material handling
+[[motion]]
+id = "handle.pick.bin_front"
+name = "Pick part from front bin"
+category = "handling"
+hands = "one"
+tools = []
+object = "bin"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[d20-50,w<1kg]"]
+params = {}
+risks = ["reach_zone"]
+
+[[motion]]
+id = "handle.pick.bin_low"
+name = "Pick part from low bin"
+category = "handling"
+hands = "one"
+tools = []
+object = "bin"
+postures = ["standing", "squatting"]
+pattern = "reach_place"
+uas = ["GP[d50-80,w<1kg]", "BM[bend]"]
+params = {}
+risks = ["trunk_flexion"]
+
+[[motion]]
+id = "handle.pick.bin_high"
+name = "Pick part from high bin"
+category = "handling"
+hands = "one"
+tools = []
+object = "bin"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[d50-80,w<1kg]"]
+params = {}
+risks = ["shoulder_elevation"]
+
+[[motion]]
+id = "handle.pick.flow_lane"
+name = "Pick from flow rack lane"
+category = "handling"
+hands = "one"
+tools = []
+object = "flow_lane"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[d20-50,w1-8kg]"]
+params = {}
+risks = ["reach_zone"]
+
+[[motion]]
+id = "handle.pick.tote"
+name = "Take tote from flow rack"
+category = "handling"
+hands = "two"
+tools = []
+object = "tote"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[d20-50,w1-8kg,two_hands]"]
+params = {}
+risks = ["load"]
+
+[[motion]]
+id = "handle.return.tote"
+name = "Return empty tote to return lane"
+category = "handling"
+hands = "two"
+tools = []
+object = "tote"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[d50-80,w<1kg,two_hands]"]
+params = {}
+risks = ["shoulder_elevation"]
+
+[[motion]]
+id = "handle.place.fixture"
+name = "Place part into fixture"
+category = "handling"
+hands = "two"
+tools = []
+object = "fixture"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["PL[tight]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "handle.carry.small"
+name = "Carry small part"
+category = "handling"
+hands = "one"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "carry"
+uas = ["GP", "BM[walk]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "handle.carry.two_hand"
+name = "Carry load with both hands"
+category = "handling"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "carry"
+uas = ["GP[w8-22kg]", "BM[walk]"]
+params = { mass_kg = 10 }
+risks = ["niosh", "load"]
+
+[[motion]]
+id = "handle.carry.long"
+name = "Carry long part (two people)"
+category = "handling"
+hands = "team"
+tools = []
+object = "long_part"
+postures = ["standing"]
+pattern = "team"
+uas = ["GP[team]", "BM[walk]"]
+params = { mass_kg = 30 }
+risks = ["niosh", "coordination"]
+
+[[motion]]
+id = "handle.lift.floor"
+name = "Lift from floor (squat lift)"
+category = "handling"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing", "squatting"]
+pattern = "reach_place"
+uas = ["GP[w8-22kg]", "BM[squat]"]
+params = { mass_kg = 12 }
+risks = ["niosh", "trunk_flexion"]
+
+[[motion]]
+id = "handle.lift.pallet"
+name = "Lift from pallet"
+category = "handling"
+hands = "two"
+tools = []
+object = "pallet"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[w8-22kg]", "BM[bend]"]
+params = { mass_kg = 10 }
+risks = ["niosh"]
+
+[[motion]]
+id = "handle.lift.team"
+name = "Team lift and place"
+category = "handling"
+hands = "team"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "team"
+uas = ["GP[team]"]
+params = { mass_kg = 40 }
+risks = ["niosh", "coordination"]
+
+[[motion]]
+id = "handle.handoff.give"
+name = "Hand part to coworker"
+category = "handling"
+hands = "either"
+tools = []
+object = "worker"
+postures = ["standing"]
+pattern = "team"
+uas = ["GP[transfer]"]
+params = {}
+risks = ["coordination"]
+
+[[motion]]
+id = "handle.handoff.take"
+name = "Take part from coworker"
+category = "handling"
+hands = "either"
+tools = []
+object = "worker"
+postures = ["standing"]
+pattern = "team"
+uas = ["GP[transfer]"]
+params = {}
+risks = ["coordination"]
+
+[[motion]]
+id = "handle.cart.push"
+name = "Push cart"
+category = "handling"
+hands = "two"
+tools = []
+object = "cart"
+postures = ["standing"]
+pattern = "carry"
+uas = ["OP[push]", "BM[walk]"]
+params = { force_n = 150 }
+risks = ["push_pull"]
+
+[[motion]]
+id = "handle.cart.pull"
+name = "Pull cart"
+category = "handling"
+hands = "two"
+tools = []
+object = "cart"
+postures = ["standing"]
+pattern = "carry"
+uas = ["OP[pull]", "BM[walk]"]
+params = { force_n = 150 }
+risks = ["push_pull", "twist_with_load"]
+
+[[motion]]
+id = "handle.cart.load"
+name = "Load part onto cart"
+category = "handling"
+hands = "two"
+tools = []
+object = "cart"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[w1-8kg]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "handle.cart.unload"
+name = "Unload part from cart"
+category = "handling"
+hands = "two"
+tools = []
+object = "cart"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[w1-8kg]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "handle.lift_table.tow"
+name = "Tow lift table by handle"
+category = "handling"
+hands = "two"
+tools = ["lift_table"]
+object = "lift_table"
+postures = ["standing"]
+pattern = "carry"
+uas = ["OP[pull]", "BM[walk]"]
+params = { force_n = 200 }
+risks = ["push_pull"]
+
+[[motion]]
+id = "handle.pallet_jack"
+name = "Move pallet with hand pallet jack"
+category = "handling"
+hands = "two"
+tools = ["pallet_jack"]
+object = "pallet"
+postures = ["standing"]
+pattern = "carry"
+uas = ["OP[pump]", "OP[pull]", "BM[walk]"]
+params = { force_n = 250 }
+risks = ["push_pull"]
+
+[[motion]]
+id = "handle.flip_part"
+name = "Flip / turn over part"
+category = "handling"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[w1-8kg,turn]"]
+params = {}
+risks = ["wrist_deviation", "load"]
+
+[[motion]]
+id = "handle.slide_part"
+name = "Slide part across table"
+category = "handling"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[slide]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "handle.stack"
+name = "Stack parts"
+category = "handling"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[w1-8kg]"]
+params = {}
+risks = ["shoulder_elevation"]
+
+[[motion]]
+id = "handle.kit_pick"
+name = "Kit picking from several bins"
+category = "handling"
+hands = "one"
+tools = []
+object = "bin"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[d20-50] x n"]
+params = { items = 5 }
+risks = ["walking", "reach_zone"]
+
+[[motion]]
+id = "handle.open_carton"
+name = "Open carton with knife"
+category = "handling"
+hands = "dom+sup"
+tools = ["box_cutter"]
+object = "carton"
+postures = ["standing"]
+pattern = "cycle:cut_line"
+uas = ["HT", "MC"]
+params = {}
+risks = ["sharp"]
+
+[[motion]]
+id = "handle.cut_wrap"
+name = "Cut stretch wrap from pallet"
+category = "handling"
+hands = "dom+sup"
+tools = ["box_cutter"]
+object = "pallet"
+postures = ["standing", "squatting"]
+pattern = "cycle:cut_line"
+uas = ["HT", "MC", "BM[bend]"]
+params = {}
+risks = ["sharp", "trunk_flexion"]
+
+# ---------------------------------------------------------------- Fastening
+[[motion]]
+id = "fasten.hand_start.bolt"
+name = "Hand-start bolt"
+category = "fastening"
+hands = "dom+sup"
+tools = []
+object = "bolt"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:finger_thread"
+uas = ["GP[d<20,w<1kg,difficult]", "FL[hand,turns2-5]"]
+params = { turns = 3 }
+risks = ["pinch_grip"]
+
+[[motion]]
+id = "fasten.hand_start.nut"
+name = "Hand-start nut on stud"
+category = "fastening"
+hands = "dom+sup"
+tools = []
+object = "nut"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:finger_thread"
+uas = ["GP[d<20,difficult]", "FL[hand]"]
+params = { turns = 3 }
+risks = ["pinch_grip"]
+
+[[motion]]
+id = "fasten.ratchet.tighten"
+name = "Tighten bolt with ratchet"
+category = "fastening"
+hands = "dom+sup"
+tools = ["ratchet_38"]
+object = "bolt"
+postures = ["standing", "kneeling", "overhead", "squatting"]
+pattern = "cycle:ratchet"
+uas = ["HT", "FL[ratchet,turns]"]
+params = { turns = 6 }
+risks = ["wrist_deviation", "shoulder_elevation"]
+
+[[motion]]
+id = "fasten.ratchet.backup"
+name = "Ratchet with backup wrench"
+category = "fastening"
+hands = "two"
+tools = ["ratchet_38", "wrench_comb"]
+object = "bolt_nut"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:ratchet"
+uas = ["HT x2", "FL[ratchet]"]
+params = { turns = 6 }
+risks = ["wrist_deviation"]
+
+[[motion]]
+id = "fasten.wrench.open"
+name = "Tighten with open-end wrench"
+category = "fastening"
+hands = "dom+sup"
+tools = ["wrench_open"]
+object = "bolt"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:wrench_swing"
+uas = ["HT", "FL[wrench,turns]"]
+params = { turns = 4 }
+risks = ["wrist_deviation"]
+
+[[motion]]
+id = "fasten.torque.final"
+name = "Final torque with click wrench"
+category = "fastening"
+hands = "dom+sup"
+tools = ["torque_wrench"]
+object = "bolt"
+postures = ["standing", "kneeling"]
+pattern = "cycle:torque_click"
+uas = ["HT", "FL[torque]"]
+params = { torque_nm = 70 }
+risks = ["force", "shoulder_elevation"]
+
+[[motion]]
+id = "fasten.torque.audit"
+name = "Audit torque"
+category = "fastening"
+hands = "dom+sup"
+tools = ["torque_wrench"]
+object = "bolt"
+postures = ["standing", "kneeling"]
+pattern = "cycle:torque_click"
+uas = ["HT", "FL[torque]", "VC"]
+params = { torque_nm = 70 }
+risks = ["force"]
+
+[[motion]]
+id = "fasten.impact.drive"
+name = "Drive bolt with impact driver"
+category = "fastening"
+hands = "dom+sup"
+tools = ["impact_driver"]
+object = "bolt"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:power_drive"
+uas = ["HT", "OP[trigger]", "PL[tight]"]
+params = { seconds = 2 }
+risks = ["vibration", "reaction_torque"]
+
+[[motion]]
+id = "fasten.nutrunner"
+name = "Run nut with DC nutrunner"
+category = "fastening"
+hands = "dom+sup"
+tools = ["nutrunner"]
+object = "nut"
+postures = ["standing"]
+pattern = "cycle:power_drive"
+uas = ["HT", "OP[trigger]"]
+params = { seconds = 2 }
+risks = ["reaction_torque"]
+
+[[motion]]
+id = "fasten.screwdriver.manual"
+name = "Drive screw by hand"
+category = "fastening"
+hands = "dom+sup"
+tools = ["screwdriver"]
+object = "screw"
+postures = ["standing", "seated", "kneeling"]
+pattern = "cycle:screwdriver"
+uas = ["HT", "FL[screwdriver,turns]"]
+params = { turns = 8 }
+risks = ["wrist_deviation", "repetition"]
+
+[[motion]]
+id = "fasten.screwdriver.power"
+name = "Drive screw with power screwdriver"
+category = "fastening"
+hands = "dom+sup"
+tools = ["power_screwdriver"]
+object = "screw"
+postures = ["standing", "seated", "kneeling"]
+pattern = "cycle:power_drive"
+uas = ["HT", "OP[trigger]"]
+params = { seconds = 1.5 }
+risks = ["repetition"]
+
+[[motion]]
+id = "fasten.rivet.pop"
+name = "Set pop rivet"
+category = "fastening"
+hands = "dom+sup"
+tools = ["rivet_gun"]
+object = "rivet"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:squeeze"
+uas = ["HT", "MC[squeeze x3]"]
+params = { squeezes = 3 }
+risks = ["grip_force"]
+
+[[motion]]
+id = "fasten.cotter_pin"
+name = "Install cotter pin and bend legs"
+category = "fastening"
+hands = "dom+sup"
+tools = ["pliers"]
+object = "pin"
+postures = ["standing", "kneeling"]
+pattern = "cycle:squeeze"
+uas = ["GP[difficult]", "HT", "MC"]
+params = {}
+risks = ["pinch_grip"]
+
+[[motion]]
+id = "fasten.snap_ring"
+name = "Install snap ring with pliers"
+category = "fastening"
+hands = "dom+sup"
+tools = ["snap_ring_pliers"]
+object = "shaft"
+postures = ["standing", "kneeling"]
+pattern = "cycle:squeeze"
+uas = ["HT", "PL[tight]"]
+params = {}
+risks = ["grip_force"]
+
+[[motion]]
+id = "fasten.clip"
+name = "Push-on clip"
+category = "fastening"
+hands = "one"
+tools = []
+object = "clip"
+postures = ["standing", "kneeling"]
+pattern = "operate"
+uas = ["GP", "OP[apply_pressure]"]
+params = { force_n = 40 }
+risks = ["thumb"]
+
+[[motion]]
+id = "fasten.hold_nut"
+name = "Hold nut with wrench behind panel"
+category = "fastening"
+hands = "one"
+tools = ["wrench_comb"]
+object = "nut"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "operate"
+uas = ["HT", "PL[hold]"]
+params = { seconds = 6 }
+risks = ["static_hold", "reach_zone"]
+
+[[motion]]
+id = "fasten.torque_stripe"
+name = "Mark torque stripe"
+category = "fastening"
+hands = "one"
+tools = ["paint_pen"]
+object = "bolt"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:stroke"
+uas = ["HT", "MC"]
+params = {}
+risks = []
+
+[[motion]]
+id = "fasten.loosen"
+name = "Loosen bolt with ratchet"
+category = "fastening"
+hands = "dom+sup"
+tools = ["ratchet_38"]
+object = "bolt"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:ratchet"
+uas = ["HT", "FL[ratchet,loosen]"]
+params = { turns = 4 }
+risks = ["force"]
+
+[[motion]]
+id = "fasten.remove"
+name = "Remove fastener by hand"
+category = "fastening"
+hands = "one"
+tools = []
+object = "bolt"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:finger_thread"
+uas = ["FL[hand]", "GP"]
+params = { turns = 3 }
+risks = []
+
+[[motion]]
+id = "fasten.threadlocker"
+name = "Apply threadlocker"
+category = "fastening"
+hands = "dom+sup"
+tools = ["threadlocker"]
+object = "bolt"
+postures = ["standing", "seated"]
+pattern = "cycle:stroke"
+uas = ["HT", "MC"]
+params = {}
+risks = []
+
+# ---------------------------------------------------------------- Joining and fitting
+[[motion]]
+id = "join.hammer"
+name = "Strike with hammer"
+category = "joining"
+hands = "dom+sup"
+tools = ["hammer"]
+object = "part"
+postures = ["standing", "kneeling"]
+pattern = "cycle:hammer"
+uas = ["HT", "MC[strike xN]"]
+params = { strikes = 4 }
+risks = ["vibration", "shoulder_elevation", "repetition"]
+
+[[motion]]
+id = "join.mallet.seat"
+name = "Tap part home with mallet"
+category = "joining"
+hands = "dom+sup"
+tools = ["mallet"]
+object = "part"
+postures = ["standing", "kneeling"]
+pattern = "cycle:hammer"
+uas = ["HT", "MC[strike xN]"]
+params = { strikes = 3, light = true }
+risks = ["repetition"]
+
+[[motion]]
+id = "join.deadblow"
+name = "Seat part with dead-blow hammer"
+category = "joining"
+hands = "dom+sup"
+tools = ["deadblow"]
+object = "part"
+postures = ["standing", "kneeling"]
+pattern = "cycle:hammer"
+uas = ["HT", "MC[strike xN]"]
+params = { strikes = 2 }
+risks = ["shoulder_elevation"]
+
+[[motion]]
+id = "join.press_fit"
+name = "Press fit by hand"
+category = "joining"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "operate"
+uas = ["PL[tight]", "OP[apply_pressure]"]
+params = { force_n = 120 }
+risks = ["force"]
+
+[[motion]]
+id = "join.punch_pin"
+name = "Drive pin with punch and hammer"
+category = "joining"
+hands = "two"
+tools = ["punch", "hammer"]
+object = "pin"
+postures = ["standing", "kneeling"]
+pattern = "cycle:hammer"
+uas = ["HT x2", "MC"]
+params = { strikes = 4 }
+risks = ["pinch_grip"]
+
+[[motion]]
+id = "join.drift_align"
+name = "Align holes with drift pin"
+category = "joining"
+hands = "dom+sup"
+tools = ["drift_pin"]
+object = "holes"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "operate"
+uas = ["HT", "PL[tight]"]
+params = {}
+risks = ["force"]
+
+[[motion]]
+id = "join.insert_shaft"
+name = "Insert shaft / pin"
+category = "joining"
+hands = "two"
+tools = []
+object = "shaft"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP", "PL[tight]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "join.slide_bushing"
+name = "Slide bushing on"
+category = "joining"
+hands = "two"
+tools = []
+object = "bushing"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["PL[tight]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "join.snap_cover"
+name = "Snap cover in place"
+category = "joining"
+hands = "two"
+tools = []
+object = "cover"
+postures = ["standing"]
+pattern = "operate"
+uas = ["PL", "OP[apply_pressure]"]
+params = { force_n = 60 }
+risks = ["thumb"]
+
+[[motion]]
+id = "join.grommet"
+name = "Install grommet"
+category = "joining"
+hands = "two"
+tools = []
+object = "grommet"
+postures = ["standing", "kneeling"]
+pattern = "operate"
+uas = ["GP[difficult]", "OP[apply_pressure]"]
+params = {}
+risks = ["thumb", "pinch_grip"]
+
+[[motion]]
+id = "join.sealant"
+name = "Apply sealant bead"
+category = "joining"
+hands = "dom+sup"
+tools = ["caulk_gun"]
+object = "seam"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "route_path"
+uas = ["HT", "MC[squeeze]", "PL[path]"]
+params = { length_cm = 60 }
+risks = ["grip_force"]
+
+[[motion]]
+id = "join.adhesive"
+name = "Apply adhesive"
+category = "joining"
+hands = "dom+sup"
+tools = ["glue_bottle"]
+object = "surface"
+postures = ["standing", "seated"]
+pattern = "route_path"
+uas = ["HT", "PL[path]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "join.label"
+name = "Peel and stick label"
+category = "joining"
+hands = "two"
+tools = []
+object = "label"
+postures = ["standing", "seated", "kneeling"]
+pattern = "reach_place"
+uas = ["GP[difficult]", "PL[tight]", "OP[smooth]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "join.decal"
+name = "Apply large decal"
+category = "joining"
+hands = "two"
+tools = ["squeegee"]
+object = "panel"
+postures = ["standing", "kneeling"]
+pattern = "route_path"
+uas = ["PL", "HT", "MC[strokes]"]
+params = {}
+risks = ["reach_zone"]
+
+[[motion]]
+id = "join.clamp"
+name = "Clamp part (toggle / C-clamp)"
+category = "joining"
+hands = "dom+sup"
+tools = ["clamp"]
+object = "part"
+postures = ["standing"]
+pattern = "operate"
+uas = ["HT", "OP[lever]"]
+params = {}
+risks = ["force"]
+
+# ---------------------------------------------------------------- Wiring and electrical
+[[motion]]
+id = "wire.route.frame"
+name = "Route harness along frame"
+category = "wiring"
+hands = "two"
+tools = []
+object = "harness"
+postures = ["standing", "kneeling", "squatting", "overhead"]
+pattern = "route_path"
+uas = ["GP", "PL[path]", "BM"]
+params = { length_cm = 150 }
+risks = ["reach_zone", "trunk_flexion"]
+
+[[motion]]
+id = "wire.route.grommet"
+name = "Push harness through grommet"
+category = "wiring"
+hands = "two"
+tools = []
+object = "harness"
+postures = ["standing", "kneeling"]
+pattern = "route_path"
+uas = ["PL[tight]", "OP[apply_pressure]"]
+params = {}
+risks = ["pinch_grip"]
+
+[[motion]]
+id = "wire.connect"
+name = "Connect connector (push to click)"
+category = "wiring"
+hands = "two"
+tools = []
+object = "connector"
+postures = ["standing", "kneeling", "squatting", "overhead"]
+pattern = "operate"
+uas = ["GP", "PL[tight]", "OP[apply_pressure]"]
+params = { force_n = 40 }
+risks = ["thumb", "wrist_deviation"]
+
+[[motion]]
+id = "wire.disconnect"
+name = "Disconnect connector"
+category = "wiring"
+hands = "two"
+tools = []
+object = "connector"
+postures = ["standing", "kneeling"]
+pattern = "operate"
+uas = ["OP[release]", "GP"]
+params = {}
+risks = ["pinch_grip"]
+
+[[motion]]
+id = "wire.tug_test"
+name = "Tug test connector latch"
+category = "wiring"
+hands = "two"
+tools = []
+object = "connector"
+postures = ["standing", "kneeling"]
+pattern = "operate"
+uas = ["OP[pull]", "VC"]
+params = {}
+risks = []
+
+[[motion]]
+id = "wire.cable_tie"
+name = "Install cable tie"
+category = "wiring"
+hands = "two"
+tools = []
+object = "harness"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:tie_pull"
+uas = ["GP[difficult]", "MC[wrap]", "OP[pull]"]
+params = {}
+risks = ["pinch_grip", "repetition"]
+
+[[motion]]
+id = "wire.cut_tie"
+name = "Cut tie tail flush"
+category = "wiring"
+hands = "dom+sup"
+tools = ["flush_cutter"]
+object = "tie"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:squeeze"
+uas = ["HT", "MC"]
+params = {}
+risks = ["grip_force"]
+
+[[motion]]
+id = "wire.strip"
+name = "Strip wire"
+category = "wiring"
+hands = "dom+sup"
+tools = ["wire_stripper"]
+object = "wire"
+postures = ["standing", "seated"]
+pattern = "cycle:squeeze"
+uas = ["HT", "MC[squeeze,pull]"]
+params = {}
+risks = ["grip_force", "repetition"]
+
+[[motion]]
+id = "wire.crimp"
+name = "Crimp terminal"
+category = "wiring"
+hands = "dom+sup"
+tools = ["crimper"]
+object = "terminal"
+postures = ["standing", "seated"]
+pattern = "cycle:squeeze"
+uas = ["HT", "PL[tight]", "MC[squeeze]"]
+params = { force_n = 200 }
+risks = ["grip_force"]
+
+[[motion]]
+id = "wire.insert_terminal"
+name = "Insert terminal into housing"
+category = "wiring"
+hands = "two"
+tools = []
+object = "housing"
+postures = ["standing", "seated"]
+pattern = "reach_place"
+uas = ["GP[difficult]", "PL[tight]"]
+params = {}
+risks = ["pinch_grip"]
+
+[[motion]]
+id = "wire.heat_shrink"
+name = "Shrink sleeve with heat gun"
+category = "wiring"
+hands = "dom+sup"
+tools = ["heat_gun"]
+object = "wire"
+postures = ["standing", "seated"]
+pattern = "cycle:sweep"
+uas = ["HT", "MC[sweep]"]
+params = { seconds = 6 }
+risks = ["burn"]
+
+[[motion]]
+id = "wire.battery"
+name = "Connect battery cable"
+category = "wiring"
+hands = "dom+sup"
+tools = ["wrench_comb"]
+object = "battery"
+postures = ["standing", "squatting"]
+pattern = "cycle:wrench_swing"
+uas = ["PL[tight]", "HT", "FL"]
+params = {}
+risks = ["trunk_flexion"]
+
+[[motion]]
+id = "wire.ground_strap"
+name = "Attach ground strap"
+category = "wiring"
+hands = "dom+sup"
+tools = ["ratchet_38"]
+object = "stud"
+postures = ["standing", "kneeling"]
+pattern = "cycle:ratchet"
+uas = ["PL", "HT", "FL"]
+params = {}
+risks = []
+
+[[motion]]
+id = "wire.terminal_block"
+name = "Terminate wire on terminal block"
+category = "wiring"
+hands = "dom+sup"
+tools = ["screwdriver_small"]
+object = "terminal"
+postures = ["standing", "seated"]
+pattern = "cycle:screwdriver"
+uas = ["GP[difficult]", "PL[tight]", "HT", "FL"]
+params = { turns = 4 }
+risks = ["wrist_deviation"]
+
+[[motion]]
+id = "wire.p_clip"
+name = "Install P-clip with screw"
+category = "wiring"
+hands = "two"
+tools = ["power_screwdriver"]
+object = "harness"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "cycle:power_drive"
+uas = ["PL[hold]", "HT", "OP[trigger]"]
+params = {}
+risks = ["static_hold"]
+
+[[motion]]
+id = "wire.label"
+name = "Label wire"
+category = "wiring"
+hands = "two"
+tools = []
+object = "wire"
+postures = ["standing", "seated"]
+pattern = "reach_place"
+uas = ["GP[difficult]", "PL"]
+params = {}
+risks = []
+
+[[motion]]
+id = "wire.loom"
+name = "Install split loom"
+category = "wiring"
+hands = "two"
+tools = []
+object = "harness"
+postures = ["standing", "kneeling"]
+pattern = "route_path"
+uas = ["GP", "MC[push along]"]
+params = { length_cm = 80 }
+risks = ["repetition"]
+
+[[motion]]
+id = "wire.tray"
+name = "Lay cable in tray"
+category = "wiring"
+hands = "two"
+tools = []
+object = "tray"
+postures = ["standing", "on_stand"]
+pattern = "route_path"
+uas = ["PL[path]"]
+params = { length_cm = 200 }
+risks = ["shoulder_elevation"]
+
+[[motion]]
+id = "wire.coil"
+name = "Coil cable"
+category = "wiring"
+hands = "two"
+tools = []
+object = "cable"
+postures = ["standing"]
+pattern = "cycle:coil"
+uas = ["MC[loops]"]
+params = { loops = 6 }
+risks = ["repetition"]
+
+[[motion]]
+id = "wire.multimeter"
+name = "Check continuity with multimeter"
+category = "wiring"
+hands = "two"
+tools = ["multimeter"]
+object = "connector"
+postures = ["standing", "seated"]
+pattern = "inspect"
+uas = ["HT", "PL[probe]", "VC"]
+params = {}
+risks = []
+
+# ---------------------------------------------------------------- Hydraulics and fluids
+[[motion]]
+id = "hyd.hose.connect"
+name = "Connect hose fitting"
+category = "hydraulics"
+hands = "dom+sup"
+tools = ["wrench_open"]
+object = "fitting"
+postures = ["standing", "kneeling", "squatting"]
+pattern = "cycle:wrench_swing"
+uas = ["GP", "FL[hand]", "HT", "FL[wrench]"]
+params = { turns = 3 }
+risks = ["wrist_deviation"]
+
+[[motion]]
+id = "hyd.jic.two_wrench"
+name = "Tighten JIC fitting with two wrenches"
+category = "hydraulics"
+hands = "two"
+tools = ["wrench_open", "wrench_open"]
+object = "fitting"
+postures = ["standing", "kneeling"]
+pattern = "cycle:wrench_swing"
+uas = ["HT x2", "FL"]
+params = {}
+risks = ["force"]
+
+[[motion]]
+id = "hyd.oring"
+name = "Install O-ring"
+category = "hydraulics"
+hands = "two"
+tools = []
+object = "fitting"
+postures = ["standing", "seated"]
+pattern = "reach_place"
+uas = ["GP[difficult]", "PL[tight]"]
+params = {}
+risks = ["pinch_grip"]
+
+[[motion]]
+id = "hyd.fill"
+name = "Fill hydraulic oil"
+category = "hydraulics"
+hands = "two"
+tools = ["oil_jug"]
+object = "tank"
+postures = ["standing"]
+pattern = "operate"
+uas = ["GP[w8-22kg]", "PL[hold]"]
+params = { seconds = 20 }
+risks = ["static_hold", "load"]
+
+[[motion]]
+id = "hyd.level_check"
+name = "Check oil level"
+category = "hydraulics"
+hands = "one"
+tools = []
+object = "tank"
+postures = ["standing", "squatting"]
+pattern = "inspect"
+uas = ["VC", "BM[bend]"]
+params = {}
+risks = ["trunk_flexion"]
+
+[[motion]]
+id = "hyd.bleed"
+name = "Bleed hydraulic system"
+category = "hydraulics"
+hands = "dom+sup"
+tools = ["wrench_open"]
+object = "valve"
+postures = ["standing", "kneeling"]
+pattern = "cycle:wrench_swing"
+uas = ["HT", "FL[loosen]", "VC"]
+params = {}
+risks = []
+
+[[motion]]
+id = "hyd.cap"
+name = "Cap / plug port"
+category = "hydraulics"
+hands = "one"
+tools = []
+object = "port"
+postures = ["standing", "kneeling"]
+pattern = "cycle:finger_thread"
+uas = ["GP", "FL[hand]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "hyd.wipe"
+name = "Wipe spill"
+category = "hydraulics"
+hands = "one"
+tools = ["rag"]
+object = "surface"
+postures = ["standing", "kneeling", "squatting"]
+pattern = "cycle:wipe"
+uas = ["HT", "MC[strokes]"]
+params = {}
+risks = ["trunk_flexion"]
+
+[[motion]]
+id = "hyd.filter"
+name = "Install filter"
+category = "hydraulics"
+hands = "two"
+tools = []
+object = "filter"
+postures = ["standing", "squatting"]
+pattern = "cycle:finger_thread"
+uas = ["GP", "FL[hand,turns]"]
+params = { turns = 4 }
+risks = ["trunk_flexion"]
+
+[[motion]]
+id = "hyd.quick_coupler"
+name = "Connect quick coupler"
+category = "hydraulics"
+hands = "two"
+tools = []
+object = "coupler"
+postures = ["standing", "squatting"]
+pattern = "operate"
+uas = ["PL[tight]", "OP[apply_pressure]"]
+params = {}
+risks = ["thumb"]
+
+# ---------------------------------------------------------------- Positioning and assembly
+[[motion]]
+id = "pos.align.two_hands"
+name = "Align part with both hands"
+category = "positioning"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "reach_place"
+uas = ["PL[tight]"]
+params = {}
+risks = ["static_hold"]
+
+[[motion]]
+id = "pos.hold_for_partner"
+name = "Hold part while partner fastens"
+category = "positioning"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing", "kneeling", "overhead"]
+pattern = "team"
+uas = ["PL[hold]"]
+params = { seconds = 15 }
+risks = ["static_hold", "coordination"]
+
+[[motion]]
+id = "pos.hang_on_hooks"
+name = "Lift and hang part on hooks"
+category = "positioning"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[w8-22kg]", "PL"]
+params = {}
+risks = ["shoulder_elevation", "niosh"]
+
+[[motion]]
+id = "pos.guide_crane_load"
+name = "Guide crane load by hand"
+category = "positioning"
+hands = "two"
+tools = []
+object = "crane_load"
+postures = ["standing"]
+pattern = "team"
+uas = ["OP[push]", "VC"]
+params = {}
+risks = ["suspended_load"]
+
+[[motion]]
+id = "pos.insert_slot"
+name = "Insert part into slot"
+category = "positioning"
+hands = "two"
+tools = []
+object = "slot"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["PL[tight]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "pos.cover_panel"
+name = "Install cover panel"
+category = "positioning"
+hands = "two"
+tools = []
+object = "panel"
+postures = ["standing", "kneeling"]
+pattern = "reach_place"
+uas = ["GP[w1-8kg]", "PL[tight]"]
+params = {}
+risks = ["reach_zone"]
+
+[[motion]]
+id = "pos.door_hinge"
+name = "Hang door / gate on hinges"
+category = "positioning"
+hands = "two"
+tools = []
+object = "gate"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[w8-22kg]", "PL[tight]"]
+params = {}
+risks = ["load", "static_hold"]
+
+[[motion]]
+id = "pos.rail_team"
+name = "Install guardrail (two people)"
+category = "positioning"
+hands = "team"
+tools = []
+object = "rail"
+postures = ["standing", "on_stand"]
+pattern = "team"
+uas = ["GP[team]", "PL[tight]"]
+params = {}
+risks = ["coordination", "shoulder_elevation"]
+
+[[motion]]
+id = "pos.lower_on_pins"
+name = "Lower part onto locating pins"
+category = "positioning"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["PL[tight]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "pos.jig"
+name = "Load part into alignment jig"
+category = "positioning"
+hands = "two"
+tools = []
+object = "jig"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP", "PL[tight]", "OP[lever]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "pos.rotate_fixture"
+name = "Rotate subassembly on fixture"
+category = "positioning"
+hands = "two"
+tools = []
+object = "fixture"
+postures = ["standing"]
+pattern = "operate"
+uas = ["OP[turn]"]
+params = { force_n = 100 }
+risks = ["force", "twist_with_load"]
+
+[[motion]]
+id = "pos.stands"
+name = "Set part on stands"
+category = "positioning"
+hands = "two"
+tools = []
+object = "stands"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[w8-22kg]", "PL"]
+params = {}
+risks = ["niosh"]
+
+# ---------------------------------------------------------------- Operating equipment
+[[motion]]
+id = "equip.crane.pendant"
+name = "Operate crane pendant (lift / travel)"
+category = "equipment"
+hands = "one"
+tools = ["pendant"]
+object = "crane"
+postures = ["standing"]
+pattern = "operate"
+uas = ["OP[button]", "VC", "BM[walk]"]
+params = { seconds = 10 }
+risks = ["suspended_load"]
+
+[[motion]]
+id = "equip.crane.hook_on"
+name = "Attach sling / hook to load"
+category = "equipment"
+hands = "two"
+tools = ["sling"]
+object = "crane_load"
+postures = ["standing", "squatting"]
+pattern = "reach_place"
+uas = ["GP", "PL[tight]"]
+params = {}
+risks = ["trunk_flexion"]
+
+[[motion]]
+id = "equip.crane.hook_off"
+name = "Unhook load"
+category = "equipment"
+hands = "two"
+tools = []
+object = "crane_load"
+postures = ["standing", "squatting"]
+pattern = "reach_place"
+uas = ["GP", "PL"]
+params = {}
+risks = []
+
+[[motion]]
+id = "equip.lift_table.raise"
+name = "Raise / lower lift table"
+category = "equipment"
+hands = "one"
+tools = []
+object = "lift_table"
+postures = ["standing"]
+pattern = "operate"
+uas = ["OP[button hold]"]
+params = { seconds = 8 }
+risks = []
+
+[[motion]]
+id = "equip.unit.drive_test"
+name = "Drive / function-test machine from platform"
+category = "equipment"
+hands = "two"
+tools = ["controller"]
+object = "machine"
+postures = ["standing"]
+pattern = "operate"
+uas = ["OP[joystick]", "VC"]
+params = { seconds = 30 }
+risks = []
+
+[[motion]]
+id = "equip.key_switch"
+name = "Turn key switch"
+category = "equipment"
+hands = "one"
+tools = ["key"]
+object = "switch"
+postures = ["standing"]
+pattern = "operate"
+uas = ["OP[turn]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "equip.estop"
+name = "Press / reset E-stop"
+category = "equipment"
+hands = "one"
+tools = []
+object = "estop"
+postures = ["standing"]
+pattern = "operate"
+uas = ["OP[button]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "equip.foot_pedal"
+name = "Operate foot pedal"
+category = "equipment"
+hands = "none"
+tools = []
+object = "pedal"
+postures = ["standing", "seated"]
+pattern = "operate"
+uas = ["OP[foot]"]
+params = {}
+risks = ["standing_one_leg"]
+
+[[motion]]
+id = "equip.scanner"
+name = "Scan barcode"
+category = "equipment"
+hands = "one"
+tools = ["scanner"]
+object = "label"
+postures = ["standing"]
+pattern = "operate"
+uas = ["HT", "OP[trigger]", "VC"]
+params = {}
+risks = []
+
+[[motion]]
+id = "equip.tablet"
+name = "Enter data on tablet / terminal"
+category = "equipment"
+hands = "two"
+tools = ["tablet"]
+object = "terminal"
+postures = ["standing", "seated"]
+pattern = "operate"
+uas = ["OP[keys]", "VC"]
+params = { seconds = 8 }
+risks = ["neck_flexion"]
+
+[[motion]]
+id = "equip.print_label"
+name = "Print and take label"
+category = "equipment"
+hands = "one"
+tools = []
+object = "printer"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["OP[button]", "GP"]
+params = {}
+risks = []
+
+[[motion]]
+id = "equip.conveyor"
+name = "Start / stop conveyor"
+category = "equipment"
+hands = "one"
+tools = []
+object = "conveyor"
+postures = ["standing"]
+pattern = "operate"
+uas = ["OP[button]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "equip.guard_door"
+name = "Open / close guard door"
+category = "equipment"
+hands = "one"
+tools = []
+object = "door"
+postures = ["standing"]
+pattern = "operate"
+uas = ["OP[pull]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "equip.scale_step"
+name = "Weigh machine on platform scale (read display)"
+category = "equipment"
+hands = "none"
+tools = []
+object = "scale"
+postures = ["standing"]
+pattern = "inspect"
+uas = ["VC", "BM[walk]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "equip.step_stand"
+name = "Climb onto / off step stand"
+category = "equipment"
+hands = "two"
+tools = ["step_stand"]
+object = "stand"
+postures = ["standing", "on_stand"]
+pattern = "body"
+uas = ["BM[climb]"]
+params = { steps = 2 }
+risks = ["fall"]
+
+[[motion]]
+id = "equip.move_step_stand"
+name = "Move step stand"
+category = "equipment"
+hands = "two"
+tools = ["step_stand"]
+object = "stand"
+postures = ["standing"]
+pattern = "carry"
+uas = ["GP[w8-22kg]", "BM[walk]"]
+params = {}
+risks = ["load"]
+
+[[motion]]
+id = "equip.air_hose"
+name = "Connect / disconnect air hose"
+category = "equipment"
+hands = "two"
+tools = []
+object = "coupler"
+postures = ["standing"]
+pattern = "operate"
+uas = ["PL", "OP[sleeve]"]
+params = {}
+risks = []
+
+# ---------------------------------------------------------------- Inspection and test
+[[motion]]
+id = "inspect.walk_around"
+name = "Visual walk-around inspection"
+category = "inspection"
+hands = "none"
+tools = []
+object = "machine"
+postures = ["standing", "squatting"]
+pattern = "inspect"
+uas = ["VC", "BM[walk]", "BM[bend]"]
+params = {}
+risks = ["walking"]
+
+[[motion]]
+id = "inspect.underside"
+name = "Inspect underside with mirror / light"
+category = "inspection"
+hands = "two"
+tools = ["flashlight", "mirror"]
+object = "machine"
+postures = ["standing", "squatting", "kneeling"]
+pattern = "inspect"
+uas = ["HT x2", "VC", "BM[squat]"]
+params = {}
+risks = ["neck_extension", "knee_flexion"]
+
+[[motion]]
+id = "inspect.tape"
+name = "Measure with tape"
+category = "inspection"
+hands = "two"
+tools = ["tape_measure"]
+object = "part"
+postures = ["standing", "kneeling"]
+pattern = "inspect"
+uas = ["HT", "PL", "VC"]
+params = {}
+risks = []
+
+[[motion]]
+id = "inspect.caliper"
+name = "Measure with caliper"
+category = "inspection"
+hands = "two"
+tools = ["caliper"]
+object = "part"
+postures = ["standing", "seated"]
+pattern = "inspect"
+uas = ["HT", "PL[tight]", "VC"]
+params = {}
+risks = []
+
+[[motion]]
+id = "inspect.gauge"
+name = "Check with go / no-go gauge"
+category = "inspection"
+hands = "dom+sup"
+tools = ["gauge"]
+object = "hole"
+postures = ["standing", "seated"]
+pattern = "inspect"
+uas = ["HT", "PL[tight]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "inspect.pull_test"
+name = "Pull test"
+category = "inspection"
+hands = "two"
+tools = []
+object = "part"
+postures = ["standing"]
+pattern = "operate"
+uas = ["OP[pull]"]
+params = { force_n = 100 }
+risks = ["force"]
+
+[[motion]]
+id = "inspect.checklist"
+name = "Sign checklist"
+category = "inspection"
+hands = "one"
+tools = ["pen"]
+object = "document"
+postures = ["standing", "seated"]
+pattern = "operate"
+uas = ["HT", "MC[write]", "VC"]
+params = {}
+risks = ["neck_flexion"]
+
+[[motion]]
+id = "inspect.photo"
+name = "Photograph defect with tablet"
+category = "inspection"
+hands = "two"
+tools = ["tablet"]
+object = "part"
+postures = ["standing"]
+pattern = "inspect"
+uas = ["HT", "OP[button]", "VC"]
+params = {}
+risks = []
+
+[[motion]]
+id = "inspect.tag"
+name = "Attach hold / inspection tag"
+category = "inspection"
+hands = "two"
+tools = ["tag"]
+object = "part"
+postures = ["standing"]
+pattern = "reach_place"
+uas = ["GP[difficult]", "PL"]
+params = {}
+risks = []
+
+[[motion]]
+id = "inspect.leak_check"
+name = "Check fittings for leaks"
+category = "inspection"
+hands = "one"
+tools = ["rag"]
+object = "fitting"
+postures = ["standing", "squatting", "kneeling"]
+pattern = "inspect"
+uas = ["VC", "HT", "BM[squat]"]
+params = {}
+risks = ["knee_flexion"]
+
+# ---------------------------------------------------------------- Finishing and cleaning
+[[motion]]
+id = "finish.grind"
+name = "Grind weld with angle grinder"
+category = "finishing"
+hands = "two"
+tools = ["angle_grinder"]
+object = "weld"
+postures = ["standing", "kneeling"]
+pattern = "cycle:sweep"
+uas = ["HT", "OP[trigger]", "MC[strokes]"]
+params = { seconds = 15 }
+risks = ["vibration", "line_of_fire"]
+
+[[motion]]
+id = "finish.sand"
+name = "Sand edge"
+category = "finishing"
+hands = "dom+sup"
+tools = ["sanding_block"]
+object = "edge"
+postures = ["standing", "kneeling"]
+pattern = "cycle:wipe"
+uas = ["HT", "MC[strokes]"]
+params = { strokes = 12 }
+risks = ["repetition"]
+
+[[motion]]
+id = "finish.file"
+name = "Deburr with file"
+category = "finishing"
+hands = "two"
+tools = ["file"]
+object = "edge"
+postures = ["standing", "seated"]
+pattern = "cycle:wipe"
+uas = ["HT", "MC[strokes]"]
+params = { strokes = 8 }
+risks = ["repetition"]
+
+[[motion]]
+id = "finish.touch_up"
+name = "Paint touch-up"
+category = "finishing"
+hands = "dom+sup"
+tools = ["paint_brush"]
+object = "surface"
+postures = ["standing", "kneeling"]
+pattern = "cycle:stroke"
+uas = ["HT", "MC[strokes]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "finish.spray"
+name = "Spray paint / aerosol"
+category = "finishing"
+hands = "dom+sup"
+tools = ["spray_can"]
+object = "surface"
+postures = ["standing", "kneeling"]
+pattern = "cycle:sweep"
+uas = ["HT", "OP[trigger]", "MC[sweep]"]
+params = { seconds = 6 }
+risks = ["fumes"]
+
+[[motion]]
+id = "finish.wipe"
+name = "Wipe clean with cloth"
+category = "finishing"
+hands = "one"
+tools = ["rag"]
+object = "surface"
+postures = ["standing", "kneeling"]
+pattern = "cycle:wipe"
+uas = ["HT", "MC[strokes]"]
+params = { strokes = 6 }
+risks = []
+
+[[motion]]
+id = "finish.blow_off"
+name = "Blow off with air gun"
+category = "finishing"
+hands = "one"
+tools = ["air_gun"]
+object = "surface"
+postures = ["standing"]
+pattern = "cycle:sweep"
+uas = ["HT", "OP[trigger]"]
+params = { seconds = 4 }
+risks = ["line_of_fire"]
+
+[[motion]]
+id = "finish.grease"
+name = "Grease zerk with grease gun"
+category = "finishing"
+hands = "two"
+tools = ["grease_gun"]
+object = "zerk"
+postures = ["standing", "kneeling", "squatting"]
+pattern = "cycle:squeeze"
+uas = ["HT", "PL[tight]", "MC[pump x3]"]
+params = { pumps = 3 }
+risks = ["grip_force", "trunk_flexion"]
+
+[[motion]]
+id = "finish.lube_spray"
+name = "Spray lubricant"
+category = "finishing"
+hands = "one"
+tools = ["spray_can"]
+object = "part"
+postures = ["standing", "kneeling"]
+pattern = "operate"
+uas = ["HT", "OP[trigger]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "finish.sweep"
+name = "Sweep work area"
+category = "finishing"
+hands = "two"
+tools = ["broom"]
+object = "floor"
+postures = ["standing"]
+pattern = "cycle:sweep"
+uas = ["HT", "MC[strokes]", "BM[walk]"]
+params = { seconds = 20 }
+risks = ["trunk_flexion"]
+
+# ---------------------------------------------------------------- Work postures
+[[motion]]
+id = "work.waist"
+name = "Work at waist height (reference)"
+category = "posture"
+hands = "two"
+tools = []
+object = "point"
+postures = ["standing"]
+pattern = "operate"
+uas = []
+params = {}
+risks = []
+
+[[motion]]
+id = "work.overhead"
+name = "Work overhead"
+category = "posture"
+hands = "two"
+tools = []
+object = "point"
+postures = ["standing", "on_stand"]
+pattern = "operate"
+uas = []
+params = {}
+risks = ["shoulder_elevation", "neck_extension"]
+
+[[motion]]
+id = "work.kneeling"
+name = "Work kneeling"
+category = "posture"
+hands = "two"
+tools = []
+object = "point"
+postures = ["kneeling"]
+pattern = "operate"
+uas = []
+params = {}
+risks = ["knee_contact"]
+
+[[motion]]
+id = "work.lying"
+name = "Work lying on creeper under machine"
+category = "posture"
+hands = "two"
+tools = ["creeper"]
+object = "point"
+postures = ["lying"]
+pattern = "operate"
+uas = []
+params = {}
+risks = ["neck_extension", "shoulder_elevation"]
+
+[[motion]]
+id = "work.reach_across"
+name = "Work reaching across"
+category = "posture"
+hands = "two"
+tools = []
+object = "point"
+postures = ["standing"]
+pattern = "operate"
+uas = []
+params = {}
+risks = ["reach_zone", "trunk_flexion"]
+
+[[motion]]
+id = "work.squatting"
+name = "Work squatting"
+category = "posture"
+hands = "two"
+tools = []
+object = "point"
+postures = ["squatting"]
+pattern = "operate"
+uas = []
+params = {}
+risks = ["knee_flexion"]
+
+[[motion]]
+id = "work.step_stand"
+name = "Work on step stand"
+category = "posture"
+hands = "two"
+tools = ["step_stand"]
+object = "point"
+postures = ["on_stand"]
+pattern = "operate"
+uas = []
+params = {}
+risks = ["fall"]
+
+[[motion]]
+id = "work.lean_in"
+name = "Lean into machine"
+category = "posture"
+hands = "two"
+tools = []
+object = "point"
+postures = ["standing"]
+pattern = "operate"
+uas = []
+params = {}
+risks = ["trunk_flexion", "contact_stress"]
+
+[[motion]]
+id = "work.seated"
+name = "Work seated on stool"
+category = "posture"
+hands = "two"
+tools = ["stool"]
+object = "point"
+postures = ["seated"]
+pattern = "operate"
+uas = []
+params = {}
+risks = []
+
+[[motion]]
+id = "work.one_foot_raised"
+name = "Work with one foot on rail"
+category = "posture"
+hands = "two"
+tools = []
+object = "point"
+postures = ["standing"]
+pattern = "operate"
+uas = []
+params = {}
+risks = []
+
+# ---------------------------------------------------------------- Walking
+[[motion]]
+id = "walk.path"
+name = "Walk to location"
+category = "walking"
+hands = "none"
+tools = []
+object = "point"
+postures = ["standing"]
+pattern = "walk"
+uas = ["BM[walk per m]"]
+params = {}
+risks = ["walking", "traffic"]
+
+[[motion]]
+id = "walk.tote"
+name = "Walk carrying tote"
+category = "walking"
+hands = "two"
+tools = []
+object = "tote"
+postures = ["standing"]
+pattern = "carry"
+uas = ["BM[walk]"]
+params = {}
+risks = ["walking", "load"]
+
+[[motion]]
+id = "walk.turn180"
+name = "Turn around"
+category = "walking"
+hands = "none"
+tools = []
+object = "direction"
+postures = ["standing"]
+pattern = "walk"
+uas = ["BM[turn]"]
+params = { angle_deg = 180 }
+risks = []
+
+[[motion]]
+id = "walk.start_stop"
+name = "Start / stop walking"
+category = "walking"
+hands = "none"
+tools = []
+object = "point"
+postures = ["standing"]
+pattern = "walk"
+uas = ["BM[walk]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "walk.sidestep_line"
+name = "Sidestep along the line"
+category = "walking"
+hands = "none"
+tools = []
+object = "point"
+postures = ["standing"]
+pattern = "walk"
+uas = ["BM[step]"]
+params = {}
+risks = []
+
+[[motion]]
+id = "walk.wait"
+name = "Wait / let coworker pass"
+category = "walking"
+hands = "none"
+tools = []
+object = "point"
+postures = ["standing"]
+pattern = "walk"
+uas = []
+params = { seconds = 2 }
+risks = ["waiting"]
+
+[[motion]]
+id = "walk.ramp"
+name = "Walk up / down ramp"
+category = "walking"
+hands = "none"
+tools = []
+object = "ramp"
+postures = ["standing"]
+pattern = "walk"
+uas = ["BM[walk]"]
+params = {}
+risks = ["slip"]
+
+[[motion]]
+id = "walk.stairs"
+name = "Climb platform stairs"
+category = "walking"
+hands = "one"
+tools = []
+object = "stairs"
+postures = ["standing"]
+pattern = "walk"
+uas = ["BM[climb]"]
+params = {}
+risks = ["fall"]
