@@ -16,7 +16,7 @@ from pxr import Sdf, Usd
 ROLES = (
     "worker", "forklift", "pallet_jack", "conveyor", "table", "lift_table", "flow_rack", "bin_rack", "pallet_rack",
     "pallet", "crate", "crane_bridge", "crane_jib", "machine", "robot", "column", "wall", "door", "dock", "aisle",
-    "walkway", "zone", "keepout", "exit", "fire_equipment", "floor", "building", "camera", "prop",
+    "walkway", "zone", "station", "keepout", "exit", "fire_equipment", "floor", "building", "camera", "prop", "product",
 )
 NAME_PATTERNS = [   # (regex on the prim name, role)
     (r"forklift", "forklift"), (r"palletjack|pallet_jack|handpallet", "pallet_jack"), (r"conveyor", "conveyor"),
@@ -24,7 +24,7 @@ NAME_PATTERNS = [   # (regex on the prim name, role)
     (r"bin_?rack|louver", "bin_rack"), (r"rack", "pallet_rack"), (r"pallet", "pallet"), (r"crate", "crate"),
     (r"bridge_?crane|overhead_?crane|gantry", "crane_bridge"), (r"jib", "crane_jib"),
     (r"workbench|work_?table|table|bench", "table"), (r"worker|character|human|operator|uniform_[mf]", "worker"),
-    (r"column|pillar", "column"), (r"extinguisher|fire_?box|hydrant", "fire_equipment"), (r"dock", "dock"),
+    (r"station|^stn", "station"), (r"column|pillar", "column"), (r"extinguisher|fire_?box|hydrant", "fire_equipment"), (r"dock", "dock"),
     (r"door", "door"), (r"exit", "exit"), (r"robot|ur\d|kuka|fanuc|abb_irb", "robot"),
 ]
 

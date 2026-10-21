@@ -314,3 +314,92 @@ register(PalletWithBoxes("pallet_boxes", "pallet", "Pallet with boxes", {
 }, source="mixed", licence="local"))
 register(PackAsset("crate", "crate", "Wooden crate on pallet", PACK["crate"], (120.0, 100.0)))
 register(PackAsset("forklift", "forklift", "Counterbalance forklift", PACK["forklift"], (137.0, 373.0)))
+
+
+# ------------------------------------------------------------------------------------------ pallet rack
+class PalletRack(Item):
+    """Selective pallet racking: rows of bays, beam levels, single or back-to-back (double) rows, optional loads."""
+
+    def _dims(self, p):
+        up = 8.0
+        L = p["bays"] * p["bay_width"] + (p["bays"] + 1) * up
+        D = p["frame_depth"] * (2 if p["double"] else 1) + (p["flue"] if p["double"] else 0.0)
+        return L, D, up
+
+    def footprint(self, p):
+        L, D, _ = self._dims(p)
+        return L, D
+
+    def build(self, stage, path, p, lib):
+        L, D, up = self._dims(p)
+        nb, bw, fd, H = p["bays"], p["bay_width"], p["frame_depth"], p["height"]
+        frame, beam = p["frame"], p["beam"]
+        s = new_shapes()
+        x0 = -L / 2
+        rows = [(-D / 2, -D / 2 + fd)] + ([(D / 2 - fd, D / 2)] if p["double"] else [])
+        nl = p["levels"]
+        levels = [150.0 + k * (H - 220.0) / max(nl - 1, 1) for k in range(nl)] if nl > 1 else [150.0]
+        attach = {}
+        load_k = 0
+        for r, (z0, z1) in enumerate(rows):
+            for k in range(nb + 1):
+                x = x0 + k * (bw + up)
+                for z in (z0, z1 - 7.0):
+                    s.box((x, 0, z), (x + up, H, z + 7.0), frame)
+                    s.box((x - 3, 0, z - 3), (x + up + 3, 1.0, z + 10), "galvanised")
+                # frame bracing: horizontals + zig-zag diagonals
+                y = 20.0
+                step = 120.0
+                while y + step < H - 20:
+                    a = (x + up / 2, y, z0 + 7)
+                    b = (x + up / 2, y + step, z1 - 7)
+                    s.cylinder(a, b, 1.6, frame, 6)
+                    s.cylinder((x + up / 2, y, z0 + 7), (x + up / 2, y, z1 - 7), 1.6, frame, 6)
+                    y += step
+            for b in range(nb):
+                bx0 = x0 + b * (bw + up) + up
+                bx1 = bx0 + bw
+                for lv, yb in enumerate(levels):
+                    for z in (z0, z1 - 5.0):
+                        s.box((bx0, yb - 12, z), (bx1, yb, z + 5.0), beam)
+                    if p["wire_decks"]:
+                        s.box((bx0, yb - 3, z0 + 5), (bx1, yb - 2, z1 - 5), "galvanised")
+                    attach[f"R{r + 1}_B{b + 1}_L{lv + 1}"] = ((bx0 + bx1) / 2, yb, (z0 + z1) / 2)
+                # loads: pallets with wrapped cartons on the floor and the beam levels
+                n_pal = max(1, int(bw // 125))
+                for lv, yb in enumerate([0.0] + levels):
+                    clear = (levels[lv] - 12 - yb) if lv < len(levels) else (H - yb)
+                    for q in range(n_pal):
+                        load_k += 1
+                        if (load_k * 7 + r * 3 + b) % 10 >= p["fill"] * 10:
+                            continue
+                        px = bx0 + (q + 0.5) * bw / n_pal
+                        pz = (z0 + z1) / 2
+                        hgt = min(clear - 18, 95 + (load_k % 3) * 15)
+                        if hgt < 30:
+                            continue
+                        s.box((px - 50, yb, pz - 60), (px + 50, yb + 14, pz + 60), "wood_top")
+                        s.box((px - 47, yb + 14, pz - 56), (px + 47, yb + 14 + hgt, pz + 56),
+                              "stretch_wrap" if load_k % 4 == 0 else "cardboard")
+        if p["double"]:
+            for k in range(nb + 1):
+                x = x0 + k * (bw + up)
+                for y in (H * 0.35, H * 0.75):
+                    s.box((x + 1, y, -D / 2 + fd), (x + up - 1, y + 5, D / 2 - fd), "galvanised")   # row spacers
+        shapes_to_stage(stage, path, s, lib)
+        return attach
+
+
+register(PalletRack("pallet_rack", "pallet_rack", "Selective pallet racking", {
+    "bays": Param(3, "bays in the row", 1, 30),
+    "bay_width": Param(270.0, "clear beam length per bay", 100, 400, "cm"),
+    "frame_depth": Param(110.0, "upright frame depth", 60, 150, "cm"),
+    "height": Param(600.0, "upright height", 200, 1500, "cm"),
+    "levels": Param(3, "beam levels above the floor position", 1, 8),
+    "double": Param(False, "back-to-back double row"),
+    "flue": Param(30.0, "gap between back-to-back rows", 10, 60, "cm"),
+    "frame": Param("powder_blue", "upright finish"),
+    "beam": Param("powder_orange", "beam finish"),
+    "wire_decks": Param(True, "wire decks on the beams"),
+    "fill": Param(0.7, "share of positions holding a pallet load", 0, 1),
+}))

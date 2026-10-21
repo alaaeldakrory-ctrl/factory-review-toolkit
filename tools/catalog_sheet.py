@@ -24,10 +24,13 @@ def main(out, keys=None):
         lib = MaterialLibrary(st)
         prim, p = CAT.place(st, "/World", k, "Item", lib=lib)
         L, D = CAT.CATALOG[k].footprint(p)
-        r = max(L, D, 120.0)
-        eye = (r * 1.05, r * 0.85 + 60, r * 1.35)
+        from pxr import UsdGeom
+        bb = UsdGeom.BBoxCache(0, ["default", "render"]).ComputeWorldBound(prim).ComputeAlignedRange()
+        Hh = bb.GetMax()[1]
+        r = max(L, D, Hh, 120.0)
+        eye = (r * 0.95, r * 0.75 + Hh * 0.4, r * 1.25)
         tmp = out + f".{k}.png"
-        PV.render(PV.collect(st), tmp, eye, (0, 55, 0), size=(420, 320), fov=40)
+        PV.render(PV.collect(st), tmp, eye, (0, Hh * 0.4, 0), size=(420, 320), fov=45)
         im = Image.open(tmp)
         ImageDraw.Draw(im).text((8, 6), f"{k}  {L:.0f} x {D:.0f} cm", fill=(20, 20, 20))
         ims.append(im)

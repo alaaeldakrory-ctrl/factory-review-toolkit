@@ -28,18 +28,20 @@ def collect(stage, time=Usd.TimeCode.Default(), tint=None, skip=()):
         M = np.array(xc.GetLocalToWorldTransform(prim), dtype=np.float64)
         P = np.c_[P, np.ones(len(P))] @ M
         P = P[:, :3]
-        idx = np.array(idx)
+        idx = np.asarray(idx, dtype=np.int64)
+        cnt = np.asarray(cnt, dtype=np.int64)
+        start = np.concatenate([[0], np.cumsum(cnt)[:-1]])
         tris = []
-        o = 0
-        for c in cnt:
-            for k in range(1, c - 1):
-                tris.append((idx[o], idx[o + k], idx[o + k + 1]))
-            o += c
+        for k in range(1, int(cnt.max()) - 1):           # fan triangulation, all faces at once per fan step
+            sel = cnt > k + 1
+            s0 = start[sel]
+            tris.append(np.stack([idx[s0], idx[s0 + k], idx[s0 + k + 1]], axis=1))
+        tris = np.concatenate(tris) if tris else np.zeros((0, 3), np.int64)
         col = m.GetDisplayColorAttr().Get(time)
         rgb = tuple(col[0]) if col else (0.6, 0.6, 0.6)
         if tint:
             rgb = tint(prim, rgb)
-        out.append((P, np.array(tris, dtype=np.int64), rgb))
+        out.append((P, tris, rgb))
     return out
 
 
@@ -83,6 +85,20 @@ def render(meshes, path, eye, at, size=(1280, 800), fov=35.0, bg=(235, 236, 238)
         y0 = np.clip(np.floor(ys.min(1)), 0, H - 1).astype(int)
         y1 = np.clip(np.ceil(ys.max(1)), 0, H - 1).astype(int)
         good &= (xs.max(1) >= 0) & (xs.min(1) < W) & (ys.max(1) >= 0) & (ys.min(1) < H)
+        # pixel-sized triangles: splat their centre in one go (far ones first, so the nearest wins)
+        tiny = good & ((x1 - x0) <= 1) & ((y1 - y0) <= 1)
+        if tiny.any():
+            ti = np.nonzero(tiny)[0]
+            px = np.clip(xs[ti].mean(1).astype(int), 0, W - 1)
+            py = np.clip(ys[ti].mean(1).astype(int), 0, H - 1)
+            zc = zt[ti].mean(1)
+            flat = py * W + px
+            keep = zc < zbuf.reshape(-1)[flat]
+            o = np.argsort(-zc[keep])
+            fi, zi_, ci = flat[keep][o], zc[keep][o], ti[keep][o]
+            zbuf.reshape(-1)[fi] = zi_
+            img.reshape(-1, 3)[fi] = np.minimum(1, col[None, :] * shade[ci][:, None])
+            good &= ~tiny
         for i in np.nonzero(good)[0]:
             if x1[i] < x0[i] or y1[i] < y0[i]:
                 continue

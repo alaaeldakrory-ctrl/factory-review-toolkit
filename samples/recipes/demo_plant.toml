@@ -1,0 +1,34 @@
+# Demo Plant: our own generic test factory, built from its layout drawing.
+#   python tools/frt.py build samples/recipes/demo_plant.toml
+
+[scene]
+name = "Demo Plant"
+output = "../../out/demo_plant/demo_plant.usd"
+
+[drawing]
+file = "../drawings/demo_plant_revA.dxf"
+
+[building]
+generator = "warehouse_a"
+height = "H10m"
+wall_style = "mixed"
+
+[equipment]
+from_drawing = true
+
+[equipment.defaults]
+conveyor = { type = "roller", frame = "powder_lightgrey" }
+industrial_table = { top = "wood", drawers = 2 }
+flow_rack = { frame = "powder_blue" }
+lift_table = { color = "powder_blue" }
+
+# a quality bench that is not on the drawing yet
+[[items]]
+catalog = "industrial_table"
+id = "QA1"
+at = [2800, 2400]
+rot = 0
+params = { length = 240, top = "esd", light_frame = true }
+
+[look]
+sky = true

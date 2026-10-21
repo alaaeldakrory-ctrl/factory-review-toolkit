@@ -110,6 +110,15 @@ def check_sizes(stage, fl, rules):
                                f"validate.size.{role}"))
 
 
+BUILTIN_MDL = ("OmniPBR", "OmniGlass", "OmniSurface", "OmniHair", "OmniEmissive", "OmniUe4", "gltf/pbr", "nvidia/", "omni_")
+
+
+def _builtin(path):
+    """Material definitions every RTX renderer ships (OmniPBR.mdl, ...): not files a scene has to carry."""
+    p = path.replace("\\", "/")
+    return p.lower().endswith(".mdl") and "/" not in p.strip("./") or any(p.startswith(b) for b in BUILTIN_MDL)
+
+
 def check_assets(stage, fl, rules, package_root=None):
     layer = stage.GetRootLayer()
     try:
@@ -118,6 +127,8 @@ def check_assets(stage, fl, rules, package_root=None):
         fl.add(Finding("validate.assets", "warning", f"Could not walk dependencies: {e}"))
         return
     for u in unresolved:
+        if _builtin(u):
+            continue
         fl.add(Finding("validate.missing_asset", "critical", f"Missing file: {u}", value=None))
     sev = rules.get("validate.absolute_paths", "warning")
     root = os.path.normcase(os.path.abspath(package_root or os.path.dirname(layer.realPath or ".")))

@@ -10,7 +10,7 @@ absolute_paths = "warning"         # severity for asset paths that only work on 
 
 # expected size ranges per role (largest plan dimension and height, cm); outside the range = probably wrong units
 [validate.size]
-table = { plan = [60, 400], height = [60, 130] }
+table = { plan = [60, 400], height = [60, 260] }       # up to 260 with a light frame
 lift_table = { plan = [60, 400], height = [15, 250] }
 flow_rack = { plan = [80, 1200], height = [100, 400] }
 bin_rack = { plan = [40, 600], height = [60, 300] }
