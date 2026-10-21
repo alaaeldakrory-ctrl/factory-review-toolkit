@@ -98,13 +98,14 @@ def find_objects(dr, gap_cm=3.0, standalone_cm=40.0, text_reach_cm=120.0, ignore
                  absorb_parts=50):
     from .interpret import _match
     prims = []          # (layer, bbox, kind, payload)
+    skip = {n for n in {x.layer for x in dr.segs} | {x.layer for x in dr.polys} if ignore_layers and _match(n, ignore_layers)}
     for s in dr.segs:
-        if ignore_layers and _match(s.layer, ignore_layers):
+        if s.layer in skip:
             continue
         bb = (min(s.a[0], s.b[0]), min(s.a[1], s.b[1]), max(s.a[0], s.b[0]), max(s.a[1], s.b[1]))
         prims.append((s.layer, bb, "seg", s))
     for p in dr.polys:
-        if ignore_layers and _match(p.layer, ignore_layers):
+        if p.layer in skip:
             continue
         prims.append((p.layer, p.bbox(), "poly", p))
     objs = []

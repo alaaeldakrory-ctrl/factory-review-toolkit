@@ -37,7 +37,8 @@ WEIGHT = {"layer": 0.35, "text": 0.7, "text_near": 0.4, "name": 0.45, "shape": 0
 KNOWN_TYPES = ["unknown", "ignore", "product_unit", "staged_kit", "station_box", "room", "area", "walkway", "aisle",
                "column", "wall", "door", "rollup_door", "dock", "operator", "flow_rack", "parts_rack", "bin_rack",
                "pallet_rack", "industrial_table", "lift_table", "tool_cart", "trash", "computer_station", "ramp", "scale",
-               "conveyor", "forklift", "jib_crane", "bridge_crane", "crane", "crate", "pallet"]
+               "conveyor", "forklift", "jib_crane", "bridge_crane", "crane", "crate", "pallet", "window",
+               "material_location", "finished_unit"]
 
 
 @dataclass

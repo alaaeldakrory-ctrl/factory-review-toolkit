@@ -47,7 +47,14 @@ def load(path, page=0, scale=None, calibration=None, skip_layers=()):
     dr.cm_per_pt = k
     hpage = pg.rect.height
     dr.page_size = (pg.rect.width, hpage)
-    P = lambda p: (float(p[0]) * k, (hpage - float(p[1])) * k)
+    # PDF content is stored unrotated; a page shown rotated (common for plotted sheets) is turned to its display frame
+    ra, rb, rc, rd, re_, rf = tuple(pg.rotation_matrix) if pg.rotation else (1, 0, 0, 1, 0, 0)
+    if pg.rotation:
+        dr.notes.append(f"page shown rotated {pg.rotation} deg: turned to match")
+
+    def P(p):
+        x, y = float(p[0]), float(p[1])
+        return ((ra * x + rc * y + re_) * k, (hpage - (rb * x + rd * y + rf)) * k)
     layers, skipped = set(), 0
     whole = [x.upper() for x in skip_layers if not x.lower().endswith(":tiny")]
     tiny = [x[:-5].upper() for x in skip_layers if x.lower().endswith(":tiny")]
@@ -138,12 +145,19 @@ def load(path, page=0, scale=None, calibration=None, skip_layers=()):
             txt = " ".join(" ".join(sp["text"].split()) for sp in ln["spans"] if sp["text"].strip()).strip()
             if not txt:
                 continue
-            x0, y0, x1, y1 = ln["bbox"]
+            bx0, by0, bx1, by1 = ln["bbox"]
+            centre = P(((bx0 + bx1) / 2, (by0 + by1) / 2))         # P turns it to the display frame
             dx, dy = ln.get("dir", (1.0, 0.0))
+            if pg.rotation:                                    # to the display frame, like the drawing
+                cs = [(ra * x + rc * y + re_, rb * x + rd * y + rf) for x, y in ((bx0, by0), (bx1, by1))]
+                bx0, bx1 = sorted((cs[0][0], cs[1][0]))
+                by0, by1 = sorted((cs[0][1], cs[1][1]))
+                dx, dy = ra * dx + rc * dy, rb * dx + rd * dy
+            x0, y0, x1, y1 = bx0, by0, bx1, by1
             vertical = abs(dy) > abs(dx)
             thick = (x1 - x0) if vertical else (y1 - y0)
             long_ = (y1 - y0) if vertical else (x1 - x0)
-            dr.texts.append(Text(txt, P(((x0 + x1) / 2, (y0 + y1) / 2)), thick * k, "", f"pdf:{page}:t{bi}.{li}",
+            dr.texts.append(Text(txt, centre, thick * k, "", f"pdf:{page}:t{bi}.{li}",
                                  long_ * k, vertical))
     dr.notes.append(f"{len(dr.segs)} lines, {len(dr.polys)} closed shapes, {len(dr.texts)} words"
                     + (f", CAD layers: {len(dr.layers)}" if dr.layers else "") + (f", {skipped} paths skipped" if skipped else ""))

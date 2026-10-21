@@ -136,6 +136,29 @@ type = "forklift"
 text = ["*FORKLIFT*", "*MONTACARGAS*", "*CARRELLO ELEVATORE*", "*MULETTO*", "*FLT*"]
 near = true
 
+# ------------------------------------------------------------------------------------------ drafting, not objects
+[[rules]]
+type = "ignore"
+layer = ["*GRID*", "*AXIS*", "*EJE*", "*EJES*", "*ASSI*", "CENTER", "CEN", "*CENTRE*", "*DIM*", "*COTA*", "*QUOTE*"]
+bonus = 0.1
+
+[[rules]]
+type = "ignore"
+layer = ["*FILL*", "*HATCH*", "*ACHURADO*", "*RETINO*", "*TRATTEGGIO*", "*HIDDEN*", "HIDD", "*OCULT*", "*NASCOST*"]
+bonus = 0.1
+
+[[rules]]
+type = "window"
+layer = ["*WINDOW*", "*VENTANA*", "*FINESTRA*"]
+
+[[rules]]
+type = "product_unit"
+layer = ["*PRODUCT*", "*PRODUCTO*", "*PRODOTTO*", "*MACHINE*", "*MAQUINA*", "*MACCHINA*"]
+shape = "group"
+min_parts = 200
+size_cm = [150, 800]
+short_cm = [60, 300]
+
 # ------------------------------------------------------------------------------------------ people, areas
 [[rules]]
 type = "operator"

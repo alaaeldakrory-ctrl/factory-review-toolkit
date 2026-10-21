@@ -124,3 +124,39 @@ def test_pdf_autocad_polylines(tmp_path):
     assert (305, 213, "Stations") in sizes                          # 100 pt = 10 ft = 304.8 cm
     assert any(abs(w - 305) < 2 and abs(h - 213) < 2 and layer != "Stations" for w, h, layer in sizes)
     assert "Stations" in dr.layers
+
+
+def test_pdf_rotated_page(tmp_path):
+    """A sheet stored rotated (common for plots) reads in its display frame: drawing and text stay together."""
+    import fitz
+    from frt_core.drawing import pdf_import
+    doc = fitz.open()
+    pg = doc.new_page(width=300, height=200)
+    sh = pg.new_shape()
+    sh.draw_rect(fitz.Rect(20, 20, 120, 60))                 # a wide box at the top left (unrotated)
+    sh.finish(color=(0, 0, 0))
+    sh.commit()
+    pg.insert_text((30, 45), "BOX", fontsize=8)
+    pg.set_rotation(90)
+    path = str(tmp_path / "rot.pdf")
+    doc.save(path)
+    dr = pdf_import.load(path, scale=100)
+    box = next(p for p in dr.polys)
+    x0, y0, x1, y1 = box.bbox()
+    assert (y1 - y0) > (x1 - x0)                              # shown rotated: the wide box stands upright
+    t = next(t for t in dr.texts if t.text == "BOX")
+    assert x0 <= t.pos[0] <= x1 and y0 <= t.pos[1] <= y1     # its label is still inside it
+
+
+def test_scale_from_size_labels():
+    from frt_core.drawing import scale as S
+    from frt_core.drawing.model import Drawing, Poly, Text
+    dr = Drawing("t", "pdf")
+    for i, (w, h, lbl) in enumerate([(30, 36, "3.00x3.60m"), (50, 60, "5.00 X 6.00 m"), (38, 70, "3.80 X 6.99")]):
+        x = i * 200.0
+        dr.polys.append(Poly([(x, 0), (x + w, 0), (x + w, h), (x, h)], True))     # drawn at 1:10 of real size
+        dr.texts.append(Text(lbl, (x + w / 2, h + 5), 4.0))
+    f, votes, why = S.suggest(dr)
+    assert f == pytest.approx(10.0, rel=0.01) and votes >= 2
+    S.rescale(dr, f)
+    assert dr.polys[0].bbox()[2] - dr.polys[0].bbox()[0] == pytest.approx(300)

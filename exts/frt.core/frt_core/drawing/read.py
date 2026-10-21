@@ -233,7 +233,43 @@ def add_override(path, at, type_, params=None, size=None):
     return save_settings(path, overrides=cur + [entry])
 
 
-def read(path, profile=None, calibration=None, scale=None, min_confidence=0.3):
+ENGINE = "reader-4"            # bump when import or grouping changes, so old caches are not used
+
+
+def _import_and_group(path, kw, imp):
+    dr = load_drawing(path, **kw)
+    return dr, find_objects(dr, gap_cm=imp.get("gap_cm", 8.0), ignore_layers=imp.get("ignore_layers", []))
+
+
+def _cached(path, kw, imp, make, use_cache=True):
+    """Import + grouping are the slow part (a dense sheet: ~30 s); keep them beside the drawing until the file, its
+    scale or the import settings change. Classification is always redone (profiles change while teaching)."""
+    import hashlib
+    import pickle
+    st = os.stat(path)
+    key = hashlib.sha1(repr((ENGINE, st.st_size, int(st.st_mtime), sorted(kw.items()),
+                             sorted((k, str(v)) for k, v in imp.items()))).encode()).hexdigest()
+    cp = path + ".frt.cache"
+    if use_cache and os.path.isfile(cp):
+        try:
+            with open(cp, "rb") as fh:
+                k, dr, objs = pickle.load(fh)
+            if k == key:
+                dr.notes = [n for n in dr.notes if not n.startswith("from cache")] + ["from cache"]
+                return dr, objs
+        except Exception:   # noqa: BLE001  a broken or old cache is simply rebuilt
+            pass
+    dr, objs = make()
+    if use_cache:
+        try:
+            with open(cp, "wb") as fh:
+                pickle.dump((key, dr, objs), fh, protocol=pickle.HIGHEST_PROTOCOL)
+        except OSError:
+            pass
+    return dr, objs
+
+
+def read(path, profile=None, calibration=None, scale=None, min_confidence=0.3, use_cache=True):
     st = load_settings(path)
     if calibration is None and "calibration" in st:
         c = st["calibration"]
@@ -245,8 +281,7 @@ def read(path, profile=None, calibration=None, scale=None, min_confidence=0.3):
     kw = {}
     if path.lower().endswith(".pdf"):
         kw = {"calibration": calibration, "scale": scale, "skip_layers": imp.get("skip_layers", [])}
-    dr = load_drawing(path, **kw)
-    objs = find_objects(dr, gap_cm=imp.get("gap_cm", 8.0), ignore_layers=imp.get("ignore_layers", []))
+    dr, objs = _cached(path, kw, imp, lambda: _import_and_group(path, kw, imp), use_cache)
     classes = classify_all(objs, prof, min_confidence)
     _absorb_nested(objs, classes)
     _apply_overrides(objs, classes, st.get("overrides", []))
