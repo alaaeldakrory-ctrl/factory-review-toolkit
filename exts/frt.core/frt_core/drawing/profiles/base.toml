@@ -9,7 +9,8 @@ name = "Base (generic, EN/ES/IT)"
 ignore_layers = ["*COMENTARIO*", "*COMMENT*", "*COMMENTI*", "*NOTA*", "*NOTE*", "DEFPOINTS", "*VIEWPORT*", "*TITLE*"]
 
 [stations]
-# physical items carry a minimum width (short_cm): a label sitting on a sliver of a line is never the object
+# label-based items also carry a maximum size (max_cm: excludes, adds no confidence): a label inside a 15 m crane frame does not make the frame a
+# tool cart. physical items carry a minimum width (short_cm): a label sitting on a sliver of a line is never the object
 # a station name: ST 1, STN 5, STATION 3, ESTACION 2, ESTACIÓN 2, STAZIONE 4, POSTAZIONE 4, CELL 2, WS 4, TEST 3
 label = '^(ST|STN|STA|STATION|ESTACION|ESTACIÓN|EST|STAZIONE|POSTAZIONE|CELL|CELDA|CELLA|WS|TEST|PRUEBA|COLLAUDO)\s*[-_#.]?\s*(\d{1,3}[A-Z]?)\b'
 search_cm = 700                    # how far above/beside the label to look for the station's unit or box
@@ -55,6 +56,12 @@ near = true
 param = { capacity = 'text:\d[\d,.]*\s*(lb|lbs|kg|t|ton)' }
 
 [[rules]]
+type = "jib_crane"
+layer = ["*JIB*", "*BANDERA*", "*BANDIERA*", "*PLUMA*"]
+size_cm = [150, 4000]
+bonus = 0.15
+
+[[rules]]
 type = "bridge_crane"
 text = ["*BRIDGE*", "*PUENTE GRUA*", "*PUENTE GRÚA*", "*CARROPONTE*", "*CARRO PONTE*", "*OVERHEAD CRANE*", "*WORKSTATION CRANE*"]
 near = true
@@ -75,41 +82,65 @@ type = "lift_table"
 text = ["LIFT TABLE", "*LIFT TABLE*", "*MESA ELEVADORA*", "*MESA DE ELEVACION*", "*TAVOLA ELEVATRICE*", "*SCISSOR TABLE*"]
 near = true
 short_cm = [40, 100000]
+max_cm = 600
 
 [[rules]]
 type = "flow_rack"
 text = ["*FLOW RACK*", "*FLOWRACK*", "*RACK DE FLUJO*", "*FLUJO*", "*SCAFFALE A GRAVIT*", "*CARTON FLOW*"]
 short_cm = [30, 100000]
+max_cm = 1500
 
 [[rules]]
 type = "pallet_rack"
 text = ["*PALLET RACK*", "*RACKING*", "*RACK SELECTIVO*", "*SCAFFALATURA*", "*ESTANTERIA*"]
 short_cm = [40, 100000]
+max_cm = 6000
+
+[[rules]]
+type = "pallet_rack"
+text = ["*LEVELS*", "* LEVEL*", "*TIERS*", "* TIER*", "*NIVELES*", "*NIVEL*", "*LIVELLI*"]
+max_cm = 3000
+short_cm = [40, 100000]
+param = { levels = 'text:(?P<v>\d+)\s*(LEVELS?|TIERS?|NIVELES?|LIVELLI)' }
+bonus = 0.05
+
+[[rules]]
+type = "bin_rack"
+text = ["*SHELLS*", "*SHELVES*", "*ESTANTES*", "*RIPIANI*"]
+max_cm = 1500
+short_cm = [30, 100000]
+param = { shelves = 'text:(?P<v>\d+)\s*(SHELLS?|SHELVES|ESTANTES|RIPIANI)' }
+bonus = 0.05
 
 [[rules]]
 type = "parts_rack"
 text = ["*RACK*", "*SHELF*", "*SHELVING*", "*ESTANTE*", "*SCAFFALE*"]
 short_cm = [20, 100000]
+max_cm = 3000
 
 [[rules]]
 type = "tool_cart"
 text = ["*CART*", "*CARRITO*", "*CARRO*", "*CARRELLO*", "*TROLLEY*"]
 short_cm = [25, 100000]
+max_cm = 300
 
 [[rules]]
 type = "industrial_table"
 text = ["*TABLE*", "*BENCH*", "*MESA*", "*BANCO*", "*TAVOLO*", "*BANCO DI LAVORO*", "*W. TABLE*"]
 short_cm = [30, 100000]
+max_cm = 600
 
 [[rules]]
 type = "trash"
 text = ["TRASH", "*BASURA*", "*RIFIUTI*", "*WASTE*", "*SCRAP*", "*CHATARRA*"]
 short_cm = [20, 100000]
+max_cm = 300
 
 [[rules]]
 type = "computer_station"
 text = ["*COMPUTER*", "*PC STATION*", "*COMPUTADORA*", "*COMPUTADOR*", "*POSTAZIONE PC*", "*TERMINAL*"]
 short_cm = [20, 100000]
+max_cm = 500
 
 [[rules]]
 type = "computer_station"
@@ -120,16 +151,19 @@ short_cm = [20, 100000]
 type = "ramp"
 text = ["*RAMP*", "*RAMPA*"]
 short_cm = [40, 100000]
+max_cm = 2500
 
 [[rules]]
 type = "scale"
 text = ["SCALE", "*SCALE*", "*BASCULA*", "*BÁSCULA*", "*BILANCIA*", "*PESA*"]
 short_cm = [40, 100000]
+max_cm = 2500
 
 [[rules]]
 type = "conveyor"
 text = ["*CONVEYOR*", "*TRANSPORTADOR*", "*BANDA*", "*NASTRO*", "*TRASPORTATORE*", "*RODILLOS*", "*RULLIERA*"]
 short_cm = [20, 100000]
+max_cm = 10000
 
 [[rules]]
 type = "forklift"
@@ -137,6 +171,8 @@ text = ["*FORKLIFT*", "*MONTACARGAS*", "*CARRELLO ELEVATORE*", "*MULETTO*", "*FL
 near = true
 
 # ------------------------------------------------------------------------------------------ drafting, not objects
+max_cm = 700
+
 [[rules]]
 type = "ignore"
 layer = ["*GRID*", "*AXIS*", "*EJE*", "*EJES*", "*ASSI*", "CENTER", "CEN", "*CENTRE*", "*DIM*", "*COTA*", "*QUOTE*"]
@@ -156,8 +192,8 @@ type = "product_unit"
 layer = ["*PRODUCT*", "*PRODUCTO*", "*PRODOTTO*", "*MACHINE*", "*MAQUINA*", "*MACCHINA*"]
 shape = "group"
 min_parts = 200
-size_cm = [150, 800]
-short_cm = [60, 300]
+size_cm = [100, 1500]                 # small scissors to booms and telehandlers (stowed)
+short_cm = [50, 400]
 
 # ------------------------------------------------------------------------------------------ people, areas
 [[rules]]

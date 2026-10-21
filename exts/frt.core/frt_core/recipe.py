@@ -315,11 +315,23 @@ def build(recipe, validate=True, log=print):
                 for kv in (e.label or "").split(";"):         # values the reader took from labels / layers
                     if "=" in kv:
                         k, v = (x.strip() for x in kv.split("=", 1))
-                        if k in known and isinstance(known[k].default, str):
-                            params[k] = v
-                params, why = CAT.CATALOG[e.catalog].clamp(params)
+                        if k not in known:
+                            continue
+                        d = known[k].default
+                        try:
+                            params[k] = (v if isinstance(d, str) else (v.lower() in ("1", "true", "yes"))
+                                         if isinstance(d, bool) else int(float(v)) if isinstance(d, int) else float(v))
+                        except ValueError:
+                            notes.append(f"{e.id}: {k}={v!r} is not a {type(d).__name__}, ignored")
+                cat = e.catalog
+                if cat == "pallet_rack" and "levels" in params and "height" not in defaults.get(cat, {}):
+                    params["height"] = 70 + 130 * int(params["levels"])          # the drawn levels set the height
+                if cat == "staged_kit" and str(params.get("kind", "")).lower() == "finished":
+                    cat = "scissor_unit"                                          # a finished machine on its spot
+                    params = {k: v for k, v in params.items() if k in CAT.CATALOG[cat].params}
+                params, why = CAT.CATALOG[cat].clamp(params)
                 notes += [f"{e.id}: {w}" for w in why]
-                CAT.place(stage, "/World/Equipment", e.catalog, e.id, (x, 0, z), e.rot, params, lib, source=e.ref)
+                CAT.place(stage, "/World/Equipment", cat, e.id, (x, 0, z), e.rot, params, lib, source=e.ref)
                 placed += 1
             notes += _stack_on_supports(stage, plant.equipment)
         for it in r.get("items", []):

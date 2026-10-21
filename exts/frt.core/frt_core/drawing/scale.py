@@ -64,3 +64,41 @@ def rescale(dr, f):
     if getattr(dr, "cm_per_pt", None):
         dr.cm_per_pt *= f
     return dr
+
+
+# ------------------------------------------------------------------------------------------ known block sizes
+def learn_sizes(reading, types=("staged_kit",), min_count=2):
+    """Typical sizes of a team's standard blocks from a calibrated drawing: [{type, layer, size, count}]."""
+    groups = {}
+    for o, c in reading.items:
+        if c.type in types:
+            groups.setdefault((c.type, o.layer), []).append((max(o.size), min(o.size)))
+    out = []
+    for (t, layer), v in sorted(groups.items()):
+        if len(v) < min_count:
+            continue
+        Ls, Ss = sorted(a for a, _ in v), sorted(b for _, b in v)
+        out.append({"type": t, "layer": layer, "size": [round(Ls[len(Ls) // 2], 1), round(Ss[len(Ss) // 2], 1)],
+                    "count": len(v)})
+    return out
+
+
+def from_known_sizes(reading, sizes, tol=0.06, min_votes=3):
+    """Scale factor from blocks whose real size the team profile knows: (f, votes, why) or (None, ...)."""
+    ref = {(s["type"], s["layer"]): s["size"] for s in sizes}
+    ratios = []
+    for o, c in reading.items:
+        r = ref.get((c.type, o.layer))
+        if r is None or min(o.size) <= 0:
+            continue
+        fa, fb = r[0] / max(o.size), r[1] / min(o.size)
+        if abs(fa - fb) <= 2 * tol * max(fa, fb):
+            ratios.append((fa + fb) / 2)
+    if len(ratios) < min_votes:
+        return None, len(ratios), f"only {len(ratios)} known blocks"
+    ratios.sort()
+    f = ratios[len(ratios) // 2]
+    agree = [x for x in ratios if abs(x / f - 1) <= tol]
+    if len(agree) < min_votes:
+        return None, len(agree), "known blocks disagree about the scale"
+    return f, len(agree), f"{len(agree)} known blocks agree"

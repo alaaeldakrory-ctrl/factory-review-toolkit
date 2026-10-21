@@ -98,15 +98,46 @@ register(ScissorUnit("scissor_unit", "product", "Scissor lift (generic, until th
 
 # ------------------------------------------------------------------------------------------ staged kit
 class StagedKit(Item):
-    """Incoming kit for one unit, staged on its floor spot: chassis on a dolly, scissor-arm bundle, boxed parts."""
+    """Incoming material for units, staged on its floor spot. kind: kit (a whole unit's kit: chassis on a dolly, arm
+    bundle, boxed parts), frame / arms / platform (a rack of that part, `stack` high), finished (a finished machine,
+    placed as a scissor unit by the scene builder)."""
 
     def footprint(self, p):
         return p["length"], p["width"]
 
     def build(self, stage, path, p, lib):
         L, Wd = p["length"], p["width"]
+        kind = (p["kind"] or "kit").lower()
+        n = max(1, int(p["stack"]))
         s = new_shapes()
         hl, hw = L / 2 - 4, Wd / 2 - 4
+        if kind[:1] in ("f", "a", "p") and not kind.startswith("fin"):
+            # a steel stillage with corner posts holding `stack` parts with dunnage between them
+            step = {"f": 34.0, "a": 18.0, "p": 22.0}[kind[0]]
+            H = 12 + n * step + 10
+            for sx in (-1, 1):
+                for sz in (-1, 1):
+                    xa, xb = (hl - 4, hl) if sx > 0 else (-hl, -hl + 4)
+                    za, zb = (hw - 4, hw) if sz > 0 else (-hw, -hw + 4)
+                    s.box((xa, 0, za), (xb, H, zb), p["rack"])
+            s.box((-hl, 6, -hw), (hl, 12, hw), p["rack"])                                    # base
+            for k in range(n):
+                y = 12 + k * step
+                s.box((-hl + 10, y, -hw + 10), (hl - 10, y + 3, hw - 10), "wood_top")           # dunnage
+                if kind[0] == "f":                                                            # chassis frame
+                    s.box((-hl + 8, y + 3, -hw + 8), (hl - 8, y + step - 4, -hw + 16), p["chassis"])
+                    s.box((-hl + 8, y + 3, hw - 16), (hl - 8, y + step - 4, hw - 8), p["chassis"])
+                    for x in (-hl + 12, 0, hl - 20):
+                        s.box((x, y + 3, -hw + 16), (x + 8, y + step - 8, hw - 16), p["chassis"])
+                elif kind[0] == "a":                                                          # arm bundle
+                    for zz in range(4):
+                        z = -hw + 10 + zz * (2 * hw - 20) / 4
+                        s.box((-hl + 6, y + 3, z), (hl - 6, y + step - 3, z + 8), p["arms"])
+                else:                                                                         # platform deck
+                    s.box((-hl + 6, y + 3, -hw + 6), (hl - 6, y + step - 6, hw - 6), "powder_grey")
+                    s.box((-hl + 6, y + step - 6, -hw + 6), (hl - 6, y + step - 4, hw - 6), "steel_tread")
+            shapes_to_stage(stage, path, s, lib)
+            return {"top": (0, H, 0), "pick": (0, 12 + (n - 1) * step + step / 2, hw)}
         s.box((-hl, 6, -hw), (hl, 12, hw), "steel_dark")                                      # dolly frame
         for sx in (-1, 1):
             for sz in (-1, 1):
@@ -126,12 +157,15 @@ class StagedKit(Item):
         return {"pick": (0, 60, hw)}
 
 
-register(StagedKit("staged_kit", "product", "Staged incoming kit (one unit)", {
-    "length": Param(240.0, "spot length", 80, 600, "cm"),
+register(StagedKit("staged_kit", "product", "Staged incoming material (kit, part rack, or finished unit)", {
+    "length": Param(240.0, "spot length", 60, 700, "cm"),
     "width": Param(85.0, "spot width", 40, 300, "cm"),
-    "model": Param("", "model (from the drawing layer)"),
+    "model": Param("", "model (from the label or the drawing layer)"),
+    "kind": Param("kit", "kit / frame / arms / platform (racks of that part) / finished"),
+    "stack": Param(1, "parts stacked in the rack", 1, 10),
     "chassis": Param("powder_dark", "chassis finish"),
     "arms": Param("powder_orange", "arms finish"),
+    "rack": Param("powder_blue", "stillage finish"),
 }))
 
 

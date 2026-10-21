@@ -10,6 +10,7 @@ A rule (TOML [[rules]]) fires when every condition it lists holds:
     name      DXF block-name patterns
     shape     "rect" / "circle" / "group" (many strokes)
     size_cm   [min, max] of the object's longer side;  short_cm  [min, max] of its shorter side
+    max_cm    upper limit of the longer side that only excludes (adds no confidence)
     min_parts / max_parts   number of strokes (a detailed symbol has thousands)
     param     where a value comes from, e.g. { model = "layer" } or { capacity = "text:(\\d+)\\s*(lb|kg)" }
 Confidence grows with the kinds of evidence a rule uses (layer, text, shape, size...); the best rule wins, ties go to
@@ -67,23 +68,48 @@ def load_profile(name="base"):
         p = tomllib.load(fh)
     rules = list(p.get("rules", []))
     symbols = list(p.get("symbols", []))
+    sizes = list(p.get("sizes", []))
     imp, st = dict(p.get("import", {})), dict(p.get("stations", {}))
     names = [p.get("profile", {}).get("name", os.path.basename(path))]
     for base in p.get("profile", {}).get("extends", []):
         b = load_profile(base)
         rules += b["rules"]
         symbols += b["symbols"]
+        sizes += b.get("sizes", [])
         for k, v in b["import"].items():
             imp[k] = sorted(set(imp.get(k, [])) | set(v)) if isinstance(v, list) else imp.get(k, v)
         for k, v in b["stations"].items():
             st.setdefault(k, v)
         names += b["names"]
-    return {"rules": rules, "symbols": symbols, "import": imp, "stations": st, "names": names, "path": path}
+    return {"rules": rules, "symbols": symbols, "sizes": sizes, "import": imp, "stations": st, "names": names, "path": path}
 
 
 def _any(value, patterns):
     v = (value or "").upper()
     return any(fnmatch.fnmatch(v, x.upper()) for x in patterns)
+
+
+_WORD_CACHE = {}
+
+
+def _label_match(text, pattern):
+    """Label patterns match whole words: *RACK* finds "PARTS RACK" but not "BRACKET". A pattern with wildcards inside
+    (or a bracket set) falls back to shell matching over the whole label."""
+    rx = _WORD_CACHE.get(pattern)
+    if rx is None:
+        core = pattern.upper().strip("*")
+        if any(ch in core for ch in "*?["):
+            rx = False
+        else:
+            rx = re.compile(r"(?<![A-Z0-9])" + re.escape(core) + r"(?![A-Z0-9])")
+        _WORD_CACHE[pattern] = rx
+    if rx is False:
+        return fnmatch.fnmatch(text, pattern.upper())
+    if not pattern.startswith("*") and not text.startswith(pattern.upper().strip("*")):
+        return False
+    if not pattern.endswith("*") and not text.endswith(pattern.upper().strip("*")):
+        return False
+    return bool(rx.search(text))
 
 
 def _text_hit(o, patterns, near):
@@ -92,7 +118,7 @@ def _text_hit(o, patterns, near):
     for t, inside in [(t, True) for t in o.texts] + [(t, False) for t in extra]:
         u = t.upper()
         for x in patterns:
-            if fnmatch.fnmatch(u, x.upper()):
+            if _label_match(u, x):
                 return t, inside
     return None
 
@@ -137,6 +163,8 @@ def _check(o, r):
         why.append(("min_parts", f"{o.n} strokes"))
     if "max_parts" in r and o.n > r["max_parts"]:
         return None
+    if "max_cm" in r and L > r["max_cm"]:                 # a cap only excludes; it is not evidence
+        return None
     return why
 
 
@@ -149,8 +177,8 @@ def _params(o, r):
             pat = re.compile(src[5:], re.I)
             for t in o.texts + o.near_texts + getattr(o, "inner_texts", []):
                 m = pat.search(t)
-                if m:
-                    out[k] = m.group(0)
+                if m:                                      # a group named v is the value, else the whole match
+                    out[k] = m.group("v") if "v" in pat.groupindex else m.group(0)
                     break
         else:
             out[k] = src
@@ -261,3 +289,32 @@ def teach_rule(prof, rule, note=""):
     with open(path, "a", encoding="utf-8") as fh:
         fh.write(("\n# " + note if note else "") + "\n[[rules]]\n" + "".join(f"{k} = {_toml_value(v)}\n" for k, v in rule.items()))
     return rule
+
+
+def save_sizes(prof, sizes, source=""):
+    """Record standard block sizes in the user's profile, replacing earlier ones for the same type and layer."""
+    path = writable_profile(prof)
+    with open(path, encoding="utf-8") as fh:
+        lines = fh.read().split("\n")
+    keys = {(s["type"], s["layer"]) for s in sizes}
+    out, i = [], 0
+    while i < len(lines):                                 # drop old [[sizes]] blocks for the same type + layer
+        if lines[i].strip() == "[[sizes]]":
+            j = i + 1
+            while j < len(lines) and lines[j].strip() and not lines[j].startswith("["):
+                j += 1
+            block = lines[i:j]
+            t = next((ln.split("=", 1)[1].strip().strip('"') for ln in block if ln.startswith("type")), "")
+            lay = next((ln.split("=", 1)[1].strip().strip('"') for ln in block if ln.startswith("layer")), "")
+            if (t, lay) in keys:
+                i = j
+                continue
+        out.append(lines[i])
+        i += 1
+    text = "\n".join(out).rstrip("\n") + "\n"
+    for s in sizes:
+        text += (f'\n[[sizes]]\ntype = "{s["type"]}"\nlayer = "{s["layer"]}"\nsize = {_toml_value(s["size"])}\n'
+                 f'count = {s["count"]}\nsource = {_toml_value(source)}\n')
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return path

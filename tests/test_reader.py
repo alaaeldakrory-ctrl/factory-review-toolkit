@@ -139,3 +139,28 @@ def test_view_mapping_round_trips(team, tmp_path):
     back = (m["crop"][0] + u / k, m["crop"][3] - v / k)
     assert back == pytest.approx(jib.center)
     assert m["size"] == (int(1000 * k) + 1, int(800 * k) + 1)
+
+
+def test_labels_match_whole_words():
+    from frt_core.drawing.classify import _label_match
+    assert _label_match("PARTS RACK", "*RACK*") and _label_match("VMI RACK # 4", "*RACK*")
+    assert not _label_match("BRACKET, PUMP TRAY ES1932", "*RACK*")
+    assert not _label_match("STABLE", "*TABLE*") and _label_match("W. TABLE", "*TABLE*")
+    assert _label_match("TRASH", "TRASH") and not _label_match("TRASH CAN", "TRASH")
+    assert _label_match("1001236169 PIN ARM", "*1[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*")
+
+
+def test_shx_labels_and_rotated_text(tmp_path):
+    """AutoCAD keeps stroke-font (SHX) text as hidden comments; the reader takes them as labels."""
+    import fitz
+    from frt_core.drawing import pdf_import
+    doc = fitz.open()
+    pg = doc.new_page(width=300, height=200)
+    an = pg.add_rect_annot(fitz.Rect(50, 50, 120, 60))
+    an.set_info(content="7 LEVELS")
+    an.update()
+    path = str(tmp_path / "shx.pdf")
+    doc.save(path)
+    dr = pdf_import.load(path, scale=100)
+    t = next(t for t in dr.texts if t.text == "7 LEVELS")
+    assert t.layer == "SHX" and t.width > t.height

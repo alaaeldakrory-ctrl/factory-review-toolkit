@@ -215,9 +215,15 @@ def _attach_texts(dr, objs, reach):
     for txt, p in phrases(dr.texts):
         tw, th = sizes.get(txt.strip(), (len(txt) * 0.6 * 30, 30))
         hosts = [o for o in order if o.contains(p) and max(o.size) < 3000
-                 and not (max(o.size) <= 1.4 * max(tw, th) + 10 and min(o.size) <= 2.5 * min(tw, th) + 10)]
+                 and not (o.kind == "group" and not o.closed                  # a label's own strokes: loose
+                          and max(o.size) <= 1.4 * max(tw, th) + 10 and min(o.size) <= 2.5 * min(tw, th) + 10)]
         if hosts:
-            hosts[0].texts.append(txt)
+            h0 = hosts[0]
+            # a small label inside a big object names something in it (a cart under a jib), not the object
+            if max(h0.size) > 400 and max(tw, th) < 0.12 * max(h0.size):
+                h0.inner_texts.append(txt)
+            else:
+                h0.texts.append(txt)
             for o in hosts[1:]:
                 o.inner_texts.append(txt)
             continue

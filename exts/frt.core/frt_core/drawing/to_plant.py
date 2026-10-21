@@ -60,6 +60,50 @@ def _wall(cx, cy, W, D):
     return w, d[w], (cx if w in "SN" else cy)
 
 
+def _crane_systems(reading, o, c, loc, pl, counter):
+    """A crane frame with readable runways and bridges -> one bridge crane per runway pair, with its bridges where
+    they are drawn. False if the drawing does not show them (then the frame is placed as one default crane)."""
+    from .cranes import analyse
+    systems = analyse(reading.drawing, o)
+    if not systems:
+        return False
+    for sy in systems:
+        p, q = sy["runways"]
+        lo, hi = sy["along"]
+        length, span = hi - lo, q - p
+        if sy["axis"] == "y":                      # runways run north-south: local Z = plant y, f = 0 at the north end
+            cx, cy, rot = (p + q) / 2, (lo + hi) / 2, 0.0
+            fr = [(hi - b) / length for b in sy["bridges"]]
+        else:                                      # runways run east-west: turned 90, f = 0 at the west end
+            cx, cy, rot = (lo + hi) / 2, (p + q) / 2, 90.0
+            fr = [(b - lo) / length for b in sy["bridges"]]
+        fr = sorted(min(1.0, max(0.0, f)) for f in fr)
+        counter["bridge_crane"] = counter.get("bridge_crane", 0) + 1
+        eid = f"BC{counter['bridge_crane']}"
+        label = "; ".join([f"bridges={max(1, len(fr))}", f"girders={sy['girders']}",
+                           "bridge_positions=" + ",".join(f"{f:.3f}" for f in fr)]
+                          + [f"{k}={v}" for k, v in c.params.items()])
+        x, y = loc((cx, cy))
+        pl.equipment.append(Equip(eid, "bridge_crane", x, y, round(span + 50, 1), round(length, 1), rot,
+                                  f"obj#{o.id}", label))
+    return True
+
+
+FINISHED = ("FG", "FINISHED", "TERMINADO", "FINITO", "SHIPPING")
+
+
+def _in_finished_area(reading, o):
+    """A model spot inside an area labelled for finished goods (1 DAY FG INVENTORY) holds a finished machine."""
+    import re
+    for a, c in reading.items:
+        if a is o or max(a.size) < 600 or not a.contains(o.center):
+            continue
+        words = " ".join(a.texts + a.inner_texts).upper()
+        if any(re.search(r"(?<![A-Z])" + re.escape(w) + r"(?![A-Z])", words) for w in FINISHED):
+            return True
+    return False
+
+
 def to_plant(reading):
     (bx0, by0, bx1, by1), note = _building(reading)
     W, D = round(bx1 - bx0, 1), round(by1 - by0, 1)
@@ -90,8 +134,12 @@ def to_plant(reading):
             (pl.walkways if c.type == "walkway" else pl.aisles).append((x0, y0, round(x0 + o.size[0], 1), round(y0 + o.size[1], 1)))
         elif c.type == "operator":
             pl.operators.append({"pos": [cx, cy], "ref": f"obj#{o.id}", "confirmed": False})
+        elif c.type in ("crane", "bridge_crane") and _crane_systems(reading, o, c, loc, pl, counter):
+            pass
         elif c.type in TYPE_CATALOG:
             cat = TYPE_CATALOG[c.type]
+            if c.type == "staged_kit" and "kind" not in c.params and _in_finished_area(reading, o):
+                c.params["kind"] = "finished"
             counter[cat] = counter.get(cat, 0) + 1
             eid = f"{PREFIX.get(cat, cat[:2].upper())}{counter[cat]}"
             label = "; ".join(f"{k}={v}" for k, v in c.params.items())

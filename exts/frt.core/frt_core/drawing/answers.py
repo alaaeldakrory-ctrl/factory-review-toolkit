@@ -47,7 +47,7 @@ def save_key(reading, path=None, corrections=None):
 
 
 def load_key(path):
-    with open(key_path(path) if not path.endswith(".answers.json") else path, encoding="utf-8") as fh:
+    with open(path if path.endswith(".json") else key_path(path), encoding="utf-8") as fh:
         return json.load(fh)
 
 

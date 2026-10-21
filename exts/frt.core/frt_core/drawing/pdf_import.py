@@ -159,6 +159,27 @@ def load(path, page=0, scale=None, calibration=None, skip_layers=()):
             long_ = (y1 - y0) if vertical else (x1 - x0)
             dr.texts.append(Text(txt, centre, thick * k, "", f"pdf:{page}:t{bi}.{li}",
                                  long_ * k, vertical))
+    # AutoCAD keeps SHX (stroke-font) text as invisible comments over the drawn letters (PDFSHX): read them too
+    shx = 0
+    seen = {(t.text, round(t.pos[0]), round(t.pos[1])) for t in dr.texts}
+    for an in (pg.annots() or []):
+        txt = " ".join((an.info.get("content") or "").split())
+        if not txt:
+            continue
+        r = an.rect
+        cs = [(ra * x + rc * y + re_, rb * x + rd * y + rf) for x, y in ((r.x0, r.y0), (r.x1, r.y1))] if pg.rotation             else [(r.x0, r.y0), (r.x1, r.y1)]
+        w, h = abs(cs[1][0] - cs[0][0]), abs(cs[1][1] - cs[0][1])
+        vertical = h > 1.3 * w and len(txt) > 1
+        centre = P(((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2))
+        key = (txt, round(centre[0]), round(centre[1]))
+        if key in seen:
+            continue
+        seen.add(key)
+        thick, long_ = (w, h) if vertical else (h, w)
+        dr.texts.append(Text(txt, centre, thick * k, "SHX", f"pdf:{page}:a{an.xref}", long_ * k, vertical))
+        shx += 1
+    if shx:
+        dr.notes.append(f"{shx} stroke-font labels read from the PDF's hidden text")
     dr.notes.append(f"{len(dr.segs)} lines, {len(dr.polys)} closed shapes, {len(dr.texts)} words"
                     + (f", CAD layers: {len(dr.layers)}" if dr.layers else "") + (f", {skipped} paths skipped" if skipped else ""))
     return dr

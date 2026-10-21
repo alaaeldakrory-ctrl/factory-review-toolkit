@@ -60,9 +60,9 @@ class BinRack(Item):
 
 
 register(BinRack("bin_rack", "bin_rack", "Bin rack (shelving with picking bins)", {
-    "bays": Param(1, "bays side by side", 1, 10),
+    "bays": Param(1, "bays side by side", 1, 40),
     "width": Param(100.0, "bay width", 60, 150, "cm"),
-    "depth": Param(50.0, "shelf depth", 30, 80, "cm"),
+    "depth": Param(50.0, "shelf depth", 30, 150, "cm"),
     "height": Param(200.0, "upright height", 100, 300, "cm"),
     "shelves": Param(6, "shelf levels including the top", 2, 10),
     "bin_width": Param(20.0, "bin width", 10, 45, "cm"),
@@ -179,26 +179,47 @@ class BridgeCrane(Item):
                     s.cylinder((x, H - 90, z), (x, H, z + sg * 90), 2.5, colc, 6)
         for z in (zs[0], zs[-1]):                                                     # end ties between runways
             s.box((xs[0], H - 20, z - 6), (xs[1], H - 8, z + 6), colc)
-        bz = -Rw / 2 + 50 + (Rw - 100) * p["bridge"]
         top = H + rb
-        for x in xs:                                                                  # end trucks on the runways
-            s.box((x - 15, top, bz - 45), (x + 15, top + 22, bz + 45), c)
-            for wz in (bz - 32, bz + 32):
-                s.cylinder((x - 9, top + 6, wz), (x + 9, top + 6, wz), 6.0, "steel_dark", 12)
-        gd = 45.0 if S <= 1200 else 60.0                                               # bridge girder (box)
-        s.box((xs[0] - 10, top + 22, bz - 14), (xs[1] + 10, top + 22 + gd, bz + 14), c)
-        s.box((xs[0] - 10, top + 22 + gd, bz - 18), (xs[1] + 10, top + 25 + gd, bz + 18), c)
-        s.box((xs[0] + 20, top + 30, bz + 14), (xs[0] + 50, top + 60, bz + 30), "powder_grey")   # control panel
-        tx = -S / 2 + 60 + (S - 120) * p["trolley"]
-        s.box((tx - 30, top + 22 + gd, bz - 32), (tx + 30, top + 40 + gd, bz + 32), "steel_dark")  # top-running trolley
-        s.box((tx - 22, top - 25, bz + 18), (tx + 22, top + 35 + gd, bz + 36), c)                  # hoist hanging beside
-        s.cylinder((tx, top - 25, bz + 27), (tx, top - 45, bz + 27), 12.0, "steel_dark", 14)      # rope drum
-        hook_y = max(30.0, min(H - 80.0, p["hook_height"]))
-        _hook(s, tx, hook_y, bz + 27, top - 45, scale=1.3)
-        s.cylinder((tx + 18, top - 25, bz + 34), (tx + 18, 125, bz + 34), 0.5, "plastic_black", 5)
-        s.box((tx + 13, 100, bz + 30), (tx + 23, 127, bz + 40), "powder_yellow")                   # pendant
+        n = max(1, int(p["bridges"]))
+        if p["bridge_positions"].strip():                                             # fractions along the runway
+            fr = [min(1.0, max(0.0, float(v))) for v in p["bridge_positions"].split(",") if v.strip()][:n] or [0.5]
+        elif n == 1:
+            fr = [p["bridge"]]
+        else:
+            fr = [(k + 0.5) / n for k in range(n)]
+        gd = 45.0 if S <= 1200 else 60.0                                               # girder depth (box)
+        dbl = int(p["girders"]) >= 2
+        gap = 60.0                                                                    # between twin girders
+        attach = {}
+        for bi, f in enumerate(fr):
+            bz = -Rw / 2 + 50 + (Rw - 100) * f
+            half = 45 + (gap / 2 if dbl else 0)
+            for x in xs:                                                              # end trucks on the runways
+                s.box((x - 15, top, bz - half), (x + 15, top + 22, bz + half), c)
+                for wz in (bz - half + 13, bz + half - 13):
+                    s.cylinder((x - 9, top + 6, wz), (x + 9, top + 6, wz), 6.0, "steel_dark", 12)
+            for gz in ((bz - gap / 2, bz + gap / 2) if dbl else (bz,)):
+                s.box((xs[0] - 10, top + 22, gz - 14), (xs[1] + 10, top + 22 + gd, gz + 14), c)
+                s.box((xs[0] - 10, top + 22 + gd, gz - 18), (xs[1] + 10, top + 25 + gd, gz + 18), c)
+            s.box((xs[0] + 20, top + 30, bz + half - 31), (xs[0] + 50, top + 60, bz + half - 15), "powder_grey")
+            tx = -S / 2 + 60 + (S - 120) * p["trolley"]
+            if dbl:                                                                   # crab running between the girders
+                s.box((tx - 40, top + 22 + gd, bz - gap / 2 - 10), (tx + 40, top + 42 + gd, bz + gap / 2 + 10), "steel_dark")
+                s.box((tx - 25, top - 10, bz - 20), (tx + 25, top + 22 + gd, bz + 20), c)
+                hz = bz
+            else:
+                s.box((tx - 30, top + 22 + gd, bz - 32), (tx + 30, top + 40 + gd, bz + 32), "steel_dark")
+                s.box((tx - 22, top - 25, bz + 18), (tx + 22, top + 35 + gd, bz + 36), c)
+                hz = bz + 27
+            s.cylinder((tx, top - 25, hz), (tx, top - 45, hz), 12.0, "steel_dark", 14)     # rope drum
+            hook_y = max(30.0, min(H - 80.0, p["hook_height"]))
+            _hook(s, tx, hook_y, hz, top - 45, scale=1.3)
+            s.cylinder((tx + 18, top - 25, hz + 7), (tx + 18, 125, hz + 7), 0.5, "plastic_black", 5)
+            s.box((tx + 13, 100, hz + 3), (tx + 23, 127, hz + 13), "powder_yellow")                  # pendant
+            attach[f"hook{bi + 1}" if n > 1 else "hook"] = (tx, hook_y, hz)
+            attach[f"bridge{bi + 1}" if n > 1 else "bridge"] = (0, top, bz)
         shapes_to_stage(stage, path, s, lib)
-        return {"hook": (tx, hook_y, bz + 27), "bridge": (0, top, bz)}
+        return attach
 
 
 register(BridgeCrane("bridge_crane", "crane_bridge", "Freestanding bridge (workstation) crane", {
@@ -206,7 +227,10 @@ register(BridgeCrane("bridge_crane", "crane_bridge", "Freestanding bridge (works
     "runway": Param(1200.0, "runway length", 300, 6000, "cm"),
     "height": Param(550.0, "runway beam underside height", 300, 1200, "cm"),
     "column_spacing": Param(600.0, "max distance between runway columns", 300, 1200, "cm"),
-    "bridge": Param(0.5, "bridge position along the runway (0-1)", 0, 1),
+    "bridge": Param(0.5, "bridge position along the runway (0-1), one bridge", 0, 1),
+    "bridges": Param(1, "bridges on the runways", 1, 8),
+    "bridge_positions": Param("", "bridge positions along the runway, fractions 0-1, comma separated"),
+    "girders": Param(1, "girders per bridge (1 single, 2 double)", 1, 2),
     "trolley": Param(0.5, "trolley position along the bridge (0-1)", 0, 1),
     "hook_height": Param(200.0, "hook height above the floor", 30, 1200, "cm"),
     "colour": Param("powder_yellow", "bridge, trucks, hoist"),

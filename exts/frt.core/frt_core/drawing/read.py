@@ -151,7 +151,45 @@ def _stations(dr, objs, classes, prof):
         kind = m.group(1).upper()
         title = (f"Test {num}" if kind in ("TEST", "PRUEBA", "COLLAUDO") else f"Station {num}")
         out.append(ReadStation(title, tasks, p, tuple(round(v, 1) for v in box), src, anchor))
+    out += _unlabelled_stations(objs, classes, used, cfg)
     out.sort(key=lambda s: (s.name.split()[0], int(re.sub(r"\D", "", s.name.split()[-1]) or 0)))
+    return out
+
+
+def _unlabelled_stations(objs, classes, used, cfg):
+    """Stations nobody labelled: a machine (scissor, boom, telehandler...) with a rectangle around it, or standing on
+    a lift table. A box named in review names its station; the rest are numbered in reading order."""
+    units = [o for o, c in zip(objs, classes) if c.type == "product_unit" and o.id not in used]
+    if not units:
+        return []
+    boxes = [(o, c) for o, c in zip(objs, classes)
+             if o.rect and c.type not in ("staged_kit", "room", "area", "column", "wall", "ignore", "material_location")]
+    tables = [o for o, c in zip(objs, classes) if c.type == "lift_table"]
+    pad = cfg.get("box_margin_cm", 120)
+    found = []
+    for u in units:
+        ua = u.size[0] * u.size[1]
+        host = None
+        for b, c in sorted(boxes, key=lambda bc: bc[0].size[0] * bc[0].size[1]):
+            ba = b.size[0] * b.size[1]
+            if b is u or not b.contains(u.center) or not (1.15 * ua < ba < 12 * ua):
+                continue
+            host = (b, c)
+            break
+        lift = next((t for t in tables if t.contains(u.center, 30) or u.contains(t.center)), None)
+        if host is None and lift is None:
+            continue
+        if host is not None:
+            box, src, name = host[0].bbox, "machine with a box around it", host[1].params.get("name", "")
+        else:
+            x0, y0, x1, y1 = u.bbox
+            box, src, name = (x0 - pad, y0 - pad, x1 + pad, y1 + pad), "machine on a lift table", ""
+        found.append((u, box, src, name))
+    found.sort(key=lambda f: (round(-f[0].center[1] / 500), f[0].center[0]))      # rows top to bottom, left to right
+    out, n = [], 0
+    for u, box, src, name in found:
+        n += 0 if name else 1
+        out.append(ReadStation(name or f"Unnamed {n}", [], u.center, tuple(round(v, 1) for v in box), src, u.id))
     return out
 
 
@@ -233,7 +271,7 @@ def add_override(path, at, type_, params=None, size=None):
     return save_settings(path, overrides=cur + [entry])
 
 
-ENGINE = "reader-4"            # bump when import or grouping changes, so old caches are not used
+ENGINE = "reader-7"            # bump when import or grouping changes, so old caches are not used
 
 
 def _import_and_group(path, kw, imp):
@@ -287,4 +325,16 @@ def read(path, profile=None, calibration=None, scale=None, min_confidence=0.3, u
     _apply_overrides(objs, classes, st.get("overrides", []))
     r = Reading(dr, objs, classes, profile=prof)
     r.stations = _stations(dr, objs, classes, prof)
+    if (path.lower().endswith(".pdf") and calibration is None and not scale and prof.get("sizes")
+            and any("assumed 1:100" in n for n in dr.notes)):
+        # no scale on the sheet: use the team's standard blocks, remember it, read again at that scale
+        from .scale import from_known_sizes
+        f, votes, why = from_known_sizes(r, prof["sizes"])
+        if f:
+            k = dr.cm_per_pt * f
+            save_settings(path, calibration={"a": [0.0, 0.0], "b": [100.0, 0.0], "distance": f"{100 * k:.2f}cm"},
+                          scale_note=f"from known block sizes: {why}; check it with Calibrate")
+            r = read(path, profile, None, None, min_confidence, use_cache)
+            r.drawing.notes.append(f"scale from the team's known block sizes ({why}), about 1:{k * 10 / 0.3527778:.0f}; "
+                                   f"check it with Calibrate")
     return r

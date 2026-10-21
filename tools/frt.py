@@ -6,6 +6,8 @@
                                                                          what the reader understood, with reasons
     python tools/frt.py teach    plant.pdf <object id> <type> [key=value]   name a shape; identical shapes follow
     python tools/frt.py set      plant.pdf <object id> <type> [key=value]   correct one object in this drawing only
+    python tools/frt.py learn-sizes plant.pdf                         remember the team's block sizes (calibrated drawing)
+    python tools/frt.py baseline plant.pdf                              keep this reading to spot changes (not an answer key)
     python tools/frt.py confirm  plant.pdf                              save the reviewed reading as its answer key
     python tools/frt.py score    plant.pdf [more ...]                   score the reader against the answer keys
     python tools/frt.py drawing  plant.dxf|plant.pdf [legend.toml]     read a drawing and print what was recognised
@@ -103,6 +105,19 @@ def main(argv):
             import read_view
             read_view.render(r, view, tuple(map(float, crop.split(","))) if crop else None, 40)
             print("->", view)
+    elif cmd == "learn-sizes":
+        from frt_core.drawing import classify, scale
+        from frt_core.drawing.read import read
+        r = read(args[0])
+        sz = scale.learn_sizes(r)
+        path = classify.save_sizes(r.profile, sz, os.path.basename(args[0]))
+        for s_ in sz:
+            print(f"  {s_['type']} on {s_['layer']}: {s_['size'][0]:.0f} x {s_['size'][1]:.0f} cm ({s_['count']} seen)")
+        print("->", path)
+    elif cmd == "baseline":
+        from frt_core.drawing import answers
+        from frt_core.drawing.read import read
+        print("baseline ->", answers.save_key(read(args[0]), args[0] + ".baseline.json"))
     elif cmd in ("confirm", "score"):
         from frt_core.drawing import answers
         from frt_core.drawing.read import read
@@ -110,8 +125,9 @@ def main(argv):
             print("answer key ->", answers.save_key(read(args[0])))
             return 0
         tot = []
-        for path in args:
-            sc = answers.score(read(path))
+        base = "--baseline" in args
+        for path in [a_ for a_ in args if a_ != "--baseline"]:
+            sc = answers.score(read(path), answers.load_key(path + ".baseline.json") if base else None)
             tot.append(sc["f1"])
             print(f"{os.path.basename(path)}: F1 {sc['f1']:.3f} over {sc['items']} items; stations {sc['stations']}")
             for t, v in sorted(sc["types"].items()):
