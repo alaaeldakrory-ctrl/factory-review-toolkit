@@ -13,6 +13,7 @@ import omni.usd
 from pxr import Gf
 
 from frt_core import drawing as DRW
+from frt_core import layout as LAY
 from frt_core import package as PKG
 from frt_core import recipe as RCP
 from frt_core import revision as REV
@@ -208,6 +209,9 @@ class ReviewWindow:
         await self._frames(2)
         self.findings = VAL.validate(stage, package_root=os.path.dirname(_stage_file()) or None)
         path = _stage_file()
+        plant = os.path.splitext(path)[0] + ".plant.json" if path else ""
+        if os.path.isfile(plant):                       # built from a drawing: layout checks on its plan too
+            self.findings.extend(LAY.check(plant))
         if path:
             self.findings.save(os.path.splitext(path)[0] + ".findings.json")
         self._show_findings()

@@ -132,7 +132,7 @@ def test_revision_diff():
     a = D.read_plant(drawing("demo_plant_revA.dxf"))
     b = D.read_plant(drawing("demo_plant_revB.pdf"))                    # across formats on purpose
     ch = {(c.kind, c.id) for c in revision.diff(a, b)}
-    assert ("removed", "P4") in ch and ("added", "FR5") in ch
+    assert ("removed", "P4") in ch and ("added", "FR5") in ch and ("added", "P5") in ch
     assert ("resized", "Station 3") in ch and ("moved", "Station 4") in ch
     assert ("changed", "R1") in ch and ("moved", "T3") in ch
     assert not any(k in ("Station 1", "T1", "R2", "C1") for _, k in ch)
@@ -183,3 +183,29 @@ def test_safe_stage_refuses_scene_open_elsewhere(tmp_path):
     with usdio.safe_stage(out) as st:
         UsdGeom.Xform.Define(st, "/C")
     assert not os.path.exists(usdio.marker_path(out))
+
+
+def test_layout_checks():
+    from frt_core import drawing as D
+    from frt_core import layout, rules as RL
+    a = D.read_plant(drawing("demo_plant_revA.dxf"))
+    b = D.read_plant(drawing("demo_plant_revB.pdf"))
+    fa, fb = layout.check(a), layout.check(b)
+    assert list(fa) == []                                                # rev A: a clean layout
+    # move the main aisle onto the y = 20 m column line and drop the east exit: both are caught
+    from dataclasses import asdict
+    bad = asdict(a)
+    bad["aisles"][0] = [0.0, 1800.0, 6000.0, 2200.0]
+    bad["doors"] = [d for d in bad["doors"] if not (d["kind"] == "door" and d["wall"] == "E")]
+    fbad = layout.check(bad)
+    col = next(f for f in fbad if f.check == "layout.column_in_aisle")
+    assert col.value == pytest.approx(180) and col.severity == "critical" and "5 building column" in col.message
+    assert any(f.check == "layout.exit_travel" for f in fbad)
+    blocked = [f for f in fb if f.check == "layout.in_aisle"]
+    assert len(blocked) == 1 and "P5" in blocked[0].message and blocked[0].severity == "critical"
+    assert blocked[0].location is not None and blocked[0].view
+    # a stricter plant rule pack: the 4 m main aisle now fails, the 3.5 m cross aisle too
+    strict = RL.Rules({"layout": {"main_aisle_min_cm": 450, "cross_aisle_min_cm": 380, "exit_travel_max_cm": 10000}}, [])
+    widths = [f for f in layout.check(a, strict) if f.check == "layout.aisle_width"]
+    assert len(widths) == 2
+    assert not any(f.check == "layout.exit_travel" for f in layout.check(a, strict))

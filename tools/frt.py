@@ -3,6 +3,7 @@
     python tools/frt.py build    samples/recipes/demo_plant.toml      build a scene from a recipe (+ validate)
     python tools/frt.py drawing  plant.dxf|plant.pdf [legend.toml]     read a drawing and print what was recognised
     python tools/frt.py diff     old.dxf|old.plant.json new.dxf|.pdf     what changed between two drawing revisions
+    python tools/frt.py layout   plant.dxf|.pdf|scene.plant.json       layout checks: aisles, exits, stations
     python tools/frt.py validate scene.usd [--auto-tag]                 check a scene, write <scene>.findings.json
     python tools/frt.py package  scene.usd out_dir                      portable folder with every dependency
     python tools/frt.py catalog                                         list catalog items and their parameters
@@ -47,6 +48,13 @@ def main(argv):
         print(f"{len(ch)} changes")
         for c in ch:
             print("  ", c)
+    elif cmd == "layout":
+        from frt_core import drawing, layout
+        p = args[0] if args[0].endswith(".json") else drawing.read_plant(args[0])
+        fl = layout.check(p)
+        print(fl.summary())
+        for f in fl:
+            print(f"  [{f.severity}] {f.message}")
     elif cmd == "validate":
         from pxr import Usd
         from frt_core import tags, validate

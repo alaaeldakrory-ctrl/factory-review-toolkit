@@ -49,7 +49,7 @@ Here `sx` and `sz` are the bay's real size divided by T, so a 12 m bay is stretc
 | Roll-up door | A09 (medium), A02 (large), A10 (double sectional), A08 (high-speed) |
 | Dock | A03 (single), A07 (with leveler), A11 (double), A06 (with trailer) |
 
-The pack has no personnel-door module, so the generator adds its own door sets: frame, leaf, handle and exit sign.
+The pack has no personnel-door module, so the generator adds its own door sets: frame, leaf, push bar and exit sign.
 
 ## Materials
 

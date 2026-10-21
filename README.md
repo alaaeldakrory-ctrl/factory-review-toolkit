@@ -13,7 +13,7 @@ keep it in step when the drawing changes.
 | Recognition | The building, column grid, doors and docks, aisles, walkways, stations and equipment are recognised. |
 | Building | The real building is generated from NVIDIA's modular warehouse sections. |
 | Equipment | Equipment is placed from a parametric catalog. |
-| Review | The scene is validated and the findings are listed. |
+| Review | The scene is validated and layout-checked, and the findings are listed. |
 | Revisions | A new drawing revision is compared and the scene is updated to it. |
 | Packaging | The scene is packaged so it opens on another PC. |
 
@@ -55,7 +55,16 @@ layout.dxf / layout.pdf ──► read + clean ──► interpret ──► rec
   - implausible sizes;
   - missing assets and absolute asset paths.
 
-  Findings carry a location and a camera view. Click **Go** to fly there.
+- **Layout checks** (on the drawing's plan):
+  - aisle and walkway widths;
+  - equipment standing in aisles or walkways;
+  - building columns inside aisles;
+  - walkways too close to forklift aisles;
+  - exit travel distance to personnel doors;
+  - items sticking out of their station marking.
+
+  All limits come from a TOML rule pack you can override per plant. Findings carry a location and a camera view.
+  Click **Go** to fly there.
 - **Revisions.** Compare a new DXF or PDF with the built scene to see what was added, removed, moved or resized,
   then rebuild with **Update scene to it**.
 - **Packaging.** Copies every layer, material and texture (UDIM tiles included) into one folder with relative paths.
@@ -92,11 +101,12 @@ and tests).
 python tools/frt.py build    samples/recipes/demo_plant.toml      build a scene from a recipe (+ validate)
 python tools/frt.py drawing  plant.dxf|plant.pdf [legend.toml]     what the drawing says
 python tools/frt.py diff     old.dxf|old.plant.json new.dxf|.pdf     what changed between two revisions
+python tools/frt.py layout   plant.dxf|.pdf|scene.plant.json       layout checks only
 python tools/frt.py validate scene.usd [--auto-tag]                 check any scene
 python tools/frt.py package  scene.usd out_dir                      portable folder
 python tools/frt.py catalog                                         catalog items and their parameters
 python tools/frt.py preview  scene.usd out.png [overview|plan]      quick offline picture
-python -m pytest tests                                              46 tests
+python -m pytest tests                                              47 tests
 ```
 
 A command-line build refuses to replace a scene that Kit has open: the Kit extension leaves a `<scene>.open` marker.
@@ -144,7 +154,8 @@ exts/frt.core/frt_core/    core library (pure Python + pxr; runs in Kit and outs
   drawing/                 DXF / PDF import, alignment, interpretation, legend
   building/warehouse_a.py  building generator
   recipe.py                recipe -> scene
-  validate.py rules/       checks and rule packs (TOML)
+  validate.py layout.py    scene checks and plan (layout) checks
+  rules/                   rule packs (TOML)
   revision.py package.py usdio.py findings.py tags.py materials.py geom.py units.py
 exts/frt.scene/            Kit UI: Window > Factory Review
 samples/                   generic Demo Plant drawings (rev A/B, DXF + PDF) and recipe

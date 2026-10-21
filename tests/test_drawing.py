@@ -10,7 +10,9 @@ REVS = ["demo_plant_revA.dxf", "demo_plant_revA.pdf", "demo_plant_revB.dxf", "de
 
 @pytest.fixture(scope="module", params=REVS)
 def plant(request):
-    return D.read_plant(drawing(request.param))
+    p = D.read_plant(drawing(request.param))
+    p.rev = "B" if "revB" in request.param else "A"
+    return p
 
 
 def test_building_outline(plant):
@@ -21,7 +23,7 @@ def test_building_outline(plant):
 
 def test_doors(plant):
     kinds = sorted((d.kind, d.wall) for d in plant.doors)
-    assert kinds == [("dock", "S")] * 3 + [("door", "N"), ("door", "W"), ("rollup", "E")]
+    assert kinds == [("dock", "S")] * 3 + [("door", "E"), ("door", "N"), ("door", "W"), ("rollup", "E")]
 
 
 def test_floor(plant):
@@ -39,7 +41,7 @@ def test_stations(plant):
 
 def test_equipment(plant):
     ids = {e.id: e for e in plant.equipment}
-    assert len(ids) == 34
+    assert len(ids) == (35 if plant.rev == "B" else 34)                 # B: +FR5 +P5 -P4
     assert {k for k, e in ids.items() if e.catalog == "pallet_rack"} == {"R1", "R2", "R3"}
     assert ids["R2"].depth > 200                                      # double row, back to back
     assert ids["FL1"].catalog == "forklift"

@@ -44,6 +44,7 @@ from pxr import Gf, Sdf, UsdGeom, UsdLux
 
 from . import catalog as CAT
 from . import drawing as DRW
+from . import layout as LAY
 from . import tags as T
 from . import units as U
 from . import validate as V
@@ -256,6 +257,8 @@ def build(recipe, validate=True, log=print):
         from pxr import Usd
         st = Usd.Stage.Open(out)
         fl = V.validate(st)
+        if plant:
+            fl.extend(LAY.check(plant))
         fl.save(base + ".findings.json")
         result["findings"] = base + ".findings.json"
         result["summary"] = fl.summary()

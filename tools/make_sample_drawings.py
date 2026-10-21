@@ -4,13 +4,13 @@ stray lines, equipment as named blocks (DXF) or labelled rectangles (PDF).
 
     python tools/make_sample_drawings.py [out_dir]       -> demo_plant_revA.dxf / .pdf, demo_plant_revB.dxf / .pdf
 
-Plant: a 60 x 40 m lift assembly hall, 10 m column grid A-G x 1-5, three docks and a roll-up door, two personnel
-doors, a 4 m main aisle with a cross aisle, a walkway. Line 1 (scissor lifts): Stations 1-4 with a table, a lift
+Plant: a 60 x 40 m lift assembly hall, 10 m column grid A-G x 1-5, three docks and a roll-up door, three personnel
+doors, a 4 m main aisle and a 3.5 m cross aisle between the column lines, a walkway. Line 1 (scissor lifts): Stations 1-4 with a table, a lift
 table and a line-side flow rack each. Line 2 (boom lifts / telehandlers): Stations 5-7, labelled beside the station
 rectangle. Pallet racking (two single rows, one back-to-back double row), a kitting conveyor, a receiving area
 (pallets, crates, forklift). Bin racks at stations 1-4, jib cranes at stations 5-6, a workstation bridge crane over
 station 7. Revision B widens Station 3 and shifts Station 4, moves table T3, extends rack R1 by a
-bay, adds flow rack FR5 and removes pallet P4.
+bay, adds flow rack FR5, removes pallet P4 and stages pallet P5 in the main aisle.
 """
 import os
 import sys
@@ -35,7 +35,7 @@ def stations(rev):
         x1 = x0 + (7000 if (rev == "B" and s == 3) else 6000)
         if rev == "B" and s == 4:
             x0, x1 = x0 + 1000, x1 + 1000
-        st.append((f"Station {s}", f"STATION {s}", x0, 23000, x1, 28000, True))
+        st.append((f"Station {s}", f"STATION {s}", x0, 25500, x1, 30500, True))
     for s in range(5, 8):
         x0 = 2000 + (s - 5) * 9000
         st.append((f"Station {s}", f"STN {s}", x0, 11000, x0 + 8000, 17000, False))
@@ -48,10 +48,10 @@ def equipment(rev):
     for name, _, x0, y0, x1, y1, _ in stations(rev)[:4]:
         s = int(name.split()[1])
         cx = (x0 + x1) / 2
-        eq += [(f"T{s}", "TABLE", cx + (800 if rev == "B" and s == 3 else 0), 27200, 1800, 800, 0),
-               (f"LT{s}", "LIFTTABLE", cx, 25200, 1300, 800, 0),
-               (f"FR{s}", "FLOWRACK", cx, 29600, 3680, 1800, 0),
-               (f"BR{s}", "BINRACK", x0 + 700, 25500, 1000, 500, 0)]
+        eq += [(f"T{s}", "TABLE", cx + (800 if rev == "B" and s == 3 else 0), 29700, 1800, 800, 0),
+               (f"LT{s}", "LIFTTABLE", cx, 27700, 1300, 800, 0),
+               (f"FR{s}", "FLOWRACK", cx, 32500, 3680, 1800, 0),
+               (f"BR{s}", "BINRACK", x0 + 700, 28000, 1000, 500, 0)]
     for name, _, x0, y0, x1, y1, _ in stations(rev)[4:]:
         s = int(name.split()[1])
         eq.append((f"T{s}", "TABLE", x0 + 1500, 11700, 1800, 800, 0))
@@ -64,8 +64,8 @@ def equipment(rev):
         ("R1", "PALLETRACK", 2000 + (bays1 * 2700 + (bays1 + 1) * 80) / 2, 8000, bays1 * 2700 + (bays1 + 1) * 80, 1100, 0),
         ("R2", "PALLETRACK", 45000, 36800, 8 * 2700 + 9 * 80, 2500, 0),
         ("R3", "PALLETRACK", 2000 + (9 * 2700 + 10 * 80) / 2, 38200, 9 * 2700 + 10 * 80, 1100, 0),
-        ("C1", "CONVEYOR", 47000, 26000, 6000, 720, 0),
-        ("T8", "TABLE", 46000, 24600, 1800, 800, 0),
+        ("C1", "CONVEYOR", 47000, 28500, 6000, 720, 0),
+        ("T8", "TABLE", 46000, 27100, 1800, 800, 0),
         ("P1", "PALLET", 42000, 4000, 1200, 1000, 0),
         ("P2", "PALLET", 43800, 4000, 1200, 1000, 0),
         ("P3", "PALLET", 45600, 4000, 1200, 1000, 0),
@@ -76,16 +76,18 @@ def equipment(rev):
     ]
     if rev == "B":
         eq = [e for e in eq if e[0] != "P4"]
-        eq.append(("FR5", "FLOWRACK", 34000, 29600, 3680, 1800, 0))
+        eq.append(("FR5", "FLOWRACK", 34000, 32500, 3680, 1800, 0))
+        eq.append(("P5", "PALLET", 31000, 22500, 1200, 1000, 0))     # staged in the main aisle
     return eq
 
 
 DOORS = [  # (kind, wall, position along the wall from its start (mm), width)
     ("DOCK", "S", 15000, 3000), ("DOCK", "S", 25000, 3000), ("DOCK", "S", 35000, 3000),
-    ("ROLLUP", "E", 20000, 4000), ("DOOR", "N", 5000, 1000), ("DOOR", "W", 30000, 1000),
+    ("ROLLUP", "E", 20000, 4000), ("DOOR", "N", 5000, 1000), ("DOOR", "W", 30000, 1000), ("DOOR", "E", 32000, 1000),
 ]
-AISLES = [("MAIN", 0, 18000, 60000, 22000), ("CROSS", 38000, 0, 41000, 18000)]           # x0, y0, x1, y1
-WALKWAYS = [("WALK", 1000, 31000, 59000, 32200)]
+# aisles run between column lines (columns at every 10 m), never down them
+AISLES = [("MAIN", 0, 20500, 60000, 24500), ("CROSS", 31500, 0, 35000, 20500)]           # x0, y0, x1, y1
+WALKWAYS = [("WALK", 1000, 33700, 59000, 34900)]
 
 
 def door_point(wall, s):

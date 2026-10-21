@@ -24,6 +24,13 @@ First working slice: Phase 0 (foundation) and the start of Phase 1 (drawings to 
   - Mirrors the source folder layout, so relative paths inside asset packs keep working.
   - UDIM tiles and MDL texture references are followed.
   - Replaces `UsdUtils.LocalizeAsset`, which broke nested-layer paths.
+- Layout checks on the plan:
+  - aisle and walkway widths;
+  - equipment in aisles or walkways;
+  - columns in aisles, with the clear width beside them;
+  - walkway separation from forklift aisles;
+  - rectilinear exit travel distance to personnel doors;
+  - items crossing their station's marking.
 - Revision diff:
   - Equipment by tag, stations by name, doors, building size.
   - Results can become findings with views.
@@ -70,10 +77,10 @@ First working slice: Phase 0 (foundation) and the start of Phase 1 (drawings to 
 - Pinned pip dependencies installed with `--no-deps`, so Kit's own numpy is never shadowed.
 
 ### Samples and tools
-- Generic "Demo Plant": a 60 x 40 m lift assembly hall.
+- Generic "Demo Plant": a 60 x 40 m lift assembly hall, laid out with its aisles between the column lines.
   - Two lines, seven stations, three pallet rack rows.
   - Bin racks, jib cranes, a bridge crane, a kitting conveyor and a receiving area.
-  - Rev A and rev B, each as DXF and PDF.
+  - Rev A and rev B, each as DXF and PDF. Rev B stages a pallet in the main aisle, which the layout check catches.
 - CLI: build, drawing, diff, validate, package, catalog, preview.
 - Offline previewer and catalog sheet.
-- 46 pytest tests.
+- 47 pytest tests.
