@@ -161,10 +161,32 @@ def finish_kind(name):
     return None
 
 
+# how used each finish looks (FrtWorn): edge wear / scratches / grime from the floor / dust on tops / stains.
+# Low on purpose: a plant floor that is looked after. Bare metals and plastics do not chip; they collect grime.
+WEAR = {
+    "powder": dict(wear_amount=0.22, scratch_amount=0.04, dirt_amount=0.30, dust_amount=0.15, stain_amount=0.18),
+    "satin": dict(wear_amount=0.12, scratch_amount=0.04, dirt_amount=0.25, dust_amount=0.10, stain_amount=0.20),
+    "galv": dict(dirt_amount=0.25, dust_amount=0.15, stain_amount=0.10),
+    "steel": dict(dirt_amount=0.20, dust_amount=0.10, stain_amount=0.08),
+    "polished": dict(dirt_amount=0.08, dust_amount=0.05),
+    "cast": dict(dirt_amount=0.25, dust_amount=0.15, stain_amount=0.12),
+    "plastic": dict(dirt_amount=0.18, dust_amount=0.12, stain_amount=0.05),
+    "rubber": dict(dirt_amount=0.12, dust_amount=0.20),
+    "concrete": dict(dirt_amount=0.0, dust_amount=0.0, stain_amount=0.25),
+    "cardboard": dict(dirt_amount=0.15, dust_amount=0.10),
+}
+WORN_MDL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "frt_worn.mdl")
+WORN_REL = "./materials/frt_worn.mdl"
+
+
 class MaterialLibrary:
-    def __init__(self, stage, root="/World/Looks", textures=NV_MATS, presets=True):
+    def __init__(self, stage, root="/World/Looks", textures=NV_MATS, presets=True, worn=True, age=1.0):
+        """age scales every wear amount: 0 = new from the factory, 1 = a looked-after plant floor (default),
+        2-3 = years of hard use."""
         self.stage, self.root, self.textures = stage, root.rstrip("/"), textures
+        self.age = float(age)
         self.presets = presets
+        self.worn = worn and os.path.isfile(WORN_MDL)
         self._cache = {}
 
     def names(self):
@@ -244,7 +266,9 @@ class MaterialLibrary:
 
     def _generated(self, mat, sh, name, path, srgb, lin, rough, metal, maps, C3, F, B, A, F2):
         """OmniPBR on the generated maps: albedo variation tinted to the finish colour, roughness map, normal map,
-        UVs in metres (one tile = maps["tile"] m)."""
+        UVs in metres (one tile = maps["tile"] m). With `worn`, the FrtWorn layer on top (see data/frt_worn.mdl)."""
+        if self.worn:
+            return self._worn(mat, sh, name, path, srgb, lin, rough, metal, maps, C3, F, B, A, F2)
         sh.SetSourceAsset(Sdf.AssetPath("OmniPBR.mdl"), "mdl")
         sh.SetSourceAssetSubIdentifier("OmniPBR", "mdl")
         rel = maps["rel"]
@@ -270,6 +294,43 @@ class MaterialLibrary:
         sh.CreateInput("project_uvw", B).Set(False)
         t = 1.0 / float(maps["tile"])                                  # OmniPBR multiplies the UVs: tiles per metre
         sh.CreateInput("texture_scale", F2).Set(Gf.Vec2f(t, t))
+        out = sh.CreateOutput("out", Sdf.ValueTypeNames.Token)
+        for o in (mat.CreateSurfaceOutput("mdl"), mat.CreateDisplacementOutput("mdl"), mat.CreateVolumeOutput("mdl")):
+            o.ConnectToSource(out)
+        pv = self._preview(mat, path, lin, rough, metal, C3, F)
+        self._preview_maps(pv, path, rel, tint, t)
+        ref = MatRef(mat, srgb)
+        self._cache[name] = ref
+        return ref
+
+    def _worn(self, mat, sh, name, path, srgb, lin, rough, metal, maps, C3, F, B, A, F2):
+        from . import textures as GT
+        kind = finish_kind(name)
+        wm = GT.wear_maps()["rel"]
+        rel = maps["rel"]
+        sh.SetSourceAsset(Sdf.AssetPath(WORN_REL), "mdl")
+        sh.SetSourceAssetSubIdentifier("FrtWorn", "mdl")
+        m = max(maps["mean"], 0.05)
+        k = PAINT_ALBEDO if kind in ("powder", "satin") else 1.0
+        tint = tuple(min(c * k / m, 4.0) for c in lin)
+        sh.CreateInput("paint_tint", C3).Set(Gf.Vec3f(*tint))
+        for key, inp, cs in (("albedo", "albedo_texture", "sRGB"), ("roughness", "roughness_texture", "raw"),
+                             ("normal", "normal_texture", "raw")):
+            a = sh.CreateInput(inp, A)
+            a.Set(Sdf.AssetPath(rel[key]))
+            a.GetAttr().SetColorSpace(cs)
+        for key in ("chip", "scratch", "stain"):
+            a = sh.CreateInput(f"{key}_texture", A)
+            a.Set(Sdf.AssetPath(wm[key]))
+            a.GetAttr().SetColorSpace("raw")
+        t = 1.0 / float(maps["tile"])
+        sh.CreateInput("tile", F).Set(t)
+        sh.CreateInput("metallic", F).Set(float(metal))
+        sh.CreateInput("edge_radius", F).Set(0.15)
+        amounts = dict(wear_amount=0.0, scratch_amount=0.0, dirt_amount=0.0, dust_amount=0.0, stain_amount=0.0)
+        amounts.update(WEAR.get(kind, {}))                              # only paint chips and scratches
+        for key, v in amounts.items():
+            sh.CreateInput(key, F).Set(float(v) * self.age)
         out = sh.CreateOutput("out", Sdf.ValueTypeNames.Token)
         for o in (mat.CreateSurfaceOutput("mdl"), mat.CreateDisplacementOutput("mdl"), mat.CreateVolumeOutput("mdl")):
             o.ConnectToSource(out)

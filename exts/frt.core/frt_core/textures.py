@@ -235,9 +235,12 @@ def localize(scene):
     """Copy the generated maps a saved scene refers to into <scene dir>/textures (regenerating any missing from
     the cache). Returns the number of files copied."""
     n = 0
+    here = os.path.dirname(os.path.abspath(scene))
     for kind, name in used(scene):
         src = os.path.join(ROOT, kind, name + ".png")
-        if not os.path.isfile(src) and kind in KINDS:
+        if not os.path.isfile(src) and kind == "wear":
+            wear_maps()
+        elif not os.path.isfile(src) and kind in KINDS:
             m = re.match(r"[a-z]+_r(\d+)_", name)
             texture_set(kind, int(m.group(1)) / 100.0 if m else 0.5)
         dst = os.path.join(os.path.dirname(os.path.abspath(scene)), "textures", kind, name + ".png")
@@ -245,4 +248,63 @@ def localize(scene):
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(src, dst)
             n += 1
+    mdl = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "frt_worn.mdl")
+    if _uses_worn(scene) and os.path.isfile(mdl):                       # the wear material travels too
+        dst = os.path.join(here, "materials", "frt_worn.mdl")
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copyfile(mdl, dst)
+        n += 1
     return n
+
+
+def _uses_worn(scene):
+    from pxr import Usd
+    st = Usd.Stage.Open(scene, Usd.Stage.LoadNone)
+    for prim in st.Traverse():
+        if prim.GetTypeName() == "Shader":
+            a = prim.GetAttribute("info:mdl:sourceAsset")
+            v = a.Get() if a else None
+            if v is not None and v.path.endswith("frt_worn.mdl"):
+                return True
+    return False
+
+
+# ---------------------------------------------------------------------------------------------- wear masks
+def _scratches(seed, count, n=N):
+    """Thin random scratches (mostly short, a few long, slightly curved), 0..1."""
+    rng = np.random.default_rng(seed)
+    a = np.zeros((n, n))
+    for _ in range(count):
+        x, y = rng.random(2) * n
+        ang = rng.random() * np.pi
+        L = n * (0.02 + 0.12 * rng.random() ** 3)
+        bend = (rng.random() - 0.5) * 0.6
+        k = int(L)
+        t = np.linspace(0, 1, max(k, 2))
+        th = ang + bend * t
+        xs = (x + np.cumsum(np.cos(th)) * L / len(t)).astype(int) % n
+        ys = (y + np.cumsum(np.sin(th)) * L / len(t)).astype(int) % n
+        np.add.at(a, (ys, xs), 0.5 + 0.5 * rng.random())
+    a = _blur(a, 0.8)
+    return np.clip(a / (np.percentile(a[a > 0], 99) if (a > 0).any() else 1.0), 0, 1)
+
+
+def wear_maps():
+    """Grey masks the wear material samples: chip breakup noise, scratches, stains (oil spots, drips, blotches)."""
+    d = os.path.join(ROOT, "wear")
+    out = {k: os.path.join(d, f"wear_{k}.png") for k in ("chip", "scratch", "stain")}
+    if all(os.path.isfile(p) for p in out.values()):
+        out["rel"] = {k: rel(p) for k, p in out.items() if k != "rel"}
+        return out
+    os.makedirs(d, exist_ok=True)
+    s = 77000
+    chip = 0.5 + 0.5 * np.tanh(0.9 * (0.55 * spectral(s + 1, 4, 40, 1.2) + 0.45 * spectral(s + 2, 40, 260, 0.6)))
+    write_png(out["chip"], chip)
+    write_png(out["scratch"], _scratches(s + 3, 220))
+    spots = specks(s + 4, 0.00025, 14.0)
+    blot = np.clip(spectral(s + 5, 2, 10, 1.5) - 0.6, 0, None)
+    drips = np.clip(spectral(s + 6, 2, 30, 1.0, aniso=0.15) - 1.4, 0, None)
+    stain = np.clip(1.6 * spots + 0.6 * blot + 0.8 * drips, 0, 1) * (0.85 + 0.15 * spectral(s + 7, 4, 30, 1.0).clip(-1, 1))
+    write_png(out["stain"], np.clip(_blur(stain, 1.5), 0, 1))
+    out["rel"] = {k: rel(p) for k, p in out.items() if k != "rel"}
+    return out

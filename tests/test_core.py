@@ -269,7 +269,9 @@ def test_generated_textures_travel_with_the_scene(tmp_path, monkeypatch):
         lib.get("galvanised")
     saved = Usd.Stage.Open(out)
     sh = UsdShade.Shader(saved.GetPrimAtPath("/World/Looks/powder_yellow/OmniPBR"))
-    p = sh.GetInput("diffuse_texture").Get().path
+    p = sh.GetInput("albedo_texture").Get().path
     assert p.startswith("./textures/powder/")
     assert os.path.isfile(os.path.join(str(tmp_path / "scene"), p))
     assert os.path.isfile(str(tmp_path / "scene" / "textures" / "galv" / "galv_normal.png"))
+    assert os.path.isfile(str(tmp_path / "scene" / "materials" / "frt_worn.mdl"))            # the wear material too
+    assert os.path.isfile(str(tmp_path / "scene" / "textures" / "wear" / "wear_chip.png"))

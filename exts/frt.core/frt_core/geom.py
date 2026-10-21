@@ -1,6 +1,11 @@
 """Small mesh-building kit for generators: boxes, cylinders and prisms collected per material, written as one mesh
 per material with proper normals. Coordinates in cm, Y up, in the generator's local frame.
+
+Every mesh also carries `primvars:frt_wear` (per face-vertex, 0..1): how exposed a point is - 1 on the apex of a
+rounded edge or a profile shoulder, 0 on flat faces - plus a `touch` amount for parts people handle
+(`with shapes.touch(0.5): ...`). The wear material chips paint and polishes where it is high.
 """
+import contextlib
 import math
 
 import numpy as np
@@ -12,9 +17,35 @@ class Shapes:
 
     def __init__(self):
         self.groups = {}          # material key -> (points list, counts, indices, normals per face-vertex)
+        self.wear = {}            # material key -> [(first face-vertex, values)] edge exposure
+        self.touches = {}         # material key -> [(first, last, amount)] handled parts
 
     def _group(self, mat):
         return self.groups.setdefault(mat, ([], [], [], []))
+
+    def _wear(self, mat, start, values):
+        self.wear.setdefault(mat, []).append((start, values))
+
+    @contextlib.contextmanager
+    def touch(self, amount):
+        """Everything built inside gets `amount` of extra wear (handles, rails, grips, door edges)."""
+        before = {k: len(g[3]) for k, g in self.groups.items()}
+        yield self
+        for k, g in self.groups.items():
+            n0 = before.get(k, 0)
+            if len(g[3]) > n0:
+                self.touches.setdefault(k, []).append((n0, len(g[3]), float(amount)))
+
+    def wear_array(self, mat):
+        """Per face-vertex wear for one material group (0 where no primitive recorded any)."""
+        n = len(self.groups[mat][3])
+        w = np.zeros(n, np.float32)
+        for start, vals in self.wear.get(mat, []):
+            v = np.asarray(vals, np.float32)
+            w[start:start + len(v)] = v
+        for a, b, amt in self.touches.get(mat, []):
+            w[a:b] += amt
+        return np.clip(w, 0.0, 1.0)
 
     def _add_face_list(self, mat, pts, faces, normals):
         P, C, I, N = self._group(mat)
@@ -98,11 +129,14 @@ class Shapes:
             hi = [ii + r * math.sin(a) for a in ang]
             return lo + hi
         cs = [coords(h[i], inner[i]) for i in range(3)]
-        pts, nrm = [], []
+        pts, nrm, ex = [], [], []
+        sharp = min(1.0, 1.5 / max(r, 1e-6))                       # big radii are formed, not knocked edges
         faces = []
         def vert(p):
             q = np.clip(p, -inner, inner)
             d = p - q
+            e = float(np.sum(np.abs(d)) / max(r, 1e-9)) - 1.0         # 0 on a flat, 1 on an edge apex, 2 corner
+            ex.append(min(1.0, max(0.0, e)) ** 1.5 * sharp if r > 1e-6 else 0.0)
             L = np.linalg.norm(d)
             n = d / L if L > 1e-9 else np.zeros(3)
             loc = q + r * n
@@ -127,11 +161,13 @@ class Shapes:
                         faces.append(q if sgn > 0 else q[::-1])
         P, C, I, N = self._group(mat)
         base = len(P)
+        n0 = len(N)
         P.extend(pts)
         for f in faces:
             C.append(4)
             I.extend(base + v for v in f)
             N.extend(nrm[v] for v in f)
+        self._wear(mat, n0, [ex[v] for f in faces for v in f])
 
     def rprism(self, a, b, w, h, r, mat, up=(0.0, 1.0, 0.0), seg=3, caps=True):
         """Box section from a to b (w across, h deep) with rounded corners along its length and flat, square-cut
@@ -149,16 +185,19 @@ class Shapes:
         side /= np.linalg.norm(side)
         upv = np.cross(ax, side)
         r = min(r, w / 2 * 0.999, h / 2 * 0.999)
-        prof, nor = [], []                                      # rounded rectangle, counter-clockwise
+        prof, nor, pex = [], [], []                             # rounded rectangle, counter-clockwise
         for cx, cy, a0 in ((w / 2 - r, h / 2 - r, 0), (-w / 2 + r, h / 2 - r, 90), (-w / 2 + r, -h / 2 + r, 180),
                            (w / 2 - r, -h / 2 + r, 270)):
             for k in range(seg + 1):
                 t = math.radians(a0 + 90 * k / seg)
                 prof.append((cx + r * math.cos(t), cy + r * math.sin(t)))
                 nor.append((math.cos(t), math.sin(t)))
+                pex.append(math.sin(math.pi * k / seg) ** 1.5 * min(1.0, 1.5 / r) if seg > 0 and r > 1e-6 else 0.0)
         m = len(prof)
         P, C, I, N = self._group(mat)
         base = len(P)
+        n0 = len(N)
+        wv = []
         for (u, v) in prof:
             P.append(tuple(a + side * u + upv * v))
         for (u, v) in prof:
@@ -170,6 +209,7 @@ class Shapes:
             C.append(4)
             I.extend([base + k, base + m + k, base + m + k2, base + k2])
             N.extend([tuple(n1), tuple(n1), tuple(n2), tuple(n2)])
+            wv += [pex[k], pex[k], pex[k2], pex[k2]]
         if caps:
             C.append(m)
             I.extend(base + k for k in range(m - 1, -1, -1))
@@ -177,6 +217,8 @@ class Shapes:
             C.append(m)
             I.extend(base + m + k for k in range(m))
             N.extend([tuple(ax)] * m)
+            wv += [0.0] * (2 * m)
+        self._wear(mat, n0, wv)
 
     def lathe(self, a, b, profile, mat, sides=24, caps=True):
         """Surface of revolution about the axis a -> b; profile [(t, radius)] with t from 0 (at a) to 1 (at b).
@@ -192,9 +234,22 @@ class Shapes:
         t2 = np.cross(ax, t1)
         ring = [(math.cos(2 * math.pi * k / sides) * t1 + math.sin(2 * math.pi * k / sides) * t2) for k in range(sides)]
         P, C, I, N = self._group(mat)
+        n0 = len(N)
+        dirs = []                                                   # profile segment directions (axial, radial)
         for (ta, ra), (tb, rb) in zip(profile, profile[1:]):
+            d_ = np.array([(tb - ta) * L, rb - ra])
+            dirs.append(d_ / (np.linalg.norm(d_) or 1.0))
+        turn = [0.0] * len(profile)                                 # exposure at each profile point: its turn angle
+        for j in range(1, len(profile) - 1):
+            c_ = float(np.clip(np.dot(dirs[j - 1], dirs[j]), -1, 1))
+            turn[j] = 0.35 * min(1.0, math.acos(c_) / (math.pi / 2)) if profile[j][1] > 0.3 else 0.0   # turned parts: mild
+        if len(profile) > 1:
+            turn[0] = turn[-1] = 0.6                                # rims of the end caps
+        wv = []
+        for j, ((ta, ra), (tb, rb)) in enumerate(zip(profile, profile[1:])):
             if abs(ra - rb) < 1e-9 and abs(ta - tb) < 1e-9:
                 continue
+            wv += [turn[j], turn[j], turn[j + 1], turn[j + 1]] * sides
             pa, pb = a + ax * ta * L, a + ax * tb * L
             dz, dr = (tb - ta) * L, rb - ra
             sl = math.hypot(dz, dr) or 1.0
@@ -216,6 +271,7 @@ class Shapes:
                 for kk, end in ((k, 0), (k2, 0), (k2, 1), (k, 1)):
                     d = ring[kk]
                     N.append(tuple((d * dz - ax * dr) / sl))
+        self._wear(mat, n0, wv)
         if caps:
             for t, r, sgn in ((profile[0][0], profile[0][1], -1), (profile[-1][0], profile[-1][1], 1)):
                 if r <= 1e-6:
@@ -334,6 +390,9 @@ class Shapes:
             st_ = UsdGeom.PrimvarsAPI(m.GetPrim()).CreatePrimvar("st", Sdf.ValueTypeNames.TexCoord2fArray,
                                                                  UsdGeom.Tokens.faceVarying)
             st_.Set(Vt.Vec2fArray.FromNumpy(uv.astype(np.float32)))
+            wear = UsdGeom.PrimvarsAPI(m.GetPrim()).CreatePrimvar("frt_wear", Sdf.ValueTypeNames.FloatArray,
+                                                                  UsdGeom.Tokens.faceVarying)
+            wear.Set(Vt.FloatArray.FromNumpy(self.wear_array(k)))
             m.CreateSubdivisionSchemeAttr("none")
             m.CreateDoubleSidedAttr(True)
             arr = np.asarray(P, float)

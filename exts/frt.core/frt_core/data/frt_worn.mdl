@@ -1,0 +1,92 @@
+mdl 1.6;
+
+// Factory Review Toolkit: a finish that has been in use. On top of OmniPBR it layers, per point:
+//  - edge wear: paint chipped to primer, then bare steel, where the mesh says a point is exposed (primvar
+//    frt_wear: rounded-edge apexes, profile shoulders, handled parts), broken up by a chip noise map
+//  - a few scratches through the paint
+//  - grime fading up from the floor (object-space height) and dust on up-facing surfaces
+//  - stains (oil spots, drips, blotches) on up-facing surfaces, darker and glossier
+// Colours are linear. All amounts default low: a plant floor that is looked after.
+
+import ::anno::*;
+import ::math::*;
+import ::state::*;
+import ::tex::*;
+import ::scene::*;
+using ::OmniPBR import OmniPBR;
+
+float grey(uniform texture_2d t, float2 uv)
+{
+    return tex::lookup_float(t, uv, tex::wrap_repeat, tex::wrap_repeat);
+}
+
+export material FrtWorn(
+    color paint_tint = color(1.0),
+    uniform texture_2d albedo_texture = texture_2d(),
+    uniform texture_2d roughness_texture = texture_2d(),
+    uniform texture_2d normal_texture = texture_2d(),
+    uniform float tile = 2.0,
+    float metallic = 0.0,
+    float specular = 0.5,
+    color primer_color = color(0.30, 0.31, 0.31),
+    color bare_color = color(0.30, 0.31, 0.33),                       // worn-through steel, slightly dull
+    float bare_roughness = 0.32,
+    float wear_amount = 0.2,
+    float scratch_amount = 0.15,
+    uniform texture_2d chip_texture = texture_2d(),
+    uniform texture_2d scratch_texture = texture_2d(),
+    uniform texture_2d stain_texture = texture_2d(),
+    color dirt_color = color(0.06, 0.055, 0.05),
+    float dirt_amount = 0.3,
+    float dirt_height = 30.0,
+    color dust_color = color(0.36, 0.34, 0.31),
+    float dust_amount = 0.15,
+    float stain_amount = 0.2,
+    uniform float edge_radius = 0.0
+)
+[[ ::anno::display_name("FRT worn finish") ]]
+= let {
+    float3 tc = state::texture_coordinate(0);
+    float2 uv = float2(tc.x, tc.y) * tile;
+    float edge = scene::data_lookup_float("frt_wear", 0.0);
+    float chip = grey(chip_texture, uv * 2.0);
+    float x = edge * wear_amount * 2.4 + (chip - 0.5) * 0.9;
+    float bare = math::smoothstep(0.64, 0.70, x);
+    float primer = math::saturate(math::smoothstep(0.52, 0.58, x) - bare);
+    float scratch = math::saturate(grey(scratch_texture, uv * 1.5) * scratch_amount * 3.0) * (1.0 - bare);
+    float metal = math::saturate(bare + scratch * 0.5);                 // scratches: partly through the paint
+
+    float3 p = state::transform_point(state::coordinate_internal, state::coordinate_object, state::position());
+    float3 n = state::transform_normal(state::coordinate_internal, state::coordinate_object, state::normal());
+    float breakup = grey(chip_texture, uv * 0.37 + float2(0.31, 0.17));
+    float dirt = dirt_amount * (1.0 - math::smoothstep(0.0, dirt_height, p.y)) * (0.5 + 0.5 * breakup);
+    float up = math::saturate(math::normalize(n).y);
+    float top = math::smoothstep(0.7, 0.98, up);
+    float dust = dust_amount * top * (0.35 + 0.65 * breakup);
+    float stain = stain_amount * grey(stain_texture, uv * 0.45) * top;
+
+    color base = paint_tint * tex::lookup_color(albedo_texture, uv, tex::wrap_repeat, tex::wrap_repeat);
+    color c1 = math::lerp(base, primer_color, primer);
+    color c2 = math::lerp(c1, bare_color, metal);
+    color c3 = math::lerp(c2, dirt_color, dirt);
+    color c4 = math::lerp(c3, dust_color, dust);
+    color c5 = c4 * (1.0 - 0.55 * stain);
+
+    float r0 = grey(roughness_texture, uv);
+    float r1 = math::lerp(r0, 0.65, primer);
+    float r2 = math::lerp(r1, bare_roughness, metal);
+    float r3 = math::lerp(r2, 0.9, dirt);
+    float r4 = math::lerp(r3, 0.95, dust);
+    float r5 = math::lerp(r4, 0.2, stain * 0.7);
+    float m = math::lerp(metallic, 1.0, metal);
+} in OmniPBR(
+    diffuse_color_constant: c5,
+    reflection_roughness_constant: r5,
+    metallic_constant: m,
+    specular_level: specular,
+    normalmap_texture: normal_texture,
+    bump_factor: 1.0,
+    project_uvw: false,
+    texture_scale: float2(tile),
+    round_edges_radius: edge_radius
+);
