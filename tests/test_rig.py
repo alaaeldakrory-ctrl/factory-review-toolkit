@@ -1,5 +1,5 @@
 """Crane animation rig: the parts move, the chain is re-laid at a true pitch, limits clamp, attach points follow."""
-from pxr import Usd, UsdGeom
+from pxr import Sdf, Usd, UsdGeom
 
 from frt_core import catalog as CAT
 from frt_core.catalog.items_crane import PITCH
@@ -44,3 +44,28 @@ def test_double_girder_rig_animates(stage):
     ropes = stage.GetPrimAtPath("/World/BC2/Bridge_2/Hoist_1/Ropes")
     sc = [op for op in UsdGeom.Xformable(ropes).GetOrderedXformOps() if op.GetOpType() == UsdGeom.XformOp.TypeScale][0]
     assert sc.Get(96)[1] > sc.Get(0)[1]                                     # lower hook, longer ropes
+
+
+def test_lift_table_rig(stage):
+    from frt_core.rig import lift_table as LT
+    for style in ("mobile", "fixed"):
+        CAT.place(stage, "/World", "lift_table", f"LT_{style}", params={"length": 240, "width": 110, "style": style})
+    CAT.place(stage, "/World", "scissor_unit", "U", params={})
+    stage.GetPrimAtPath("/World/U").CreateAttribute("frt:on", Sdf.ValueTypeNames.String).Set("LT_mobile")
+    lo, hi, rest = LT.limits(stage, "/World/LT_mobile")
+    assert lo == rest and hi > lo + 50
+    h = LT.pose(stage, "/World/LT_mobile", lift=1.0)
+    assert h == hi
+    deck = UsdGeom.Xformable(stage.GetPrimAtPath("/World/LT_mobile/Deck")).GetOrderedXformOps()[0].Get()
+    assert abs(deck[1] - (hi - lo)) < 1e-6
+    u = UsdGeom.Xformable(stage.GetPrimAtPath("/World/U")).GetOrderedXformOps()[0].Get()
+    assert abs(u[1] - (hi - lo)) < 1e-6                                     # the unit rides up with the deck
+    # the scissor closes: the outer arm's far end stays under the deck and the rod meets the arm
+    p = stage.GetPrimAtPath("/World/LT_mobile")
+    g = LT._geo(p)
+    s = g.solve(hi)
+    import math
+    top = g.y_b + g.La * math.sin(math.radians(s["theta"]))
+    assert abs(top - (hi - g.top_off)) < 1e-6
+    assert s["ext"] > 10 and g.solve(lo)["ext"] == 0
+    assert LT.pose(stage, "/World/LT_fixed", height=999) == LT.limits(stage, "/World/LT_fixed")[1]
