@@ -120,7 +120,7 @@ def step_beam(s, x0, x1, ytop, zface, sz, col):
         s.rbox((xe + ux * 1.6, ytop - 4.5, zface + sz * 0.25), (UW / 2 + 0.8, 14, 0.5), 0.2, col, seg=1)   # connector
         s.cylinder((xe, ytop - BEAM_H, zface + sz * 0.5), (xe, ytop, zface + sz * 0.5), 0.3, col, 6)       # weld
         s.cylinder((xe + ux * 2.2, ytop - 2.0, zface + sz * 0.5), (xe + ux * 2.2, ytop - 2.0, zface + sz * 1.6),
-                   0.35, "plastic_red", 8)                                                                 # locking pin
+                   0.35, "bolt_zinc", 8)                                                                  # locking pin
 
 
 class Instances:
@@ -437,7 +437,7 @@ register(RollerRack("flow_rack", "flow_rack", "Carton flow (roller) rack, modula
     "fill": Param(0.75, "how full the lanes are on average (0 - 1)", 0, 1),
     "tote": Param("plastic_blue", "tote colour"),
     "frame": Param("powder_blue", "upright + lacing finish"),
-    "beams": Param("powder_orange", "beam finish"),
+    "beams": Param("powder_grey", "beam finish (red / orange avoided: red marks quality holds on a plant floor)"),
     "wheel": Param("plastic_grey", "flow wheel finish"),
     "guards": Param(True, "upright guards at the ends of the pick side"),
 }))

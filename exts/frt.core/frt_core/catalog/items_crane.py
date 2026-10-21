@@ -498,7 +498,8 @@ class WorkstationCrane(Item):
                 s.lathe((x, rail_top + 10, zend + uz * 2), (x, rail_top + 10, zend + uz * 13),
                         [(0, 7), (0.7, 7), (0.85, 6.4), (1, 4.5)], "rubber_black", sides=18)
         tie_y = H * 0.82
-        for z in (zs if heavy else (zs[0], zs[-1])):
+        brace = str(p["bracing"]).lower()
+        for z in ((zs if heavy else (zs[0], zs[-1])) if brace == "full" else ()):
             member(s, (xs[0] + a / 2, tie_y, z), (xs[1] - a / 2, tie_y, z), 16, 24, 1.5, col)       # tie beam
             for x, ux in ((xs[0], 1), (xs[1], -1)):
                 lo = (x + ux * a / 2, H * 0.40, z)
@@ -511,8 +512,14 @@ class WorkstationCrane(Item):
                 for uz in (-1, 1):
                     if (uz < 0 and z == zs[0]) or (uz > 0 and z == zs[-1]):
                         continue
-                    reach = min(260.0, (Rw - a) / nbay * 0.4)
-                    lo, hi = (x, H * 0.45, z + uz * a / 2), (x, H - 1, z + uz * reach)
+                    if brace == "none":
+                        continue
+                    if brace == "full":
+                        reach = min(260.0, (Rw - a) / nbay * 0.4)
+                        lo, hi = (x, H * 0.45, z + uz * a / 2), (x, H - 1, z + uz * reach)
+                    else:                                                                    # short 45-degree knee
+                        k = min(80.0, (Rw - a) / nbay * 0.3, H * 0.2)
+                        lo, hi = (x, H - 1 - k, z + uz * a / 2), (x, H - 1, z + uz * (a / 2 + k))
                     member(s, lo, hi, 10, 10, 1.2, col)
                     end_plate_bolted(s, lo, (0.0, 0.0, uz), 14, 14, col)
         # ------------------------------------------------------------------ bridges
@@ -678,5 +685,6 @@ register(WorkstationCrane("bridge_crane", "crane_bridge", "Freestanding bridge (
     "hook_height": Param(200.0, "hook height above the floor", 30, 1200, "cm"),
     "colour": Param("powder_yellow", "bridge, trucks, hoist frame"),
     "column_colour": Param("powder_yellow", "columns, tie beams and runways"),
+    "bracing": Param("knee", "knee (short knee braces under the runways) / none / full (tie beams + long braces)"),
     "capacity": Param("", "rated load as on the drawing, e.g. 2000lb (shown on the sign)"),
 }))
