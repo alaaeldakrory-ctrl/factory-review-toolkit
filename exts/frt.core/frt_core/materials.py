@@ -131,8 +131,34 @@ PRESETS = {
 PAINT_TUNE = {"reflection_roughness_constant": 0.55, "reflection_roughness_texture_influence": 0.35,
               "albedo_add": 0.0, "albedo_brightness": 1.0, "albedo_desaturation": 0.0, "specular_level": 0.45}
 METAL_TUNE = {"albedo_brightness": 0.85}
+PAINT_ALBEDO = 0.65   # paint as approved on the crane: deeper than the swatch (it is in shade on most of a part)
 PRESET_TUNE = {name: (PAINT_TUNE if path.startswith("Paint/") else METAL_TUNE if path.startswith("Metals/") else {})
                for name, path in PRESETS.items()}
+
+
+def finish_kind(name):
+    """Which generated finish (textures.KINDS) a look uses; None keeps a plain or preset material."""
+    if name.startswith("powder_"):
+        return "powder"
+    if name.startswith("floor_"):
+        return "satin"
+    if name == "galvanised":
+        return "galv"
+    if name == "chrome":
+        return "polished"
+    if name in ("steel_dark", "steel_machined", "steel_blued", "stainless", "aluminium", "bolt_zinc", "brass"):
+        return "steel"
+    if name == "cast_aluminium":
+        return "cast"
+    if name.startswith(("plastic_", "abs_")) or name == "nylon_white":
+        return "plastic"
+    if name in ("rubber_black", "belt_black", "grip_rubber", "hose_rubber", "cable_pvc", "esd_mat"):
+        return "rubber"
+    if name == "concrete":
+        return "concrete"
+    if name in ("cardboard", "tape_brown"):
+        return "cardboard"
+    return None
 
 
 class MaterialLibrary:
@@ -156,6 +182,15 @@ class MaterialLibrary:
         sh = UsdShade.Shader.Define(self.stage, path + "/OmniPBR")
         C3, F, B, A, F2 = (Sdf.ValueTypeNames.Color3f, Sdf.ValueTypeNames.Float, Sdf.ValueTypeNames.Bool,
                            Sdf.ValueTypeNames.Asset, Sdf.ValueTypeNames.Float2)
+        kind = finish_kind(name) if self.presets and name not in EMISSIVE else None
+        if kind:
+            try:
+                from . import textures as GT
+                maps = GT.texture_set(kind, rough)
+            except Exception:                      # no numpy / no writable cache: fall back to the presets
+                maps = None
+            if maps:
+                return self._generated(mat, sh, name, path, srgb, lin, rough, metal, maps, C3, F, B, A, F2)
         preset = PRESETS.get(name) if self.presets else None
         if preset and self.textures and os.path.isfile(self.textures + preset):
             # the textured preset as it ships (its texture paths are relative to the .mdl); UVs come from the mesh
@@ -206,6 +241,73 @@ class MaterialLibrary:
         ref = MatRef(mat, srgb)
         self._cache[name] = ref
         return ref
+
+    def _generated(self, mat, sh, name, path, srgb, lin, rough, metal, maps, C3, F, B, A, F2):
+        """OmniPBR on the generated maps: albedo variation tinted to the finish colour, roughness map, normal map,
+        UVs in metres (one tile = maps["tile"] m)."""
+        sh.SetSourceAsset(Sdf.AssetPath("OmniPBR.mdl"), "mdl")
+        sh.SetSourceAssetSubIdentifier("OmniPBR", "mdl")
+        rel = maps["rel"]
+        tex = sh.CreateInput("diffuse_texture", A)
+        tex.Set(Sdf.AssetPath(rel["albedo"]))
+        tex.GetAttr().SetColorSpace("sRGB")
+        m = max(maps["mean"], 0.05)
+        k = PAINT_ALBEDO if finish_kind(name) in ("powder", "satin") else 1.0
+        tint = tuple(min(c * k / m, 4.0) for c in lin)
+        sh.CreateInput("diffuse_tint", C3).Set(Gf.Vec3f(*tint))
+        sh.CreateInput("diffuse_color_constant", C3).Set(Gf.Vec3f(*lin))
+        inp = sh.CreateInput("reflectionroughness_texture", A)
+        inp.Set(Sdf.AssetPath(rel["roughness"]))
+        inp.GetAttr().SetColorSpace("raw")
+        sh.CreateInput("reflection_roughness_texture_influence", F).Set(1.0)
+        sh.CreateInput("reflection_roughness_constant", F).Set(float(rough))
+        sh.CreateInput("metallic_constant", F).Set(float(metal))
+        sh.CreateInput("specular_level", F).Set(0.5)
+        inp = sh.CreateInput("normalmap_texture", A)
+        inp.Set(Sdf.AssetPath(rel["normal"]))
+        inp.GetAttr().SetColorSpace("raw")
+        sh.CreateInput("bump_factor", F).Set(1.0)
+        sh.CreateInput("project_uvw", B).Set(False)
+        t = 1.0 / float(maps["tile"])                                  # OmniPBR multiplies the UVs: tiles per metre
+        sh.CreateInput("texture_scale", F2).Set(Gf.Vec2f(t, t))
+        out = sh.CreateOutput("out", Sdf.ValueTypeNames.Token)
+        for o in (mat.CreateSurfaceOutput("mdl"), mat.CreateDisplacementOutput("mdl"), mat.CreateVolumeOutput("mdl")):
+            o.ConnectToSource(out)
+        pv = self._preview(mat, path, lin, rough, metal, C3, F)
+        self._preview_maps(pv, path, rel, tint, t)
+        ref = MatRef(mat, srgb)
+        self._cache[name] = ref
+        return ref
+
+    def _preview_maps(self, pv, path, rel, tint, tiles):
+        """The same maps on the UsdPreviewSurface, so other renderers (usdview, Blender, ...) show them too."""
+        st_ = UsdShade.Shader.Define(self.stage, path + "/st")
+        st_.CreateIdAttr("UsdPrimvarReader_float2")
+        st_.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
+        xf = UsdShade.Shader.Define(self.stage, path + "/st_scale")
+        xf.CreateIdAttr("UsdTransform2d")
+        xf.CreateInput("in", Sdf.ValueTypeNames.Float2).ConnectToSource(st_.ConnectableAPI(), "result")
+        xf.CreateInput("scale", Sdf.ValueTypeNames.Float2).Set(Gf.Vec2f(tiles, tiles))
+        def tex(key, cs, scale=None, bias=None):
+            t = UsdShade.Shader.Define(self.stage, f"{path}/{key}_tex")
+            t.CreateIdAttr("UsdUVTexture")
+            f = t.CreateInput("file", Sdf.ValueTypeNames.Asset)
+            f.Set(Sdf.AssetPath(rel[key]))
+            t.CreateInput("sourceColorSpace", Sdf.ValueTypeNames.Token).Set(cs)
+            t.CreateInput("wrapS", Sdf.ValueTypeNames.Token).Set("repeat")
+            t.CreateInput("wrapT", Sdf.ValueTypeNames.Token).Set("repeat")
+            t.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(xf.ConnectableAPI(), "result")
+            if scale:
+                t.CreateInput("scale", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*scale))
+            if bias:
+                t.CreateInput("bias", Sdf.ValueTypeNames.Float4).Set(Gf.Vec4f(*bias))
+            return t
+        a = tex("albedo", "sRGB", scale=(*tint, 1.0))
+        pv.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).ConnectToSource(a.ConnectableAPI(), "rgb")
+        r = tex("roughness", "raw")
+        pv.CreateInput("roughness", Sdf.ValueTypeNames.Float).ConnectToSource(r.ConnectableAPI(), "r")
+        n = tex("normal", "raw", scale=(2, 2, 2, 1), bias=(-1, -1, -1, 0))
+        pv.CreateInput("normal", Sdf.ValueTypeNames.Normal3f).ConnectToSource(n.ConnectableAPI(), "rgb")
 
     def _preview(self, mat, path, lin, rough, metal, C3, F):
         """UsdPreviewSurface fallback (Storm, other renderers, quick previews)."""

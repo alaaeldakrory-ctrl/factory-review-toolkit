@@ -100,6 +100,11 @@ def safe_stage(final, force=False):
         os.replace(tmp, final)
     except OSError as e:
         raise SwapFailed(f"could not replace {final} ({e}); is it open in an app? The new build is at {tmp}") from e
+    try:                                      # generated textures travel with the scene (./textures next to it)
+        from . import textures as GT
+        GT.localize(final)
+    except Exception as e:                    # never lose a build over textures
+        print(f"[frt] textures not copied next to {final}: {e}")
     # a layer for this path still cached in this process (the scene was open before) would hand back the old file
     cached = Sdf.Layer.Find(final)
     if cached:

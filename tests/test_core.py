@@ -252,3 +252,24 @@ def test_flow_rack_modular(stage):
     kinds = {t.name.split("_")[0] for t in pi.GetPrototypesRel().GetTargets()}
     assert {"wheel", "roller", "nut", "ball"} <= kinds
     assert stage.GetPrimAtPath("/World/FR/Load/L1_B1_N1")             # each lane's load can be animated
+
+
+def test_generated_textures_travel_with_the_scene(tmp_path, monkeypatch):
+    """Finishes use generated maps referenced relative to the scene; saving copies them next to it, so a scene
+    folder opens on any computer."""
+    from pxr import UsdShade
+    from frt_core import textures as GT
+    from frt_core.materials import MaterialLibrary
+    from frt_core.usdio import safe_stage
+    monkeypatch.setattr(GT, "ROOT", str(tmp_path / "cache"))
+    out = str(tmp_path / "scene" / "t.usd")
+    with safe_stage(out) as st:
+        lib = MaterialLibrary(st, "/World/Looks")
+        lib.get("powder_yellow")
+        lib.get("galvanised")
+    saved = Usd.Stage.Open(out)
+    sh = UsdShade.Shader(saved.GetPrimAtPath("/World/Looks/powder_yellow/OmniPBR"))
+    p = sh.GetInput("diffuse_texture").Get().path
+    assert p.startswith("./textures/powder/")
+    assert os.path.isfile(os.path.join(str(tmp_path / "scene"), p))
+    assert os.path.isfile(str(tmp_path / "scene" / "textures" / "galv" / "galv_normal.png"))
