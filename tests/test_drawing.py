@@ -88,3 +88,39 @@ def test_two_point_alignment():
     assert e1[2] - e1[0] == pytest.approx(e0[3] - e0[1], abs=1)     # width and height swap
     assert e1[3] - e1[1] == pytest.approx(e0[2] - e0[0], abs=1)
     assert any("rotated 90.00" in n for n in dr.notes)
+
+
+def test_lengths():
+    from frt_core.drawing.lengths import parse_length as L
+    assert L("40'") == pytest.approx(1219.2)
+    assert L("16'-10\"") == pytest.approx(513.08)
+    assert L("16' 10 1/2\"") == pytest.approx(514.35)
+    assert L("12.5 m") == 1250 and L("3500 mm") == 350 and L("250") == 250
+    with pytest.raises(ValueError):
+        L("forty feet")
+
+
+def test_pdf_autocad_polylines(tmp_path):
+    """AutoCAD plots closed polylines as one path of joined lines, and wide polylines as triangle strips; both must
+    come back as closed shapes, with the PDF's CAD layer and a calibration written in feet."""
+    import fitz
+    from frt_core.drawing import pdf_import
+    doc = fitz.open()
+    pg = doc.new_page(width=400, height=300)
+    ocg = doc.add_ocg("Stations")
+    sh = pg.new_shape()
+    sh.draw_polyline([(50, 50), (150, 50), (150, 120), (50, 120), (50, 50)])      # joined lines, closed
+    sh.finish(color=(1, 0.5, 0), oc=ocg)
+    x0, y0, x1, y1, w = 200, 50, 300, 120, 1.0                                      # wide polyline as triangles
+    for (a, b, c) in [((x0, y0), (x1, y0), (x1, y0 + w)), ((x1, y0), (x1, y1), (x1 - w, y1)),
+                      ((x1, y1), (x0, y1), (x0, y1 - w)), ((x0, y1), (x0, y0), (x0 + w, y0))]:
+        sh.draw_polyline([a, b, c, a])
+    sh.finish(color=(0, 0, 1), closePath=False)
+    sh.commit()
+    path = str(tmp_path / "t.pdf")
+    doc.save(path)
+    dr = pdf_import.load(path, calibration=((50, 50), (150, 50), "10'"))
+    sizes = sorted((round(p.bbox()[2] - p.bbox()[0]), round(p.bbox()[3] - p.bbox()[1]), p.layer) for p in dr.polys)
+    assert (305, 213, "Stations") in sizes                          # 100 pt = 10 ft = 304.8 cm
+    assert any(abs(w - 305) < 2 and abs(h - 213) < 2 and layer != "Stations" for w, h, layer in sizes)
+    assert "Stations" in dr.layers

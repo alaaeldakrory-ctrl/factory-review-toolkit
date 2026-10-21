@@ -72,6 +72,7 @@ class Drawing:
     inserts: List[Insert] = field(default_factory=list)
     texts: List[Text] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)       # what the importer cleaned or guessed
+    layers: List[str] = field(default_factory=list)      # CAD layers present (DXF, or a PDF plotted with layers)
 
     def transform(self, fn, rot_deg=0.0, scale=1.0):
         """Apply a 2D point map (and the rotation / uniform scale it implies to inserts)."""

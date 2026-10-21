@@ -21,17 +21,20 @@ def find_scale(words):
     return float(m.group(1)) if m else None
 
 
-def load(path, page=0, scale=None, calibration=None):
-    """calibration: ((x0, y0), (x1, y1), real_distance_cm) in page points (PyMuPDF frame)."""
+def load(path, page=0, scale=None, calibration=None, skip_layers=()):
+    """calibration: ((x0, y0), (x1, y1), real distance) in page points (PyMuPDF frame); the distance in cm or as
+    written on the drawing ("40'", "16'-10\"", "12 m"). skip_layers: CAD layer patterns to leave out (hatching)."""
+    import fnmatch
     import fitz
+    from .lengths import parse_length
     doc = fitz.open(path)
     pg = doc[page]
     words = pg.get_text("words")
     dr = Drawing(path, "pdf")
     if calibration:
-        (a, b, real_cm) = calibration
-        k = real_cm / math.dist(a, b)
-        dr.notes.append(f"scale from calibration: {k:.4g} cm per point")
+        (a, b, real) = calibration
+        k = parse_length(real) / math.dist(a, b)
+        dr.notes.append(f"scale from calibration: {k:.4g} cm per point (1:{k * 10 / PT_MM:.0f})")
     else:
         n = scale or find_scale(words)
         if not n:
@@ -40,19 +43,34 @@ def load(path, page=0, scale=None, calibration=None):
         else:
             dr.notes.append(f"scale 1:{n:g} {'given' if scale else 'read from the page'}")
         k = PT_MM * n / 10.0                    # cm per point
+    dr.cm_per_pt = k
     hpage = pg.rect.height
+    dr.page_size = (pg.rect.width, hpage)
     P = lambda p: (float(p[0]) * k, (hpage - float(p[1])) * k)
+    layers, skipped = set(), 0
     for i, d in enumerate(pg.get_drawings()):
+        layer = d.get("layer") or ""
+        if skip_layers and any(fnmatch.fnmatch(layer.upper(), x.upper()) for x in skip_layers):
+            skipped += 1
+            continue
+        layers.add(layer)
         col = d.get("color")
         width = float(d.get("width") or 0.0) * PT_MM            # mm on paper
         fill = d.get("fill") is not None
         ref = f"pdf:{page}:{i}"
         c_col = tuple(col) if col else None
-        ops = {it[0] for it in d["items"]}
-        if "c" in ops and ops <= {"l", "c"}:
-            # a path with curves (circles, arcs, rounded shapes): flatten the Beziers; closed -> one polygon
-            chain = [P(d["items"][0][1])]
-            for it in d["items"]:
+        f_col = c_col if col else (tuple(d["fill"]) if fill else None)
+        items = d["items"]
+        ops = {it[0] for it in items}
+        if ops <= {"l", "c"} and items:
+            # one path of joined pieces (how AutoCAD plots polylines, circles, arcs): a closed chain is one polygon
+            chain = [P(items[0][1])]
+            joined = True
+            for it in items:
+                q0 = P(it[1])
+                if math.dist(q0, chain[-1]) > 0.5:
+                    joined = False
+                    break
                 if it[0] == "l":
                     chain.append(P(it[2]))
                 else:
@@ -62,31 +80,47 @@ def load(path, page=0, scale=None, calibration=None):
                         u = 1 - t
                         chain.append(tuple(u ** 3 * a + 3 * u * u * t * b + 3 * u * t * t * c + t ** 3 * e
                                            for a, b, c, e in zip(p0, p1, p2, p3)))
-            ends_meet = abs(chain[0][0] - chain[-1][0]) + abs(chain[0][1] - chain[-1][1]) < 1.0
-            closed = bool(d.get("closePath")) or ends_meet
-            if closed and len(chain) > 3:
-                dr.polys.append(Poly(chain[:-1] if ends_meet else chain, True, "",
-                                     c_col if col else (tuple(d["fill"]) if fill else None), width, fill, ref))
-            else:
+            if joined and len(chain) > 3:
+                ends_meet = math.dist(chain[0], chain[-1]) < 0.5
+                if bool(d.get("closePath")) or ends_meet:
+                    dr.polys.append(Poly(chain[:-1] if ends_meet else chain, True, layer, f_col, width, fill, ref))
+                    continue
+            if not joined and ops == {"l"} and len(items) >= 8:
+                # a wide polyline plotted as triangle strips: all its points hug its own bounding box -> a rectangle
+                pts = [q for it in items for q in it[1:3]]
+                x0, y0 = min(q.x for q in pts), min(q.y for q in pts)
+                x1, y1 = max(q.x for q in pts), max(q.y for q in pts)
+                tol = 1.2
+                if x1 - x0 > 3 * tol and y1 - y0 > 3 * tol:
+                    near = [min(abs(q.x - x0), abs(q.x - x1), abs(q.y - y0), abs(q.y - y1)) <= tol for q in pts]
+                    sides = (any(abs(q.x - x0) <= tol for q in pts), any(abs(q.x - x1) <= tol for q in pts),
+                             any(abs(q.y - y0) <= tol for q in pts), any(abs(q.y - y1) <= tol for q in pts))
+                    if all(near) and all(sides):
+                        q = [P((x0, y0)), P((x1, y0)), P((x1, y1)), P((x0, y1))]
+                        dr.polys.append(Poly(q, True, layer, f_col, width or 0.4 * PT_MM, fill, ref))
+                        continue
+            if joined and "c" in ops:
                 for a, b in zip(chain, chain[1:]):
-                    dr.segs.append(Seg(a, b, "", c_col, width, ref))
-            continue
-        for it in d["items"]:
+                    dr.segs.append(Seg(a, b, layer, c_col, width, ref))
+                continue
+        for it in items:
             op = it[0]
             if op == "l":
-                dr.segs.append(Seg(P(it[1]), P(it[2]), "", tuple(col) if col else None, width, ref))
+                dr.segs.append(Seg(P(it[1]), P(it[2]), layer, c_col, width, ref))
             elif op == "re":
                 r = it[1]
                 q = [P((r.x0, r.y0)), P((r.x1, r.y0)), P((r.x1, r.y1)), P((r.x0, r.y1))]
-                dr.polys.append(Poly(q, True, "", tuple(col) if col else (tuple(d["fill"]) if fill else None), width, fill, ref))
+                dr.polys.append(Poly(q, True, layer, f_col, width, fill, ref))
             elif op == "qu":
                 qd = it[1]
                 q = [P(qd.ul), P(qd.ur), P(qd.lr), P(qd.ll)]
-                dr.polys.append(Poly(q, True, "", tuple(col) if col else None, width, fill, ref))
+                dr.polys.append(Poly(q, True, layer, f_col, width, fill, ref))
             elif op == "c":
-                dr.segs.append(Seg(P(it[1]), P(it[4]), "", tuple(col) if col else None, width, ref))
+                dr.segs.append(Seg(P(it[1]), P(it[4]), layer, c_col, width, ref))
+    dr.layers = sorted(layers - {""})
     for w in words:
         x0, y0, x1, y1, txt = w[:5]
         dr.texts.append(Text(txt, P(((x0 + x1) / 2, (y0 + y1) / 2)), (y1 - y0) * k, "", f"pdf:{page}:w"))
-    dr.notes.append(f"{len(dr.segs)} lines, {len(dr.polys)} rectangles, {len(dr.texts)} words")
+    dr.notes.append(f"{len(dr.segs)} lines, {len(dr.polys)} closed shapes, {len(dr.texts)} words"
+                    + (f", CAD layers: {len(dr.layers)}" if dr.layers else "") + (f", {skipped} paths skipped" if skipped else ""))
     return dr
