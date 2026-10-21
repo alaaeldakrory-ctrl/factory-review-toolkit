@@ -1,0 +1,18 @@
+[package]
+title = "Factory Review Toolkit: Scene Builder"
+version = "0.1.0"
+description = "Window > Factory Review: build a factory scene from a recipe and a DXF/PDF drawing, review its findings (go to each one), compare with a new drawing revision and update, package for another PC."
+category = "Simulation"
+keywords = ["factory", "layout", "review", "scene builder"]
+authors = ["Alaa Eldakrory"]
+readme = "../../README.md"
+
+[dependencies]
+"frt.core" = {}
+"omni.kit.uiapp" = {}
+"omni.usd" = {}
+"omni.kit.menu.utils" = {}
+"omni.kit.viewport.utility" = {}
+
+[[python.module]]
+name = "frt_scene"

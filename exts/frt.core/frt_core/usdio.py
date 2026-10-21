@@ -8,7 +8,7 @@ crashes on a half-new file): build into <name>.building.<ext>, then swap it in.
 import contextlib
 import os
 
-from pxr import Usd
+from pxr import Sdf, Usd
 
 
 class SwapFailed(RuntimeError):
@@ -36,6 +36,10 @@ def safe_stage(final):
         os.replace(tmp, final)
     except OSError as e:
         raise SwapFailed(f"could not replace {final} ({e}); is it open in an app? The new build is at {tmp}") from e
+    # a layer for this path still cached in this process (the scene was open before) would hand back the old file
+    cached = Sdf.Layer.Find(final)
+    if cached:
+        cached.Reload(True)
 
 
 def is_locked(path):

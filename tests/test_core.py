@@ -134,3 +134,15 @@ def test_package_is_self_contained(tmp_path):
     _, assets, _ = UsdUtils.ComputeAllDependencies(rep["scene"])
     root = os.path.normcase(str(tmp_path / "pkg"))
     assert assets and all(os.path.normcase(a).startswith(root) for a in assets)
+
+
+def test_safe_stage_refreshes_cached_layer(tmp_path):
+    out = str(tmp_path / "scene.usd")
+    with usdio.safe_stage(out) as st:
+        UsdGeom.Xform.Define(st, "/Old")
+    held = Usd.Stage.Open(out)                       # like an app that had the scene open
+    with usdio.safe_stage(out) as st:
+        UsdGeom.Xform.Define(st, "/New")
+    again = Usd.Stage.Open(out)
+    assert again.GetPrimAtPath("/New") and not again.GetPrimAtPath("/Old")
+    del held

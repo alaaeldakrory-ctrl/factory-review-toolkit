@@ -95,6 +95,37 @@ def params_from_drawing(e, defaults):
     return p
 
 
+#           a
+#         f   b        seven-segment strokes per character, painted on the floor
+#           g
+#         e   c
+#           d
+SEGMENTS = {"0": "abcdef", "1": "bc", "2": "abdeg", "3": "abcdg", "4": "bcfg", "5": "acdfg", "6": "acdefg", "7": "abc",
+            "8": "abcdefg", "9": "abcdfg", "A": "abcefg", "B": "cdefg", "C": "adef", "D": "bcdeg", "E": "adefg",
+            "F": "aefg", "-": "g"}
+
+
+def _number_plate(s, plant, x, y, text, gw=40.0, gh=70.0, t=8.0, gap=15.0, pad=20.0):
+    """Yellow plate with the station number in black, plant cm, (x, y) = plate's south-west corner, read from the south."""
+    text = "".join(ch for ch in text.upper() if ch in SEGMENTS)[:4] or "-"
+    w = 2 * pad + len(text) * gw + (len(text) - 1) * gap
+    h = 2 * pad + gh
+
+    def rect(ax, ay, bx, by, y0, y1, mat):
+        (sx0, sz0), (sx1, sz1) = WA.to_scene(plant, ax, ay), WA.to_scene(plant, bx, by)
+        s.box((min(sx0, sx1), y0, min(sz0, sz1)), (max(sx0, sx1), y1, max(sz0, sz1)), mat)
+
+    rect(x, y, x + w, y + h, 0.06, 0.27, "floor_yellow")
+    for i, ch in enumerate(text):
+        gx, gy = x + pad + i * (gw + gap), y + pad
+        seg = {"a": (gx, gy + gh - t, gx + gw, gy + gh), "d": (gx, gy, gx + gw, gy + t),
+               "g": (gx, gy + gh / 2 - t / 2, gx + gw, gy + gh / 2 + t / 2),
+               "f": (gx, gy + gh / 2, gx + t, gy + gh), "b": (gx + gw - t, gy + gh / 2, gx + gw, gy + gh),
+               "e": (gx, gy, gx + t, gy + gh / 2), "c": (gx + gw - t, gy, gx + gw, gy + gh / 2)}
+        for k in SEGMENTS[ch]:
+            rect(*seg[k], 0.27, 0.34, "rubber_black")
+
+
 def _floor_marking(stage, root, plant, lib):
     s = Shapes()
     y = 0.25
@@ -116,8 +147,7 @@ def _floor_marking(stage, root, plant, lib):
             ax, az = WA.to_scene(plant, *a)
             bx, bz = WA.to_scene(plant, *b)
             s.box((ax, 0.06, az), (bx, 0.26, bz), "floor_white")
-        px, pz = WA.to_scene(plant, x0 + 40, y0 + 40)                          # number plate, front-left corner
-        s.box((px, 0.06, pz - 60), (px + 90, 0.27, pz), "floor_yellow")
+        _number_plate(s, plant, x0 + 30, y0 + 30, st.name.split()[-1])         # front-left (south-west) corner
     if s.groups:
         s.build(stage, f"{root}/Geom", lib.refs(list(s.groups)))
     for st in plant.stations:
@@ -125,6 +155,9 @@ def _floor_marking(stage, root, plant, lib):
         T.tag(sp, "station", id=st.name, source=st.ref)
         sp.CreateAttribute("frt:name", Sdf.ValueTypeNames.String, custom=True).Set(st.name)
         sp.CreateAttribute("frt:bounds", Sdf.ValueTypeNames.Float4, custom=True).Set(Gf.Vec4f(st.x0, st.y0, st.x1, st.y1))
+        cx, cz = WA.to_scene(plant, (st.x0 + st.x1) / 2, (st.y0 + st.y1) / 2)   # scene point + size, for "go to"
+        sp.CreateAttribute("frt:center", Sdf.ValueTypeNames.Float3, custom=True).Set(Gf.Vec3f(cx, 0, cz))
+        sp.CreateAttribute("frt:size", Sdf.ValueTypeNames.Float2, custom=True).Set(Gf.Vec2f(st.x1 - st.x0, st.y1 - st.y0))
     for k, a in enumerate(plant.aisles):
         T.tag(stage.DefinePrim(f"{root}/Aisle_{k + 1:02d}", "Scope"), "aisle", id=f"AISLE_{k + 1}")
     for k, a in enumerate(plant.walkways):

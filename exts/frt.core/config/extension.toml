@@ -1,0 +1,25 @@
+[package]
+title = "Factory Review Toolkit: core"
+version = "0.1.0"
+description = "Core library of the Factory Review Toolkit: catalog of parametric factory equipment, DXF/PDF drawing import, building generator, scene recipes, validation, findings, packaging. No UI; also runs outside Kit."
+category = "Simulation"
+keywords = ["factory", "manufacturing", "layout", "dxf", "pdf", "warehouse", "review"]
+authors = ["Alaa Eldakrory"]
+repository = ""
+readme = "../../README.md"
+
+[dependencies]
+"omni.usd" = {}
+"omni.kit.pip_archive" = {}         # numpy
+
+[[python.module]]
+name = "frt_core"
+
+# DXF and PDF readers, installed into Kit's pip cache the first time the extension loads. --no-deps: numpy and
+# typing_extensions come from Kit itself (a second numpy in the app's pip folder would shadow Kit's); pymupdf 2.x
+# drags in onnxruntime, so stay on 1.x.
+[python.pipapi]
+requirements = ["pyparsing>=3.0", "fonttools>=4.40", "ezdxf==1.4.5", "pymupdf>=1.24,<2"]
+modules = ["pyparsing", "fontTools", "ezdxf", "fitz"]
+extra_args = ["--no-deps"]
+use_online_index = true

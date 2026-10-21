@@ -133,12 +133,25 @@ def diff(old, new):
     return out
 
 
+def _extent(d):
+    if "length" in d:
+        return max(d["length"], d["depth"])
+    if "x0" in d:
+        return max(d["x1"] - d["x0"], d["y1"] - d["y0"])
+    return 0.0
+
+
 def to_findings(changes, plant, revision=""):
     """plant: the new revision (Plant, dict or path), to turn plant cm into scene points for "go to"."""
     p = _as_dict(plant)
     fl = FindingList()
     for c in changes:
         loc = (c.location[0] - p["width"] / 2, 0.0, p["depth"] / 2 - c.location[1]) if c.location else None
+        view = None
+        if loc:                                             # stand back far enough to see the whole object
+            d = max(500.0, 0.9 * _extent(c.new or c.old or {}))
+            x, _, z = loc
+            view = {"eye": [x + 0.55 * d, min(0.6 * d, 700.0), z + 0.8 * d], "at": [x, 80.0, z]}
         fl.add(Finding(f"revision.{c.kind}", "info", f"{c.what} {c.id}: {c.message}", location=loc,
-                       reference=revision))
+                       reference=revision, view=view))
     return fl
