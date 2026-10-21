@@ -28,6 +28,7 @@ ROOT = os.environ.get("FRT_TEXTURES", os.path.join(os.path.expanduser("~"), ".fr
 KINDS = {
     "powder": (0.5, 11), "satin": (1.0, 12), "galv": (0.6, 13), "steel": (0.4, 14), "polished": (0.4, 15),
     "cast": (0.3, 16), "plastic": (0.3, 17), "rubber": (0.4, 18), "concrete": (2.0, 19), "cardboard": (0.5, 20),
+    "wood": (0.8, 21), "tread": (0.4, 22),
 }
 
 
@@ -148,6 +149,27 @@ def _maps(kind, rough):
         alb = 1 + 0.05 * fib + 0.04 * smudge
         rgh = rough + 0.05 * fib
         return alb, rgh, fib, 1.0
+    if kind == "wood":                                                     # beech / birch ply worktop
+        grain = spectral(s + 18, 20, 500, 0.5, aniso=30.0)                  # fine streaks along U
+        bands = np.sin(2 * np.pi * (np.linspace(0, 14, N)[None, :] * 0 + np.linspace(0, 9, N)[:, None]
+                                    + 0.35 * spectral(s + 19, 1, 6, 1.5, aniso=6.0)))
+        alb = 1 + 0.06 * grain + 0.05 * bands + 0.05 * smudge
+        rgh = rough + 0.05 * grain + 0.06 * smudge - 0.08 * wipes
+        return alb, rgh, 0.6 * grain + 0.3 * bands, 0.6
+    if kind == "tread":                                                    # diamond (lentil) tread plate
+        n = N
+        pitch = n / 16
+        y, x = np.mgrid[0:n, 0:n].astype(float)
+        cx, cy = np.floor(x / pitch), np.floor(y / pitch)
+        u, v = (x / pitch - cx) - 0.5, (y / pitch - cy) - 0.5
+        sgn = np.where((cx + cy) % 2 == 0, 1.0, -1.0)                       # lugs alternate +-45 degrees
+        a_ = (u + sgn * v) / np.sqrt(2)
+        b_ = (u - sgn * v) / np.sqrt(2)
+        lug = np.clip(1 - (a_ / 0.36) ** 2 - (b_ / 0.09) ** 2, 0, 1) ** 0.5
+        grain = spectral(s + 20, 60, 300, 0.6)
+        alb = 1 + 0.04 * grain + 0.04 * smudge + 0.05 * lug
+        rgh = rough + 0.05 * grain + 0.05 * smudge - 0.1 * lug               # lug tops polished by boots
+        return alb, rgh, lug + 0.05 * grain, 4.0
     raise KeyError(kind)
 
 

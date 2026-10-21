@@ -399,7 +399,7 @@ register(PalletRack("pallet_rack", "pallet_rack", "Selective pallet racking", {
     "double": Param(False, "back-to-back double row"),
     "flue": Param(30.0, "gap between back-to-back rows", 10, 60, "cm"),
     "frame": Param("powder_blue", "upright finish"),
-    "beam": Param("powder_orange", "beam finish"),
+    "beam": Param("powder_grey", "beam finish (not red / orange: red marks quality holds)"),
     "wire_decks": Param(True, "wire decks on the beams"),
     "fill": Param(0.7, "share of positions holding a pallet load", 0, 1),
 }))

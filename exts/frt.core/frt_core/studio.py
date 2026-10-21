@@ -83,9 +83,17 @@ def build_studio(out, key, params=None, age=1.0, turntable=0, rig=True):
             R = max(R, (mx[1] - mn[1]) * 0.8)
         cam = UsdGeom.Camera.Define(st, "/World/Studio/Hero")
         cam.CreateFocalLengthAttr(35.0)
+        cam.CreateHorizontalApertureAttr(24.0)                           # square frame: same fit both ways
+        cam.CreateVerticalApertureAttr(24.0)
         cam.CreateClippingRangeAttr(Gf.Vec2f(5.0, 1.0e5))
-        d = R * 3.0                                                     # fits a wide, short viewport
-        _aim(UsdGeom.Xformable(cam), (c[0] + d * 0.68, c[1] + R * 0.75, c[2] + d * 0.85), (c[0], c[1], c[2]))
+        # fit the item as it turns: a cylinder of its plan half-diagonal, its full height, with margin
+        half = math.tan(math.atan(12.0 / 35.0))
+        rxz = 0.5 * math.hypot(mx[0] - mn[0], mx[2] - mn[2])
+        hh = 0.5 * (mx[1] - mn[1])
+        el = math.radians(18.0)
+        d = 1.18 * max(rxz / half, (hh * math.cos(el) + rxz * math.sin(el)) / half) + rxz
+        dirn = (0.62 * math.cos(el), math.sin(el), 0.78 * math.cos(el))
+        _aim(UsdGeom.Xformable(cam), (c[0] + d * dirn[0], c[1] + d * dirn[1], c[2] + d * dirn[2]), (c[0], c[1], c[2]))
         if turntable:
             st.SetStartTimeCode(0)
             st.SetEndTimeCode(turntable)

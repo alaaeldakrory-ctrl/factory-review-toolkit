@@ -160,6 +160,10 @@ def finish_kind(name):
         return "concrete"
     if name in ("cardboard", "tape_brown"):
         return "cardboard"
+    if name == "wood_top":
+        return "wood"
+    if name == "steel_tread":
+        return "tread"
     return None
 
 
@@ -178,6 +182,8 @@ WEAR = {
     "rubber": dict(dirt_amount=0.12, dust_amount=0.20),
     "concrete": dict(dirt_amount=0.0, dust_amount=0.0, stain_amount=0.25),
     "cardboard": dict(dirt_amount=0.15, dust_amount=0.10),
+    "wood": dict(dirt_amount=0.10, dust_amount=0.10, stain_amount=0.25),
+    "tread": dict(dirt_amount=0.25, dust_amount=0.15, stain_amount=0.15),
 }
 WORN_MDL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "frt_worn.mdl")
 WORN_REL = "./materials/frt_worn.mdl"
