@@ -26,9 +26,11 @@ def safe_stage(final):
     tmp = building_path(final)
     if os.path.exists(tmp):
         os.remove(tmp)
-    stage = Usd.Stage.CreateNew(tmp)
+    # built in memory and exported: CreateNew would clash with a layer of the same name still registered from an
+    # earlier build in this process (a Kit session rebuilding the same scene)
+    stage = Usd.Stage.CreateInMemory(os.path.basename(final))
     yield stage
-    stage.GetRootLayer().Save()
+    stage.GetRootLayer().Export(tmp)
     del stage
     try:
         os.replace(tmp, final)

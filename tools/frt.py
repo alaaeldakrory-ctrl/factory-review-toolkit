@@ -2,6 +2,7 @@
 
     python tools/frt.py build    samples/recipes/demo_plant.toml      build a scene from a recipe (+ validate)
     python tools/frt.py drawing  plant.dxf|plant.pdf [legend.toml]     read a drawing and print what was recognised
+    python tools/frt.py diff     old.dxf|old.plant.json new.dxf|.pdf     what changed between two drawing revisions
     python tools/frt.py validate scene.usd [--auto-tag]                 check a scene, write <scene>.findings.json
     python tools/frt.py package  scene.usd out_dir                      portable folder with every dependency
     python tools/frt.py catalog                                         list catalog items and their parameters
@@ -34,8 +35,18 @@ def main(argv):
         print(f"  {len(p.aisles)} aisles, {len(p.walkways)} walkways")
         for e in p.equipment:
             print(f"  {e.id:5s} {e.catalog:17s} at ({e.x / 100:6.2f}, {e.y / 100:6.2f}) m  {e.length:.0f} x {e.depth:.0f} cm  rot {e.rot:.0f}")
+        for s in p.stations:
+            print(f"  {s.name:10s} {(s.x1 - s.x0) / 100:.1f} x {(s.y1 - s.y0) / 100:.1f} m at ({s.x0 / 100:.2f}, {s.y0 / 100:.2f}) m, "
+                  f"name {'inside' if s.label_inside else 'beside'}")
         for u in p.unknown:
             print("  ? unrecognised:", u)
+    elif cmd == "diff":
+        from frt_core import drawing, revision
+        old, new = [a if a.endswith(".json") else drawing.read_plant(a) for a in args[:2]]
+        ch = revision.diff(old, new)
+        print(f"{len(ch)} changes")
+        for c in ch:
+            print("  ", c)
     elif cmd == "validate":
         from pxr import Usd
         from frt_core import tags, validate
@@ -51,9 +62,11 @@ def main(argv):
     elif cmd == "package":
         from frt_core import package
         rep = package.package(args[0], args[1])
-        print(f"{rep['files']} files, {rep['bytes'] / 1e6:.1f} MB -> {rep['scene']}")
-        if rep["missing"]:
-            print("  missing before packaging:", rep["missing"])
+        print(f"{rep['files']} files, {rep['bytes'] / 1e6:.1f} MB, {rep['rewritten']} paths rewritten -> {rep['scene']}")
+        for m in rep["missing"]:
+            print("  missing in the source:", m)
+        left = package.check(rep["scene"])
+        print("  package check:", "all dependencies resolve" if not left else f"{len(left)} unresolved: {left[:5]}")
     elif cmd == "catalog":
         from frt_core import catalog
         for k, it in catalog.CATALOG.items():
