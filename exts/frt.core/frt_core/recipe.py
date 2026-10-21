@@ -84,6 +84,14 @@ def params_from_drawing(e, defaults):
         p.update(bays=bays, bay_width=round((L - 8) / bays, 1), depth=round(D))
     elif e.catalog == "conveyor":
         p.update(length=round(L), width=max(30, round(D - 12)))
+    elif e.catalog == "pallet_rack":
+        bw = p.get("bay_width", 270.0)
+        p["bays"] = max(1, round((L - 8) / (bw + 8)))
+        p["bay_width"] = round((L - 8) / p["bays"] - 8, 1)
+        if D > 180:
+            p.update(double=True, frame_depth=round((D - p.get("flue", 30.0)) / 2, 1))
+        else:
+            p.update(double=False, frame_depth=round(D, 1))
     return p
 
 
@@ -102,8 +110,21 @@ def _floor_marking(stage, root, plant, lib):
         for xx in range(int(x0) + 150, int(x1) - 50, 300):                      # white chevrons along the walkway
             cx, cz = WA.to_scene(plant, xx, (y0 + y1) / 2)
             s.box((cx - 40, 0.2, cz - (y1 - y0) * 0.3), (cx + 40, 0.3, cz + (y1 - y0) * 0.3), "floor_white")
+    for st in plant.stations:                                                   # station borders: white 8 cm lines
+        x0, y0, x1, y1 = st.x0, st.y0, st.x1, st.y1
+        for (a, b) in (((x0, y0), (x1, y0 + 8)), ((x0, y1 - 8), (x1, y1)), ((x0, y0), (x0 + 8, y1)), ((x1 - 8, y0), (x1, y1))):
+            ax, az = WA.to_scene(plant, *a)
+            bx, bz = WA.to_scene(plant, *b)
+            s.box((ax, 0.06, az), (bx, 0.26, bz), "floor_white")
+        px, pz = WA.to_scene(plant, x0 + 40, y0 + 40)                          # number plate, front-left corner
+        s.box((px, 0.06, pz - 60), (px + 90, 0.27, pz), "floor_yellow")
     if s.groups:
         s.build(stage, f"{root}/Geom", lib.refs(list(s.groups)))
+    for st in plant.stations:
+        sp = stage.DefinePrim(f"{root}/{st.name.replace(' ', '_')}", "Scope")
+        T.tag(sp, "station", id=st.name, source=st.ref)
+        sp.CreateAttribute("frt:name", Sdf.ValueTypeNames.String, custom=True).Set(st.name)
+        sp.CreateAttribute("frt:bounds", Sdf.ValueTypeNames.Float4, custom=True).Set(Gf.Vec4f(st.x0, st.y0, st.x1, st.y1))
     for k, a in enumerate(plant.aisles):
         T.tag(stage.DefinePrim(f"{root}/Aisle_{k + 1:02d}", "Scope"), "aisle", id=f"AISLE_{k + 1}")
     for k, a in enumerate(plant.walkways):

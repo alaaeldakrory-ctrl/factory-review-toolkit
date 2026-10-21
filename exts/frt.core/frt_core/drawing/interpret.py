@@ -47,6 +47,17 @@ class Equip:
 
 
 @dataclass
+class Station:
+    name: str                 # "Station 3"
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    ref: str = ""
+    label_inside: bool = True
+
+
+@dataclass
 class Plant:
     source: str
     width: float = 0.0        # x extent, cm
@@ -57,6 +68,7 @@ class Plant:
     doors: List[Door] = field(default_factory=list)
     aisles: List[Tuple[float, float, float, float]] = field(default_factory=list)
     walkways: List[Tuple[float, float, float, float]] = field(default_factory=list)
+    stations: List[Station] = field(default_factory=list)
     equipment: List[Equip] = field(default_factory=list)
     unknown: List[dict] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
@@ -164,8 +176,85 @@ def interpret(dr, legend=None):
     plant.columns = [(c[0] - x0, c[1] - y0) for c in cols]
     _doors(dr, lg, plant)
     _floor(dr, lg, plant)
+    _stations(dr, lg, plant)
     _equipment(dr, lg, plant)
     return plant
+
+
+# ------------------------------------------------------------------------------------------ text phrases
+def phrases(texts):
+    """Join words that sit on one line next to each other ("STATION" "3" -> "STATION 3"); DXF texts are usually
+    whole already, PDF words never are. Returns [(phrase, centre)]."""
+    words = sorted(texts, key=lambda t: (-t.pos[1], t.pos[0]))
+    out, used = [], set()
+    for i, w in enumerate(words):
+        if i in used:
+            continue
+        group, last = [w], w
+        used.add(i)
+        h = max(w.height, 1.0)
+        for j in range(len(words)):
+            if j in used:
+                continue
+            v = words[j]
+            if abs(v.pos[1] - last.pos[1]) < 0.6 * h and 0 < v.pos[0] - last.pos[0] < (len(last.text) + 2.5) * h:
+                group.append(v)
+                used.add(j)
+                last = v
+        txt = " ".join(g.text.strip() for g in group)
+        out.append((txt, (sum(g.pos[0] for g in group) / len(group), sum(g.pos[1] for g in group) / len(group))))
+    return out
+
+
+# ------------------------------------------------------------------------------------------ stations
+def _stations(dr, lg, plant):
+    cfg = lg.get("stations", {})
+    pat = re.compile(cfg.get("label", r"^(STATION|STN|ST|CELL)\s*[-_#.]?\s*(\d{1,3}[A-Z]?)$"), re.I)
+    min_size = cfg.get("min_size_cm", 250)
+    reach = cfg.get("label_distance_cm", 250)
+    # PDF phrases can run into a neighbouring label ("STATION 1 TABLE"): look for the name anywhere in the phrase
+    word = re.compile(r"\b" + pat.pattern.lstrip("^").rstrip("$") + r"\b", re.I)
+    labels = []
+    for t, p in phrases(dr.texts):
+        m = word.search(t.strip())
+        if m:
+            labels.append((m.group(0), p))
+    used = set()
+    rects = []
+    for p in dr.polys:
+        if not p.closed or p.fill or len(p.pts) != 4:
+            continue
+        x0, y0, x1, y1 = p.bbox()
+        if x1 - x0 < min_size or y1 - y0 < min_size:
+            continue
+        if dr.kind == "dxf":
+            if not _match(p.layer, lg["layers"].get("stations", [])):
+                continue
+        elif _rgb_kind(p.color) in ("yellow", "green", "black", "white", "blue") or p.width >= 1.0:
+            continue
+        rects.append((p, x0, y0, x1, y1))
+    for p, x0, y0, x1, y1 in sorted(rects, key=lambda r: (r[1], r[2])):
+        best, bd, inside = None, 1e9, False
+        for k, (t, q) in enumerate(labels):
+            if k in used:
+                continue
+            if x0 <= q[0] <= x1 and y0 <= q[1] <= y1:
+                d, ins = 0.0, True
+            else:
+                dx = max(x0 - q[0], 0, q[0] - x1)
+                dy = max(y0 - q[1], 0, q[1] - y1)
+                d, ins = math.hypot(dx, dy), False
+            if d < bd and d <= reach:
+                best, bd, inside = k, d, ins
+        if best is None:
+            plant.unknown.append({"what": "rectangle without a station name", "pos": ((x0 + x1) / 2, (y0 + y1) / 2),
+                                  "ref": p.ref})
+            continue
+        used.add(best)
+        m = pat.match(labels[best][0].strip())
+        plant.stations.append(Station(f"Station {m.group(2).upper()}", round(x0, 1), round(y0, 1), round(x1, 1),
+                                      round(y1, 1), p.ref, inside))
+    plant.stations.sort(key=lambda st: (len(st.name), st.name))
 
 
 # ------------------------------------------------------------------------------------------ doors
@@ -288,7 +377,7 @@ def _equipment(dr, lg, plant):
             if p.fill or not p.closed:
                 continue
             k = _rgb_kind(p.color)
-            if k not in ("blue", "other", None):
+            if k not in ("blue", None):
                 continue
             x0, y0, x1, y1 = p.bbox()
             w, h = x1 - x0, y1 - y0

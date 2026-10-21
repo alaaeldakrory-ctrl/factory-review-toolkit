@@ -10,6 +10,7 @@ doors = ["*DOOR*", "*DOCK*", "*OPEN*"]
 aisles = ["*AISLE*", "*MARK*", "*TRAFFIC*"]
 walkways = ["*WALK*", "*PED*"]
 equipment = ["E-*", "*EQUIP*", "*MACH*", "*FURN*"]
+stations = ["*STATION*", "*STN*", "*CELL*", "*WORKAREA*", "*WORK-AREA*"]
 
 [blocks]
 columns = ["COL*", "*COLUMN*", "*PILLAR*"]
@@ -43,6 +44,10 @@ catalog = "flow_rack"
 match = ["FLOWRACK*", "FLOW_RACK*", "*CARTON*FLOW*"]
 labels = ["FLOW RACK", "FLOW"]
 [[symbols]]
+catalog = "pallet_rack"
+match = ["PALLETRACK*", "PALLET_RACK*", "PALLET-RACK*", "RACK*", "*SELECTIVE*"]
+labels = ["PALLET RACK", "RACK", "RACKING"]
+[[symbols]]
 catalog = "pallet_boxes"
 match = ["PALLET*"]
 labels = ["PALLET"]
@@ -54,6 +59,13 @@ labels = ["CRATE"]
 catalog = "forklift"
 match = ["FORKLIFT*", "*FLT*"]
 labels = ["FORKLIFT"]
+
+# station rectangles: a closed rectangle on a station layer (DXF), or any large rectangle that is not a wall,
+# aisle or walkway (PDF), with a name like "STATION 3", "STN 5", "CELL 2" inside it or just beside it
+[stations]
+label = '^(STATION|STN|ST|CELL|WS|WORKSTATION)\s*[-_#.]?\s*(\d{1,3}[A-Z]?)$'
+min_size_cm = 250
+label_distance_cm = 250
 
 [ids]
 pattern = "^[A-Z]{1,3}-?\\d{1,3}$"       # equipment tags like T1, LT2, FR-3

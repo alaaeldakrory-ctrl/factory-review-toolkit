@@ -39,6 +39,8 @@ def collect(stage, time=Usd.TimeCode.Default(), tint=None, skip=()):
         tris = np.concatenate(tris) if tris else np.zeros((0, 3), np.int64)
         col = m.GetDisplayColorAttr().Get(time)
         rgb = tuple(col[0]) if col else (0.6, 0.6, 0.6)
+        if rgb[0] > 0.45 and rgb[1] < 0.25 and rgb[2] > 0.4:   # pack placeholder magenta (real look is MDL): grey
+            rgb = (0.62, 0.62, 0.6)
         if tint:
             rgb = tint(prim, rgb)
         out.append((P, tris, rgb))
