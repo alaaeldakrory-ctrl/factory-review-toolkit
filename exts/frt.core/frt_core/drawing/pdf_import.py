@@ -23,7 +23,8 @@ def find_scale(words):
 
 def load(path, page=0, scale=None, calibration=None, skip_layers=()):
     """calibration: ((x0, y0), (x1, y1), real distance) in page points (PyMuPDF frame); the distance in cm or as
-    written on the drawing ("40'", "16'-10\"", "12 m"). skip_layers: CAD layer patterns to leave out (hatching)."""
+    written on the drawing ("40'", "16'-10\"", "12 m"). skip_layers: CAD layer patterns to leave out; "LAYER:tiny"
+    leaves out only that layer's hatch-sized strokes (under 1 pt), keeping its outlines."""
     import fnmatch
     import fitz
     from .lengths import parse_length
@@ -48,11 +49,19 @@ def load(path, page=0, scale=None, calibration=None, skip_layers=()):
     dr.page_size = (pg.rect.width, hpage)
     P = lambda p: (float(p[0]) * k, (hpage - float(p[1])) * k)
     layers, skipped = set(), 0
+    whole = [x.upper() for x in skip_layers if not x.lower().endswith(":tiny")]
+    tiny = [x[:-5].upper() for x in skip_layers if x.lower().endswith(":tiny")]
     for i, d in enumerate(pg.get_drawings()):
         layer = d.get("layer") or ""
-        if skip_layers and any(fnmatch.fnmatch(layer.upper(), x.upper()) for x in skip_layers):
+        lu = layer.upper()
+        if whole and any(fnmatch.fnmatch(lu, x) for x in whole):
             skipped += 1
             continue
+        if tiny and any(fnmatch.fnmatch(lu, x) for x in tiny):
+            r = d["rect"]
+            if r.width < 1.0 and r.height < 1.0:
+                skipped += 1
+                continue
         layers.add(layer)
         col = d.get("color")
         width = float(d.get("width") or 0.0) * PT_MM            # mm on paper
@@ -118,9 +127,19 @@ def load(path, page=0, scale=None, calibration=None, skip_layers=()):
             elif op == "c":
                 dr.segs.append(Seg(P(it[1]), P(it[4]), layer, c_col, width, ref))
     dr.layers = sorted(layers - {""})
-    for w in words:
-        x0, y0, x1, y1, txt = w[:5]
-        dr.texts.append(Text(txt, P(((x0 + x1) / 2, (y0 + y1) / 2)), (y1 - y0) * k, "", f"pdf:{page}:w"))
+    # one text per PDF text line, in reading order, with its real extent and direction (CAD text is often rotated)
+    for bi, blk in enumerate(pg.get_text("dict")["blocks"]):
+        for li, ln in enumerate(blk.get("lines", [])):
+            txt = " ".join(" ".join(sp["text"].split()) for sp in ln["spans"] if sp["text"].strip()).strip()
+            if not txt:
+                continue
+            x0, y0, x1, y1 = ln["bbox"]
+            dx, dy = ln.get("dir", (1.0, 0.0))
+            vertical = abs(dy) > abs(dx)
+            thick = (x1 - x0) if vertical else (y1 - y0)
+            long_ = (y1 - y0) if vertical else (x1 - x0)
+            dr.texts.append(Text(txt, P(((x0 + x1) / 2, (y0 + y1) / 2)), thick * k, "", f"pdf:{page}:t{bi}.{li}",
+                                 long_ * k, vertical))
     dr.notes.append(f"{len(dr.segs)} lines, {len(dr.polys)} closed shapes, {len(dr.texts)} words"
                     + (f", CAD layers: {len(dr.layers)}" if dr.layers else "") + (f", {skipped} paths skipped" if skipped else ""))
     return dr

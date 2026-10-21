@@ -1,0 +1,148 @@
+# Base drawing profile: what holds for most factory layout drawings, in English, Spanish and Italian.
+# A team / site profile `extends = ["base"]` and adds its own layer names, symbols and corrections (its rules are
+# tried first). Patterns are shell wildcards, case-insensitive. See classify.py for the rule fields.
+
+[profile]
+name = "Base (generic, EN/ES/IT)"
+
+[import]
+ignore_layers = ["*COMENTARIO*", "*COMMENT*", "*COMMENTI*", "*NOTA*", "*NOTE*", "DEFPOINTS", "*VIEWPORT*", "*TITLE*"]
+
+[stations]
+# a station name: ST 1, STN 5, STATION 3, ESTACION 2, ESTACIÓN 2, STAZIONE 4, POSTAZIONE 4, CELL 2, WS 4, TEST 3
+label = '^(ST|STN|STA|STATION|ESTACION|ESTACIÓN|EST|STAZIONE|POSTAZIONE|CELL|CELDA|CELLA|WS|TEST|PRUEBA|COLLAUDO)\s*[-_#.]?\s*(\d{1,3}[A-Z]?)\b'
+search_cm = 700                    # how far above/beside the label to look for the station's unit or box
+bullets = ["•", "", "-", "*", "·", "�"]
+
+# ------------------------------------------------------------------------------------------ building
+[[rules]]
+type = "column"
+layer = ["*COL*", "*COLUMN*", "*COLUMNA*", "*COLONN*", "*PILAST*", "S-COLS*"]
+size_cm = [15, 150]
+
+[[rules]]
+type = "wall"
+layer = ["*WALL*", "*MURO*", "*PARED*", "*MURI*", "*PARETE*", "A-EXTR*", "*BLDG*", "*BUILDING*", "*EDIFICIO*"]
+
+[[rules]]
+type = "rollup_door"
+layer = ["*ROLL*", "*OVERHEAD DOOR*", "*SECTIONAL*", "*CORTINA*", "*PORTON*", "*SERRANDA*", "*PORTONE*"]
+
+[[rules]]
+type = "dock"
+text = ["DOCK*", "*ANDEN*", "*ANDÉN*", "*BAIA*", "*MUELLE*"]
+near = true
+
+[[rules]]
+type = "door"
+layer = ["*DOOR*", "*PUERTA*", "*PORTA*", "*PORTE*"]
+
+# ------------------------------------------------------------------------------------------ lifting
+[[rules]]
+type = "jib_crane"
+text = ["*JIB*", "*PLUMA*", "*BANDERA*", "*BANDIERA*", "*GRUA GIRATORIA*"]
+near = true
+shape = "circle"
+size_cm = [200, 4000]
+bonus = 0.05
+param = { capacity = 'text:\d[\d,.]*\s*(lb|lbs|kg|t|ton)' }
+
+[[rules]]
+type = "jib_crane"
+text = ["*JIB*", "*PLUMA*", "*BANDERA*", "*BANDIERA*"]
+near = true
+param = { capacity = 'text:\d[\d,.]*\s*(lb|lbs|kg|t|ton)' }
+
+[[rules]]
+type = "bridge_crane"
+text = ["*BRIDGE*", "*PUENTE GRUA*", "*PUENTE GRÚA*", "*CARROPONTE*", "*CARRO PONTE*", "*OVERHEAD CRANE*", "*WORKSTATION CRANE*"]
+near = true
+size_cm = [200, 6000]
+param = { capacity = 'text:\d[\d,.]*\s*(lb|lbs|kg|t|ton)' }
+
+[[rules]]
+type = "crane"
+layer = ["*OVERHEAD*", "*CRANE*", "*GRUA*", "*GRÚA*", "*GRU*"]
+size_cm = [150, 6000]
+
+# ------------------------------------------------------------------------------------------ equipment by label
+[[rules]]
+type = "lift_table"
+text = ["LIFT TABLE", "*LIFT TABLE*", "*MESA ELEVADORA*", "*MESA DE ELEVACION*", "*TAVOLA ELEVATRICE*", "*SCISSOR TABLE*"]
+near = true
+
+[[rules]]
+type = "flow_rack"
+text = ["*FLOW RACK*", "*FLOWRACK*", "*RACK DE FLUJO*", "*FLUJO*", "*SCAFFALE A GRAVIT*", "*CARTON FLOW*"]
+
+[[rules]]
+type = "pallet_rack"
+text = ["*PALLET RACK*", "*RACKING*", "*RACK SELECTIVO*", "*SCAFFALATURA*", "*ESTANTERIA*"]
+
+[[rules]]
+type = "parts_rack"
+text = ["*RACK*", "*SHELF*", "*SHELVING*", "*ESTANTE*", "*SCAFFALE*"]
+
+[[rules]]
+type = "tool_cart"
+text = ["*CART*", "*CARRITO*", "*CARRO*", "*CARRELLO*", "*TROLLEY*"]
+
+[[rules]]
+type = "industrial_table"
+text = ["*TABLE*", "*BENCH*", "*MESA*", "*BANCO*", "*TAVOLO*", "*BANCO DI LAVORO*", "*W. TABLE*"]
+
+[[rules]]
+type = "trash"
+text = ["TRASH", "*BASURA*", "*RIFIUTI*", "*WASTE*", "*SCRAP*", "*CHATARRA*"]
+
+[[rules]]
+type = "computer_station"
+text = ["*COMPUTER*", "*PC STATION*", "*COMPUTADORA*", "*COMPUTADOR*", "*POSTAZIONE PC*", "*TERMINAL*"]
+
+[[rules]]
+type = "computer_station"
+layer = ["*COMPUTER*", "*COMPUTADORA*"]
+
+[[rules]]
+type = "ramp"
+text = ["*RAMP*", "*RAMPA*"]
+
+[[rules]]
+type = "scale"
+text = ["SCALE", "*SCALE*", "*BASCULA*", "*BÁSCULA*", "*BILANCIA*", "*PESA*"]
+
+[[rules]]
+type = "conveyor"
+text = ["*CONVEYOR*", "*TRANSPORTADOR*", "*BANDA*", "*NASTRO*", "*TRASPORTATORE*", "*RODILLOS*", "*RULLIERA*"]
+
+[[rules]]
+type = "forklift"
+text = ["*FORKLIFT*", "*MONTACARGAS*", "*CARRELLO ELEVATORE*", "*MULETTO*", "*FLT*"]
+near = true
+
+# ------------------------------------------------------------------------------------------ people, areas
+[[rules]]
+type = "operator"
+layer = ["*OPERATOR*", "*OPERADOR*", "*OPERATORE*", "*OPERARIO*", "*WORKER*", "*PEOPLE*"]
+size_cm = [20, 200]
+
+[[rules]]
+type = "aisle"
+layer = ["*AISLE*", "*PASILLO*", "*CORRIDOIO*", "*TRAFFIC*", "*TRAFICO*"]
+
+[[rules]]
+type = "walkway"
+layer = ["*WALK*", "*PEATON*", "*PEDON*", "*PED*"]
+
+[[rules]]
+type = "station_box"
+layer = ["*STATION*", "*ESTACION*", "*STAZIONE*", "*CELL*", "*WORKAREA*", "*PROCESO*", "*PROCESS*", "*DELIMIT*"]
+shape = "rect"
+size_cm = [150, 4000]
+short_cm = [100, 4000]
+
+[[rules]]
+type = "area"
+shape = "rect"
+size_cm = [1000, 100000]
+short_cm = [400, 100000]

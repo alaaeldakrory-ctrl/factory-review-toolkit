@@ -61,6 +61,8 @@ class Text:
     height: float = 0.0
     layer: str = ""
     ref: str = ""
+    width: float = 0.0                   # along the text direction, cm (0 = unknown)
+    vertical: bool = False
 
 
 @dataclass
