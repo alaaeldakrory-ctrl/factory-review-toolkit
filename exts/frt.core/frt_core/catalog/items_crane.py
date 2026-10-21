@@ -138,6 +138,8 @@ FONT5x7 = {      # rows top to bottom, 5 columns: enough for signs (capacities, 
     "R": ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
     "I": ["01110", "00100", "00100", "00100", "00100", "00100", "01110"],
     "V": ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+    "Y": ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+    "/": ["00001", "00010", "00010", "00100", "01000", "01000", "10000"],
     ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
     " ": ["00000"] * 7,
 }
@@ -226,7 +228,7 @@ def hook(s, x, y, z, size=1.0, mat="powder_yellow", latch="stainless"):
     s.sweep([(x + 2.4 * k, y - 7 * k, z), tip], 0.35 * k, latch, sides=6)                                  # latch
 
 
-def chain_hoist(s, sk, tx, fb, z, gfw, hook_y, body, attach_key, attach):
+def chain_hoist(s, sk, tx, fb, z, gfw, hook_y, body, attach_key, attach, cap=""):
     """Electric chain hoist under a running flange at height fb (flange bottom), centred on z."""
     # trolley: side plates both sides of the flange, flanged wheels on the flange top, cross bolts
     for uz in (-1, 1):
@@ -272,25 +274,45 @@ def chain_hoist(s, sk, tx, fb, z, gfw, hook_y, body, attach_key, attach):
         sk.rbox((cx, yb - 2, z + uz * 5.8), (14, 22, 1.6), 0.6, "powder_dark", seg=1)
         sk.bolt((cx, yb, z + uz * 6.6), (0, 0, uz), 1.0, BOLT)
     sk.rbox((cx, yb - 12, z), (13, 4, 13), 1.2, "powder_dark", seg=1)
+    if cap:                                                                       # rated-load tag on the block
+        sk.rbox((cx, yb - 3, z + 6.75), (8.0, 4.0, 0.15), 0.3, "plastic_yellow", seg=1)
+        sign_text(sk, cap, (cx - 1.3 * 6 / 7 * len(cap) / 2, yb - 2.35, z + 6.6), (1, 0, 0), (0, -1, 0), 1.3,
+                  "plastic_black", (0, 0, 1))
     hook(sk, cx, yb - 14, z, 1.0)
     attach[attach_key] = (cx, yb - 28, z)
     return cx, hb
 
 
 def pendant(s, x_top, y_top, z, attach, key):
-    """Pendant control box on a sagging cable from the hoist."""
+    """Pendant control station on its cable from the hoist: moulded housing with a ribbed strain-relief boot,
+    a mushroom E-stop on top, three rows of shrouded buttons with arrows (hoist, trolley, bridge) and legends,
+    a hanging eye and a lanyard loop at the bottom."""
+    from . import details as DT
     px, pz = x_top - 12, z + 30
+    top = 131.0
     path = [(x_top, y_top, z + 20)]
     for i in range(1, 10):
         t = i / 9
-        path.append((x_top + (px - x_top) * t, y_top + (128 - y_top) * t, z + 20 + (pz - z - 20) * t + 3 * math.sin(math.pi * t)))
+        path.append((x_top + (px - x_top) * t, y_top + (top + 6 - y_top) * t, z + 20 + (pz - z - 20) * t + 3 * math.sin(math.pi * t)))
     s.sweep(path, 0.55, "cable_pvc", sides=8)
-    s.rbox((px, 113, pz), (9, 28, 8), 2.5, "powder_yellow", seg=2)
-    for j in range(5):
-        s.lathe((px, 121 - j * 4.4, pz + 4), (px, 121 - j * 4.4, pz + 5.2), [(0, 1.6), (0.7, 1.6), (1, 1.2)],
-                "plastic_black", sides=12)
-    s.lathe((px, 127, pz), (px, 131, pz), [(0, 1.5), (0.4, 1.5), (0.5, 3.4), (1, 3.0)], "powder_red", sides=16)
-    attach[key] = (px, 113, pz)
+    s.lathe((px, top + 7, pz), (px, top - 0.5, pz),
+            [(0, 0.75)] + [v for k in range(5) for v in ((0.1 + k * 0.16, 1.05), (0.18 + k * 0.16, 0.85))] + [(1, 1.7)],
+            "rubber_black", sides=16)                                                       # strain-relief boot
+    with s.touch(0.25):
+        s.rbox((px, top - 15, pz), (10.5, 30, 7.5), 2.6, "powder_yellow", seg=3)            # housing
+    s.rbox((px, top - 15, pz + 3.85), (8.6, 25.0, 0.2), 0.8, "plastic_black", seg=1)          # face panel
+    r, u, n = (1, 0, 0), (0, 1, 0), (0, 0, 1)
+    face = (px, top - 15, pz + 3.95)
+    for row, (ya, (a1, a2), lab) in enumerate(((7.5, ("up", "down"), "HOIST"), (0.0, ("left", "right"), "TROLLEY"),
+                                               (-7.5, ("up", "down"), "BRIDGE"))):
+        for xb, ar in ((-2.3, a1), (2.3, a2)):
+            DT.push_button(s, DT.at(face, r, u, n, xb, ya), r, u, n, "plastic_black", arrow=ar, d=2.3)
+        DT.legend(s, DT.at(face, r, u, n, 0, ya - 2.9), r, u, n, lab, 0.45)
+    DT.estop(s, (px, top, pz), (1, 0, 0), (0, 0, -1), (0, 1, 0), 3.0)                         # E-stop on top
+    s.torus((px, top - 31.2, pz), (0, 0, 1), 1.2, 0.35, "plastic_black", seg=14, sides=6)    # lanyard eye
+    s.sweep([(px, top - 32.4, pz), (px - 0.6, top - 40, pz + 0.4), (px + 0.6, top - 47, pz), (px, top - 49, pz)], 0.25,
+            "plastic_yellow", sides=6)
+    attach[key] = (px, top - 15, pz)
 
 
 def festoon(s, x0, x1, y, z, park_x, run_x, loops=6):
@@ -388,6 +410,8 @@ def festoon_rig(stage, path, lib, track, x0, x1, y, z, park_x, run_x, hoist, loo
     for k, x in enumerate(xs):
         st = new_shapes()
         st.rbox((x, y - 5, z), (7, 6, 5), 1.0, "steel_dark", seg=1)
+        st.rbox((x, y - 8.6, z), (3.6, 1.6, 5.6), 0.5, "plastic_black", seg=1)                  # cable clamp
+        st.bolt((x, y - 9.4, z + 2.0), (0, -1, 0), 0.5, "bolt_zinc")
         for wx in (x - 2.2, x + 2.2):
             st.lathe((wx, y - 1, z - 2.6), (wx, y - 1, z + 2.6), [(0, 1.1), (1, 1.1)], "plastic_black", sides=10)
         rig_xform(stage, f"{path}/Trolley_{k}")
@@ -450,11 +474,18 @@ class WorkstationCrane(Item):
                 weld_ring(s, (x, H - 2.8, z), (0, 1, 0), a, a, 2.5, col)                         # cap weld
                 for y_ in (splice - 3.0, splice + 3.0):
                     weld_ring(s, (x, y_, z), (0, 1, 0), a, a, 2.5, col, bead=0.4)
+        from . import details as DT
+        DT.sign(s, (xs[0], 165.0, zs[-1] + a / 2 + 0.05), (1, 0, 0), (0, 1, 0), (0, 0, 1), 30.0,
+                ["OVERHEAD", "CRANE", "KEEP CLEAR"], header="DANGER")                          # column sign
         # ------------------------------------------------------------------ runways, tie beams, braces
         rail_top = H + rd + 4.0
         for x in xs:
             s.rprism((x, H + rd / 2, -Rw / 2), (x, H + rd / 2, Rw / 2), rw, rd, 2.0, col)          # runway box
             s.rbox((x, H + rd + 2, 0), (5, 4, Rw - 8), 0.6, "steel_dark", seg=1)                 # running rail
+            for zc in [(-Rw / 2 + 30 + k * 60.0) for k in range(int((Rw - 60) // 60) + 1)]:       # rail clips
+                for ux in (-1, 1):
+                    s.rbox((x + ux * 4.3, H + rd + 0.7, zc), (3.6, 1.4, 4.0), 0.3, "steel_dark", seg=1)
+                    s.bolt((x + ux * 4.9, H + rd + 1.4, zc), (0, 1, 0), 0.9, BOLT)
             s.rbox((x, H + rd + 4.05, 0), (2.6, 0.12, Rw - 12), 0.05, "steel_machined", seg=1)  # worn wheel track
             for z in zs:
                 s.rbox((x, rail_top + 9, z), (2.4, 16, 14), 0.8, col, seg=1)                     # lifting lug
@@ -530,6 +561,11 @@ class WorkstationCrane(Item):
                 for zend, uz in ((bz - et / 2, -1), (bz + et / 2, 1)):
                     s.lathe((x, wy, zend), (x, wy, zend + uz * 9), [(0, 5.5), (0.6, 5.5), (0.8, 5.0), (1, 3.5)],
                             "rubber_black", sides=16)
+            from .items_lift import hazard
+            for x in xs:                                                                          # striped end trucks
+                ux = 1 if x > 0 else -1
+                hazard(s, (x + ux * 10.15, (t_lo + t_hi) / 2 - 7, bz - et / 2 + 14), (0, 0, 1), (0, 1, 0), (ux, 0, 0),
+                       et - 28, 14, w=6.0)
             dx = xs[1] + 13                                                                       # drive
             finned_motor(s, (dx + 14, wy, bz - et / 2 + 28), (dx + 40, wy, bz - et / 2 + 28), 9.0, "powder_anthracite",
                          "powder_black")
@@ -570,7 +606,8 @@ class WorkstationCrane(Item):
                           (f"hook{hi_ + 1}" if nh > 1 else "hook")
                     hp = f"{bp}/Hoist_{hi_ + 1}"
                     sh, sk = new_shapes(), new_shapes()
-                    cx, hb = chain_hoist(sh, sk, tx, fb, bz, gw + 14, hk, "powder_orange", key, attach)
+                    cx, hb = chain_hoist(sh, sk, tx, fb, bz, gw + 14, hk, "powder_orange", key, attach,
+                                         cap.replace(" ", ""))
                     pendant(sh, cx, hb - 30, bz, attach, key.replace("hook", "pendant"))
                     hmax = min(H - 120.0, hb - 43 - 50)
                     rig_xform(stage, hp, x_min=-S / 2 + 60, x_max=S / 2 - 60, x_rest=tx, kind="chain_hoist",

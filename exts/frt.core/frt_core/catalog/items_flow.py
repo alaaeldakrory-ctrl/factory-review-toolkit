@@ -246,7 +246,14 @@ def tote(s, ln, u, v, wc, tw, tl, th, mat):
         ln.box(s, u, v + th - 0.3, wc + sw * (tl / 2 + 0.2), (tw + 0.8, 0.6, 0.9), mat, r=0.2)   # rim
         ln.box(s, u + sw * (tw / 2 + 0.2), v + th - 0.3, wc, (0.9, 0.6, tl + 0.8), mat, r=0.2)
         ln.box(s, u, v + th - 2.8, wc + sw * (tl / 2 + 0.03), (min(9.0, tw * 0.4), 2.0, 0.05), "hole")  # handle
-    ln.box(s, u, v + th * 0.45, wc + tl / 2 + 0.06, (tw * 0.42, 4.5, 0.1), "floor_white")
+        for k in (-1, 0, 1):                                                                     # wall ribs
+            ln.box(s, u + sw * (tw / 2 + 0.25), v + th / 2 - 0.4, wc + k * tl * 0.3, (0.5, th - 1.6, 0.7), mat, r=0.2)
+        for k in (-1, 1):                                                                        # corner posts
+            ln.box(s, u + k * (tw / 2 - 0.4), v + th / 2, wc + sw * (tl / 2 - 0.4), (1.2, th - 0.6, 1.2), mat, r=0.4)
+    for k in (-1, 1):
+        ln.box(s, u + k * tw * 0.3, v + th / 2 - 0.4, wc - tl / 2 - 0.25, (0.7, th - 1.6, 0.5), mat, r=0.2)  # back ribs
+    ln.box(s, u, v + th * 0.45, wc + tl / 2 + 0.25, (tw * 0.46, 5.2, 0.35), mat, r=0.2)        # label holder
+    ln.box(s, u, v + th * 0.45, wc + tl / 2 + 0.45, (tw * 0.42, 4.5, 0.06), "floor_white")
 
 
 def carton(s, ln, u, v, wc, tw, tl, th):
@@ -296,7 +303,28 @@ class RollerRack(Item):
             upright(s, x, zfc, 1, H, col)
             upright(s, x, zbc, -1, H, col)
             frame_lacing(s, x, zbc, zfc, H, col)
+        from . import details as DT
+        cz, ysg = (zfc + zbc) / 2, min(H - 30.0, 150.0)
+        for x, ux in ((xs[0], -1), (xs[-1], 1)):                                                 # load notice
+            DT.sign(s, (x + ux * 2.4, ysg, cz), (0, 0, -ux), (0, 1, 0), (ux, 0, 0), min(30.0, (zfc - zbc) * 0.4),
+                    ["MAX LOAD", "50 KG LANE", "DO NOT CLIMB"], header="NOTICE", header_mat="powder_blue")
+        for k, x in enumerate(xs):                                                               # frame ID tags
+            tag = f"F{k + 1}"
+            s.rbox((x, 34.0, zfc + UD / 2 + 0.1), (5.0, 2.8, 0.15), 0.3, "aluminium", seg=1)
+            sign_text(s, tag, (x - 1.4 * 6 / 7 * len(tag) / 2, 34.8, zfc + UD / 2 + 0.05), (1, 0, 0), (0, -1, 0), 1.4,
+                      "plastic_black", (0, 0, 1))
         if p["guards"]:
+            from .items_lift import hazard
+            for x, ux in ((xs[0], -1), (xs[-1], 1)):                                            # end barriers
+                xb = x + ux * (UW / 2 + 5.0)
+                for zz in (zbc, zfc):
+                    s.rprism((xb, 0.6, zz), (xb, 32.0, zz), 6.0, 6.0, 1.0, "powder_yellow", up=(1, 0, 0))
+                    s.rbox((xb, 0.5, zz), (12.0, 1.0, 12.0), 0.3, "powder_yellow", seg=1)
+                    for dz in (-4, 4):
+                        s.bolt((xb + 4, 1.0, zz + dz), (0, 1, 0), 1.0, BOLT)
+                    s.lathe((xb, 32.0, zz), (xb, 33.0, zz), [(0, 3.4), (1, 3.0)], "plastic_black", sides=16)
+                s.rprism((xb, 22.0, zbc + 3), (xb, 22.0, zfc - 3), 5.0, 10.0, 1.2, "powder_yellow")
+                hazard(s, (xb + ux * 2.55, 17.0, zbc + 3), (0, 0, 1), (0, 1, 0), (ux, 0, 0), zfc - zbc - 6, 10.0, w=6.0)
             for x in (xs[0], xs[-1]):
                 s.rprism((x, 0.5, zfc), (x, 40, zfc), UW + 3.0, UD + 3.0, 1.2, "powder_yellow", up=(1, 0, 0))
                 for y_ in (10, 20, 30):

@@ -93,6 +93,15 @@ def build_studio(out, key, params=None, age=1.0, turntable=0, rig=True):
             op = xf.AddRotateYOp()
             op.Set(0.0, 0)
             op.Set(360.0, turntable)
+            if rig and key == "bridge_crane":                           # hook down and up, trolley across
+                from .rig import crane as RC
+                lim = RC.limits(st, "/World/Asset/Item")["Bridge_1"]
+                x0, x1, _ = lim["Hoist_1"]["x"]
+                h0, h1, _ = lim["Hoist_1"]["hook"]
+                RC.animate(st, "/World/Asset/Item", [(0, {"x": x0 + (x1 - x0) * 0.3, "hook": h1}),
+                                                     (turntable * 0.4, {"hook": h0 + 20}),
+                                                     (turntable * 0.7, {"x": x0 + (x1 - x0) * 0.6}),
+                                                     (turntable, {"hook": h1})], hoist=1)
             if rig and key == "lift_table":
                 from .rig import lift_table as RL
                 RL.animate(st, "/World/Asset/Item", [(0, {"lift": 0}), (turntable * 0.35, {"lift": 1}),

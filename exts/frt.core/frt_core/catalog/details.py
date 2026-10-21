@@ -130,8 +130,14 @@ def enclosure(s, p, r, u, n, w, h, d, body="abs_lightgrey", screws="stainless"):
 
 
 def push_button(s, p, r, u, n, cap="lamp_green", arrow=None, d=2.6):
-    """22 mm-class push button on a face: black shroud bezel, recessed coloured cap, optional arrow (+1 up / -1 down)."""
+    """22 mm-class push button on a face: black shroud bezel, recessed coloured cap, optional arrow (+1 / "up",
+    -1 / "down", "left", "right" in the face's r / u frame)."""
     R = d / 2
+    if arrow in ("left", "right"):
+        r, u = u, (tuple(-c for c in r) if arrow == "left" else r)
+        arrow = 1
+    elif arrow in ("up", "down"):
+        arrow = 1 if arrow == "up" else -1
     s.lathe(p, at(p, r, u, n, 0, 0, 0.7), [(0, R * 1.45), (0.5, R * 1.45), (0.8, R * 1.35), (1, R * 1.1)],
             "plastic_black", sides=24)                                                                     # shroud
     s.lathe(at(p, r, u, n, 0, 0, 0.6), at(p, r, u, n, 0, 0, 0.95), [(0, R * 0.95), (0.7, R * 0.95), (1, R * 0.88)],
@@ -257,3 +263,32 @@ def quarter_lock(s, p, r, u, n, d=1.8):
     s.lathe(p, at(p, r, u, n, 0, 0, 0.35), [(0, R * 1.3), (0.6, R * 1.3), (1, R * 1.1)], "chrome", sides=20)
     s.lathe(at(p, r, u, n, 0, 0, 0.35), at(p, r, u, n, 0, 0, 0.5), [(0, R * 0.8), (1, R * 0.75)], "plastic_black", sides=18)
     s.obox(at(p, r, u, n, 0, 0, 0.51), (R * 1.1, 0.18, 0.04), (r, u, n), "hole")
+
+
+def sign(s, p, r, u, n, w, lines, header=None, header_mat="plastic_red", plate="label_vinyl", ink="plastic_black",
+         border=None):
+    """Safety / notice sign: plate with an optional coloured header (white text) and lines of text, rivets."""
+    rows = len(lines) + (1.6 if header else 0)
+    th = min(w / (max([len(t) for t in lines] + [len(header or "")]) * 6 / 7 + 1.5), w * 0.16)
+    h = th * (rows * 1.7 + 1.2)
+    s.rbox(at(p, r, u, n, 0, 0, 0.0), (w, h, 0.3), 0.12, plate, axes=(r, u, n), seg=1)        # thick enough to hide
+    if border:
+        for a, b, ww, hh in ((0, h / 2 - th * 0.25, w - th * 0.3, th * 0.18), (0, -h / 2 + th * 0.25, w - th * 0.3, th * 0.18),
+                             (-w / 2 + th * 0.25, 0, th * 0.18, h - th * 0.3), (w / 2 - th * 0.25, 0, th * 0.18, h - th * 0.3)):
+            s.obox(at(p, r, u, n, a, b, 0.17), (ww, hh, 0.03), (r, u, n), border)
+    down = tuple(-c for c in u)
+    y = h / 2 - th * 0.75
+    if header:
+        s.rbox(at(p, r, u, n, 0, y - th * 0.55, 0.17), (w * 0.86, th * 1.9, 0.04), th * 0.9, header_mat, axes=(r, u, n), seg=2)
+        tw = th * 6 / 7 * len(header)
+        sign_text(s, header, at(p, r, u, n, -tw / 2, y + th * 0.4, -0.04), r, down, th, "label_vinyl", n)
+        y -= th * 2.4
+    for t in lines:
+        tw = th * 6 / 7 * len(t)
+        sign_text(s, t, at(p, r, u, n, -tw / 2, y, -0.12), r, down, th, ink, n)
+        y -= th * 1.7
+    for a in (-w / 2 + th * 0.6, w / 2 - th * 0.6):
+        for b in (-h / 2 + th * 0.6, h / 2 - th * 0.6):
+            s.lathe(at(p, r, u, n, a, b, 0.1), at(p, r, u, n, a, b, 0.3), [(0, th * 0.22), (1, th * 0.16)], "stainless",
+                    sides=8)
+    return h

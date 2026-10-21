@@ -20,7 +20,7 @@ import zlib
 
 import numpy as np
 
-VERSION = 1
+VERSION = 2                                   # bump when a generator changes: new cache folder
 N = 1024                                       # map resolution (tileable)
 ROOT = os.environ.get("FRT_TEXTURES", os.path.join(os.path.expanduser("~"), ".frt", "textures", f"v{VERSION}"))
 
@@ -110,7 +110,7 @@ def _maps(kind, rough):
         v, edge = cells(s + 7, 140)                                        # spangle crystals ~5 cm
         grain = spectral(s + 8, 40, 200, 0.6, aniso=1.0)
         alb = 1 + 0.10 * (v - 0.5) + 0.02 * grain - 0.04 * (1 - edge) ** 6 + 0.03 * smudge
-        rgh = rough + 0.14 * (v - 0.5) + 0.05 * smudge - 0.08 * wipes
+        rgh = rough + 0.07 * (v - 0.5) + 0.03 * smudge - 0.04 * wipes
         h = 0.6 * edge + 0.15 * grain
         return alb, rgh, h, 1.0
     if kind in ("steel", "polished"):

@@ -51,7 +51,7 @@ LOOKS = {
     "powder_dark": (_rgb("#383e42"), 0.45, 0.0, "powder_n", 0.5, 0.2),       # RAL 7016 anthracite
     "powder_black": (_rgb("#151618"), 0.50, 0.0, "powder_n", 0.5, 0.2),      # RAL 9005 jet black (hazard bands)
     "powder_anthracite": (_rgb("#3a3f44"), 0.48, 0.0, "powder_n", 0.5, 0.2),  # RAL 7016: motors, gear cases
-    "galvanised": ((0.62, 0.63, 0.64), 0.38, 1.0, "steel_n", 0.15, 0.0),
+    "galvanised": ((0.62, 0.63, 0.64), 0.48, 1.0, "steel_n", 0.15, 0.0),
     "stainless": ((0.72, 0.72, 0.73), 0.25, 1.0, "steel_n", 0.1, 0.0),
     "aluminium": ((0.80, 0.81, 0.82), 0.32, 1.0, "steel_n", 0.1, 0.0),
     "steel_dark": ((0.30, 0.31, 0.32), 0.40, 1.0, "steel_n", 0.2, 0.0),
