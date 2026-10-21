@@ -74,6 +74,10 @@ LOOKS = {
     "cast_aluminium": ((0.66, 0.67, 0.68), 0.45, 1.0, "steel_n", 0.3, 0.0),  # motor / gear housings
     "cable_pvc": ((0.04, 0.04, 0.045), 0.35, 0.0, "rubber_n", 0.3, 0.0),     # cable sheath
     "concrete": (_rgb("#a6a39b"), 0.85, 0.0, None, 0.0, 0.0),                # grout, plinths
+    "hole": (_rgb("#0a0b0c"), 0.95, 0.0, None, 0.0, 0.0),                    # punched holes, recesses (seen as shadow)
+    "nylon_white": (_rgb("#dcd9cf"), 0.38, 0.0, None, 0.0, 0.0),             # flow wheels, ball cages
+    "plastic_red": (_rgb("#b3261e"), 0.40, 0.0, None, 0.0, 0.0),
+    "plastic_yellow": (_rgb("#e0a800"), 0.40, 0.0, None, 0.0, 0.0),
 }
 
 # Textured NVIDIA presets (OmniPBR with albedo / ORM / normal sets) used for RTX when the asset packs are installed;
@@ -89,7 +93,8 @@ PRESETS = {
     "powder_dark": "Paint/Powdercoat_Black_A.mdl",
     "powder_black": "Paint/Painted_Metal_Black_Glossy_A.mdl",
     "powder_anthracite": "Paint/Painted_Metal_Grey_Glossy_A.mdl",
-    "galvanised": "Metals/Metal_Steel_Textured_A.mdl",
+    "galvanised": "Metals/Steel_MidGray_Matte_A.mdl",
+    "steel_tread": "Metals/Metal_Steel_Textured_A.mdl",          # diamond tread plate
     "stainless": "Metals/Steel_Stainless_Brushed_A.mdl",
     "aluminium": "Metals/Aluminium_Brushed_A.mdl",
     "steel_dark": "Metals/Iron_A.mdl",

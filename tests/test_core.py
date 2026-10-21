@@ -233,3 +233,22 @@ def test_smooth_primitives_make_consistent_meshes(stage):
     m = s.build(stage, "/World/T", None)[0]
     st = m.GetPrim().GetAttribute("primvars:st").Get()
     assert st is not None and len(st) == len(I)                   # UVs for every face corner
+
+
+def test_flow_rack_modular(stage):
+    from pxr import UsdGeom
+    prim, p = CAT.place(stage, "/World", "flow_rack", "FR", params={
+        "bay_widths": "120,90", "levels": 3, "lanes": 2, "bed": "wheel,roller,ball", "return_top": True})
+    item = CAT.CATALOG["flow_rack"]
+    assert item.footprint(p) == (218.0, 180.0)                         # 120 + 90 + one upright
+    att = {c.GetName(): UsdGeom.Xformable(c).GetOrderedXformOps()[0].Get()
+           for c in stage.GetPrimAtPath("/World/FR/Attach").GetChildren()}
+    assert {f"lane_L{l}_B{b}_N{n}_pick" for l in (1, 2, 3) for b in (1, 2) for n in (1, 2)} <= set(att)
+    lo, hi = att["lane_L1_B1_N1_pick"], att["lane_L1_B1_N1_load"]
+    assert lo[1] < hi[1] and lo[2] > hi[2]                              # lanes roll down to the pick side (+Z)
+    r_pick, r_load = att["lane_L3_B1_N1_pick"], att["lane_L3_B1_N1_load"]
+    assert r_pick[1] < r_load[1] and r_pick[2] < r_load[2]              # the return level rolls back
+    pi = UsdGeom.PointInstancer(stage.GetPrimAtPath("/World/FR/Rolling"))
+    kinds = {t.name.split("_")[0] for t in pi.GetPrototypesRel().GetTargets()}
+    assert {"wheel", "roller", "nut", "ball"} <= kinds
+    assert stage.GetPrimAtPath("/World/FR/Load/L1_B1_N1")             # each lane's load can be animated
