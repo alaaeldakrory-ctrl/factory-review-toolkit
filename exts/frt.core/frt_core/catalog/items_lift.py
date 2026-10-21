@@ -27,6 +27,8 @@ from .items_flow import poly
 
 BOLT = "bolt_zinc"
 DROP = 3.5                     # the cylinder tube hangs this far below the outer arms
+CASTORS = {"black": ("rubber_black", "plastic_grey"), "red": ("pu_red", "powder_dark"),
+           "grey": ("plastic_grey", "powder_dark")}
 UNIT = 30.0                    # length of the power-unit bay at the handle end (mobile, onboard power)
 
 
@@ -85,9 +87,9 @@ def rig_xf(stage, path, t=(0, 0, 0), rz=None):
     return x
 
 
-def castor(s, x, z, top, swivel, col):
-    """Industrial castor under the base at (x, z): top plate, fork, polyurethane wheel; swivel ones have a
-    kingpin, bearing ring and a brake pedal."""
+def castor(s, x, z, top, swivel, col, tread="rubber_black", hub="plastic_grey"):
+    """Industrial castor under the base at (x, z): top plate, fork, polyurethane tread on a hub; swivel ones have
+    a kingpin, bearing ring and a brake pedal."""
     r, wy = 6.25, 6.25
     s.rbox((x, top - 0.4, z), (10, 0.8, 9), 0.3, col, seg=1)
     for dx in (-3.5, 3.5):
@@ -98,9 +100,11 @@ def castor(s, x, z, top, swivel, col):
     off = 2.5 if swivel else 0.0                                   # swivel lead
     for uz in (-1, 1):
         s.rbox((x - off / 2, (top - 2.4 + wy) / 2, z + uz * 2.9), (6.5, top - 2.4 - wy + 4, 0.6), 0.25, col, seg=1)
-    s.lathe((x - off, wy, z - 2.2), (x - off, wy, z + 2.2), [(0, r - 0.6), (0.15, r), (0.85, r), (1, r - 0.6)],
-            "rubber_black", sides=22)
-    s.lathe((x - off, wy, z - 2.4), (x - off, wy, z + 2.4), [(0, 2.6), (1, 2.6)], "plastic_grey", sides=14)   # hub
+    s.lathe((x - off, wy, z - 2.2), (x - off, wy, z + 2.2), [(0, r - 1.4), (0.08, r - 0.5), (0.2, r), (0.8, r),
+                                                             (0.92, r - 0.5), (1, r - 1.4)], tread, sides=28)
+    s.lathe((x - off, wy, z - 2.3), (x - off, wy, z + 2.3), [(0, 3.0), (0.15, 4.8), (0.85, 4.8), (1, 3.0)], hub,
+            sides=22)                                                                              # hub / rim
+    s.lathe((x - off, wy, z - 2.5), (x - off, wy, z + 2.5), [(0, 1.6), (1, 1.6)], "steel_machined", sides=16)   # bearing
     for uz in (-1, 1):
         s.bolt((x - off, wy, z + uz * 3.3), (0, 0, uz), 1.0, BOLT)
     if swivel:
@@ -196,7 +200,50 @@ def control_box(s, L, W, y1):
     s.rbox((L / 2 + 2.0, y1 + 15.5, bz - 10), (2.6, 3.0, 4.0), 0.6, "plastic_black", seg=2)            # plug on its hook
 
 
-def tow_handle(s, L, y1, col):
+def cabinet(s, L, W, y1, col):
+    """Sheet-metal cabinet over the power pack: door with hinges, quarter-turn lock and an electrical warning,
+    louvre vents, a CAUTION label, and the controls on top (E-stop, UP / DOWN, key switch)."""
+    x0, x1 = L / 2 - UNIT + 1.0, L / 2 - 5.0                      # clears the motor terminal box
+    z0, z1 = -W / 2 + 5.0, W / 2 - 5.0
+    h = 56.0
+    cx, cz, cy = (x0 + x1) / 2, (z0 + z1) / 2, y1 + 1.0 + h / 2
+    s.rbox((cx, cy, cz), (x1 - x0, h, z1 - z0), 1.2, col, seg=2)
+    s.rbox((cx, y1 + 0.8, cz), (x1 - x0 + 1.0, 1.6, z1 - z0 + 1.0), 0.3, "steel_dark", seg=1)               # plinth
+    # door on the +Z side
+    n, u, r = (0, 0, 1), (0, 1, 0), (1, 0, 0)
+    face = (cx, cy - 2.0, z1)
+    dw, dh = x1 - x0 - 4.0, h - 12.0
+    for (a, b, w_, h_) in ((0, dh / 2, dw + 0.4, 0.25), (0, -dh / 2, dw + 0.4, 0.25), (-dw / 2, 0, 0.25, dh), (dw / 2, 0, 0.25, dh)):
+        s.obox(DT.at(face, r, u, n, a, b, 0.03), (w_, h_, 0.08), (r, u, n), "hole")                    # door seam
+    for v in (-dh / 2 + 5, dh / 2 - 5):
+        DT.hinge(s, DT.at(face, r, u, n, -dw / 2 - 0.4, v, 0.35), u, 5.0, col)
+    DT.quarter_lock(s, DT.at(face, r, u, n, dw / 2 - 3.0, 0, 0.0), r, u, n)
+    DT.warning_triangle(s, DT.at(face, r, u, n, 0, dh / 2 - 9.0, 0.0), r, u, n, 9.0, "bolt")
+    DT.louvres(s, DT.at(face, r, u, n, 0, -dh / 2 + 7.0, 0.0), r, u, n, dw - 8.0, 7.0, 5, col)
+    # handle end (+X): louvres low, CAUTION label high
+    n2, r2 = (1, 0, 0), (0, 0, -1)
+    f2 = (x1, cy, cz)
+    DT.louvres(s, DT.at(f2, r2, u, n2, 0, -h / 2 + 10.0, 0.0), r2, u, n2, (z1 - z0) * 0.6, 9.0, 6, col)
+    DT.caution_label(s, DT.at(f2, r2, u, n2, 0, h / 2 - 12.0, 0.0), r2, u, n2, 16.0)
+    # back side (-Z): a grille for the motor fan
+    n3, r3 = (0, 0, -1), (-1, 0, 0)
+    DT.louvres(s, DT.at((cx, cy + 6.0, z0), r3, u, n3, 0, 0, 0.0), r3, u, n3, dw - 6.0, 14.0, 8, col)
+    # controls on top, read from the handle end
+    nt, ut, rt = (0, 1, 0), (-1, 0, 0), (0, 0, -1)
+    top = (x1 - 6.0, y1 + 1.0 + h, cz)
+    DT.estop(s, DT.at(top, rt, ut, nt, -8.0, 0), rt, ut, nt, 3.6)
+    DT.push_button(s, DT.at(top, rt, ut, nt, 0.0, 0), rt, ut, nt, "floor_green", arrow=1)
+    DT.push_button(s, DT.at(top, rt, ut, nt, 5.5, 0), rt, ut, nt, "plastic_black", arrow=-1)
+    DT.key_switch(s, DT.at(top, rt, ut, nt, 11.0, 0), rt, ut, nt)
+    DT.legend(s, DT.at(top, rt, ut, nt, 0.0, -3.6), rt, ut, nt, "UP", 0.7)
+    DT.legend(s, DT.at(top, rt, ut, nt, 5.5, -3.6), rt, ut, nt, "DOWN", 0.7)
+    DT.gland(s, (x1 - 3.0, y1 + 6.0, z0 + 4.0), (1, 0, 0), 1.6,
+             [(x1 + 1.5, y1 + 4.0, z0 + 4.0), (L / 2 - 1.0, y1 + 4.0, z0 + 2.0), (L / 2 + 2.0, y1 + 14, z0 + 1.0)],
+             cable_r=0.5)                                                                           # supply cable
+    s.rbox((L / 2 + 2.0, y1 + 15.5, z0 + 1.0), (2.6, 3.0, 4.0), 0.6, "plastic_black", seg=2)
+
+
+def tow_handle(s, L, y1, col, finish="powder_black_tex"):
     """Tow / push handle: clevis on the base, pivot bolt with nuts, bent tube yoke welded to a boss, crossbar with
     ribbed grips, return spring."""
     hx = L / 2 - 2.0
@@ -207,16 +254,18 @@ def tow_handle(s, L, y1, col):
     s.cylinder((hx, py, -5.6), (hx, py, 5.6), 0.8, "steel_machined", 12)                              # pivot bolt
     DT.hex_nut(s, (hx, py, 4.6), (0, 0, 1), 1.9, 0.9, BOLT)
     DT.hex_nut(s, (hx, py, -4.6), (0, 0, -1), 1.9, 0.7, BOLT)
-    s.lathe((hx, py, -3.6), (hx, py, 3.6), [(0, 2.0), (0.1, 2.3), (0.9, 2.3), (1, 2.0)], "powder_black_tex", sides=20)
+    s.lathe((hx, py, -3.6), (hx, py, 3.6), [(0, 2.0), (0.1, 2.3), (0.9, 2.3), (1, 2.0)], finish, sides=20)
     top = (hx + 26.0, y1 + 50.0)
     for uz in (-1, 1):
         start = (hx + 1.6, py + 1.2, uz * 2.6)
         path = DT.bend([start, (hx + 10, y1 + 18, uz * 5.5), (hx + 22, y1 + 40, uz * 4.5), (top[0], top[1], uz * 3.2)], 5.0)
-        s.sweep(path, 1.25, "powder_black_tex", sides=16)
+        with s.touch(0.35):                                                                       # handled
+            s.sweep(path, 1.25, finish, sides=16)
         d0 = tuple(b_ - a_ for a_, b_ in zip(path[0], path[1]))
-        DT.weld_bead(s, start, _unit(d0), 1.25, "powder_black_tex")
-        DT.weld_bead(s, (top[0], top[1] - 1.2, uz * 3.2), (0, 1, 0), 1.25, "powder_black_tex")
-    s.cylinder((top[0], top[1], -14.5), (top[0], top[1], 14.5), 1.25, "powder_black_tex", 16)         # crossbar
+        DT.weld_bead(s, start, _unit(d0), 1.25, finish)
+        DT.weld_bead(s, (top[0], top[1] - 1.2, uz * 3.2), (0, 1, 0), 1.25, finish)
+    with s.touch(0.5):
+        s.cylinder((top[0], top[1], -14.5), (top[0], top[1], 14.5), 1.25, finish, 16)                 # crossbar
     for uz in (-1, 1):
         DT.grip(s, (top[0], top[1], uz * 5.0), (top[0], top[1], uz * 15.2), 1.25)
     DT.spring(s, (hx + 5.0, py + 6.0, 0), (hx - 4.0, y1 + 1.0, 0), 0.7, 0.16, 9)                       # return spring
@@ -288,7 +337,7 @@ class ScissorTable(Item):
         if G["mobile"]:
             for cx in (bx0 + 7, bx1 - 7):
                 for uz in (-1, 1):
-                    castor(s, cx, uz * (W / 2 - 4.5), y0, cx > 0, col)
+                    castor(s, cx, uz * (W / 2 - 4.5), y0, cx > 0, col, *CASTORS.get(p["castors"], CASTORS["black"]))
         else:
             for fx in (bx0 + 6, (bx0 + bx1) / 2, bx1 - 6):                                                  # anchor plates
                 for uz in (-1, 1):
@@ -297,8 +346,11 @@ class ScissorTable(Item):
         # ------------------------------------------------------------------ power unit + handle (mobile)
         if G["unit"]:
             power_unit(s, L, W, y1, g)
-            control_box(s, L, W, y1)
-            tow_handle(s, L, y1, col)
+            if p["cabinet"]:
+                cabinet(s, L, W, y1, col)
+            else:
+                control_box(s, L, W, y1)
+            tow_handle(s, L, y1, col, "steel_machined" if p["handle"] == "steel" else "powder_black_tex")
         shapes_to_stage(stage, path, s, lib)
         # ------------------------------------------------------------------ deck (rises)
         hr = h
@@ -326,6 +378,17 @@ class ScissorTable(Item):
             for dz in (-1, 1):
                 sd.rbox((g.x_f, ytop_ap - 4.0, uz * (zb + dz * 2.6)), (9.0, 8.0, 0.8), 0.3, col, seg=1)    # deck pivots
         sd.cylinder((g.x_f, hr - g.top_off, -W / 2 + 6), (g.x_f, hr - g.top_off, W / 2 - 6), 1.4, "steel_machined", 12)
+        if p["decals"]:
+            for ux in (-1, 1):                                                                      # end aprons
+                n_ = (ux, 0, 0)
+                r_ = (0, 0, -ux)
+                q = (dcx + ux * (Ld / 2 + 0.02), ytop_ap - ap / 2, ux * (W / 2 - 9.0))
+                if p["stripes"]:
+                    sd.rbox(tuple(c + d * 0.05 for c, d in zip(q, n_)), (0.1, ap - 2.0, ap - 1.0), 0.2, "plastic_yellow",
+                            axes=(n_, (0, 1, 0), r_), seg=1)
+                DT.warning_triangle(sd, tuple(c + d * 0.12 for c, d in zip(q, n_)), r_, (0, 1, 0), n_, ap * 0.62)
+            q = (dcx - Ld / 2 + 16.0, ytop_ap - ap / 2, W / 2 + 0.05)
+            DT.caution_label(sd, q, (1, 0, 0), (0, 1, 0), (0, 0, 1), min(16.0, ap * 1.6))
         cap = "".join(ch for ch in str(p["capacity"]).upper() if ch.isalnum() or ch == " ").strip()
         if cap:                                                                                             # capacity plate
             wsign = 3.0 * 6 / 7 * len(cap) + 3.0
@@ -338,12 +401,13 @@ class ScissorTable(Item):
         shapes_to_stage(stage, f"{path}/Deck", sd, lib)
         # ------------------------------------------------------------------ scissor arms (local: along +X)
         La = g.La
+        arms = p["arms"] or col
         for name, z_arm, zin, pos, ang in (("Arm_A", za, zb, sol["a"], sol["theta"]),
                                             ("Arm_B", zb, za, sol["b"], -sol["theta"])):
             sa = new_shapes()
             for uz in (-1, 1):
                 z = uz * z_arm
-                sa.rprism((0, 0, z), (La, 0, z), 4.0, 8.0, 1.0, col, seg=2)
+                sa.rprism((0, 0, z), (La, 0, z), 4.0, 8.0, 1.0, arms, seg=2)
                 for xe in (0.0, La):
                     sa.lathe((xe, 0, z - 2.4), (xe, 0, z + 2.4), [(0, 4.0), (1, 4.0)], col, sides=18)       # end bosses
                     sa.bolt((xe, 0, z + uz * 2.4), (0, 0, uz), 1.4, BOLT)
@@ -401,4 +465,9 @@ register(ScissorTable("lift_table", "lift_table", "Scissor lift table (mobile or
     "stripes": Param(True, "hazard stripes on the deck apron"),
     "capacity": Param("1000 KG", "capacity plate text ('' for none)"),
     "color": Param("powder_yellow", "frame finish"),
+    "arms": Param("", "scissor arm finish ('' = the frame finish), e.g. powder_black"),
+    "cabinet": Param(False, "enclose the power pack in a cabinet (door, louvres, decals, controls on top)"),
+    "castors": Param("black", "castor tread: black / red (polyurethane) / grey"),
+    "handle": Param("black", "tow handle: black (powder coat) / steel (bare tube)"),
+    "decals": Param(True, "warning triangles and a CAUTION label on the deck"),
 }))

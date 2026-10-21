@@ -194,3 +194,66 @@ def spring(s, a, b, R, wire, turns, mat="steel_blued"):
         pts.append(tuple(p + ax_ * (0.15 * L + 0.7 * L * t) + R * (math.cos(ang) * sd + math.sin(ang) * uv)
                          for p, ax_, sd, uv in zip(a, ax, side, up)))
     s.sweep([a] + pts + [b], wire, mat, sides=6)
+
+
+def warning_triangle(s, p, r, u, n, size, symbol="!", fill="plastic_yellow", ink="plastic_black"):
+    """ISO warning decal: yellow triangle with a black border and a symbol ("!" general, "bolt" electrical)."""
+    k = size / 2
+    q = at(p, r, u, n, 0, 0, 0.04)
+    tri = [at(q, r, u, n, 0, k * 0.95), at(q, r, u, n, -k * 1.08, -k * 0.9), at(q, r, u, n, k * 1.08, -k * 0.9)]
+    poly(s, tri, n, ink)
+    inner = [at(q, r, u, n, 0, k * 0.68, 0.02), at(q, r, u, n, -k * 0.82, -k * 0.74, 0.02),
+             at(q, r, u, n, k * 0.82, -k * 0.74, 0.02)]
+    poly(s, inner, n, fill)
+    c = at(q, r, u, n, 0, -k * 0.1, 0.04)
+    if symbol == "bolt":
+        pts = [(0.12, 0.5), (-0.2, -0.02), (0.02, -0.02), (-0.12, -0.5), (0.22, 0.08), (0.0, 0.08)]
+        poly(s, [at(c, r, u, n, x * k, y * k) for x, y in pts[:3]], n, ink)
+        poly(s, [at(c, r, u, n, x * k, y * k) for x, y in pts[2:5]], n, ink)
+        poly(s, [at(c, r, u, n, x * k, y * k) for x, y in (pts[0], pts[2], pts[4], pts[5])], n, ink)
+    else:
+        s.obox(at(c, r, u, n, 0, k * 0.12), (k * 0.14, k * 0.5, 0.03), (r, u, n), ink)
+        s.obox(at(c, r, u, n, 0, -k * 0.3), (k * 0.14, k * 0.13, 0.03), (r, u, n), ink)
+
+
+def caution_label(s, p, r, u, n, w):
+    """ANSI-style CAUTION label: yellow field with a black header band and fine print lines."""
+    h = w * 0.45
+    s.rbox(at(p, r, u, n, 0, 0, 0.04), (w, h, 0.08), 0.15, "plastic_yellow", axes=(r, u, n), seg=1)
+    s.obox(at(p, r, u, n, 0, h * 0.28, 0.09), (w * 0.94, h * 0.32, 0.03), (r, u, n), "plastic_black")
+    th = h * 0.2
+    tw = th * 6 / 7 * 7
+    sign_text(s, "CAUTION", at(p, r, u, n, -tw / 2, h * 0.28 + th / 2, -0.12), r, tuple(-c for c in u), th,
+              "plastic_yellow", n)
+    for k in range(3):
+        s.obox(at(p, r, u, n, -w * 0.05, -h * (0.05 + k * 0.14), 0.09), (w * 0.78 - k * w * 0.12, h * 0.05, 0.03),
+               (r, u, n), "plastic_black")
+
+
+def louvres(s, p, r, u, n, w, h, rows, mat):
+    """Pressed louvre vent: a dark recess with angled slats (on a face at p, centred)."""
+    s.obox(at(p, r, u, n, 0, 0, -0.05), (w, h, 0.1), (r, u, n), "hole")
+    pitch = h / rows
+    for k in range(rows):
+        v = -h / 2 + (k + 0.5) * pitch
+        tilt = _n(tuple(ui * 0.8 + ni * 0.6 for ui, ni in zip(u, n)))
+        s.rbox(at(p, r, u, n, 0, v, 0.15), (w * 0.96, pitch * 0.55, 0.22), 0.08, mat,
+               axes=(r, tilt, _n(_x(r, tilt))), seg=1)
+
+
+def hinge(s, p, axis, length, mat, r=0.55):
+    """Door hinge barrel along axis, centred at p, with a pin cap at each end."""
+    a = tuple(pi - ai * length / 2 for pi, ai in zip(p, axis))
+    b = tuple(pi + ai * length / 2 for pi, ai in zip(p, axis))
+    s.lathe(a, b, [(0, r * 0.85), (0.05, r), (0.95, r), (1, r * 0.85)], mat, sides=14)
+    for e, sg in ((a, -1), (b, 1)):
+        s.lathe(e, tuple(ei + ai * sg * 0.3 for ei, ai in zip(e, axis)), [(0, r * 0.6), (1, r * 0.45)], "steel_machined",
+                sides=12)
+
+
+def quarter_lock(s, p, r, u, n, d=1.8):
+    """Quarter-turn cabinet lock: chrome bezel, insert with a slot (or a T-handle when handle=True)."""
+    R = d / 2
+    s.lathe(p, at(p, r, u, n, 0, 0, 0.35), [(0, R * 1.3), (0.6, R * 1.3), (1, R * 1.1)], "chrome", sides=20)
+    s.lathe(at(p, r, u, n, 0, 0, 0.35), at(p, r, u, n, 0, 0, 0.5), [(0, R * 0.8), (1, R * 0.75)], "plastic_black", sides=18)
+    s.obox(at(p, r, u, n, 0, 0, 0.51), (R * 1.1, 0.18, 0.04), (r, u, n), "hole")

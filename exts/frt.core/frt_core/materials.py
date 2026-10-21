@@ -88,6 +88,8 @@ LOOKS = {
     "lamp_orange": (_rgb("#ff8a1e"), 0.20, 0.0, None, 0.0, 0.0),
     "lamp_green": (_rgb("#35d45a"), 0.20, 0.0, None, 0.0, 0.0),
     "lamp_white": (_rgb("#fff6e8"), 0.20, 0.0, None, 0.0, 0.0),
+    "pu_red": (_rgb("#a3241c"), 0.45, 0.0, None, 0.0, 0.0),                   # polyurethane castor tread
+    "studio_grey": (_rgb("#3a3b3e"), 0.85, 0.0, None, 0.0, 0.0),              # seamless studio backdrop
     "hole": (_rgb("#0a0b0c"), 0.95, 0.0, None, 0.0, 0.0),                    # punched holes, recesses (seen as shadow)
     "nylon_white": (_rgb("#dcd9cf"), 0.38, 0.0, None, 0.0, 0.0),             # flow wheels, ball cages
     "plastic_red": (_rgb("#b3261e"), 0.30, 0.0, "plastic_n", 0.15, 0.0),     # glossy moulded (E-stop)
@@ -150,7 +152,7 @@ def finish_kind(name):
         return "steel"
     if name == "cast_aluminium":
         return "cast"
-    if name.startswith(("plastic_", "abs_")) or name == "nylon_white":
+    if name.startswith(("plastic_", "abs_")) or name in ("nylon_white", "pu_red"):
         return "plastic"
     if name in ("rubber_black", "belt_black", "grip_rubber", "hose_rubber", "cable_pvc", "esd_mat"):
         return "rubber"
@@ -164,8 +166,10 @@ def finish_kind(name):
 # how used each finish looks (FrtWorn): edge wear / scratches / grime from the floor / dust on tops / stains.
 # Low on purpose: a plant floor that is looked after. Bare metals and plastics do not chip; they collect grime.
 WEAR = {
-    "powder": dict(wear_amount=0.22, scratch_amount=0.04, dirt_amount=0.30, dust_amount=0.15, stain_amount=0.18),
-    "satin": dict(wear_amount=0.12, scratch_amount=0.04, dirt_amount=0.25, dust_amount=0.10, stain_amount=0.20),
+    "powder": dict(wear_amount=0.22, scratch_amount=0.04, dirt_amount=0.30, dust_amount=0.15, stain_amount=0.18,
+               coat=0.45),
+    "satin": dict(wear_amount=0.12, scratch_amount=0.04, dirt_amount=0.25, dust_amount=0.10, stain_amount=0.20,
+              coat=0.15),
     "galv": dict(dirt_amount=0.25, dust_amount=0.15, stain_amount=0.10),
     "steel": dict(dirt_amount=0.20, dust_amount=0.10, stain_amount=0.08),
     "polished": dict(dirt_amount=0.08, dust_amount=0.05),
@@ -329,8 +333,10 @@ class MaterialLibrary:
         sh.CreateInput("edge_radius", F).Set(0.15)
         amounts = dict(wear_amount=0.0, scratch_amount=0.0, dirt_amount=0.0, dust_amount=0.0, stain_amount=0.0)
         amounts.update(WEAR.get(kind, {}))                              # only paint chips and scratches
+        coat = amounts.pop("coat", 0.0) * max(0.0, min(1.0, (0.65 - rough) / 0.25))   # gloss paint only
         for key, v in amounts.items():
             sh.CreateInput(key, F).Set(float(v) * self.age)
+        sh.CreateInput("coat", F).Set(float(coat))
         out = sh.CreateOutput("out", Sdf.ValueTypeNames.Token)
         for o in (mat.CreateSurfaceOutput("mdl"), mat.CreateDisplacementOutput("mdl"), mat.CreateVolumeOutput("mdl")):
             o.ConnectToSource(out)

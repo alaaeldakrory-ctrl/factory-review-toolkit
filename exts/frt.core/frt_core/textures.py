@@ -211,7 +211,7 @@ def rel(path):
     return "./textures/" + os.path.basename(os.path.dirname(path)) + "/" + os.path.basename(path)
 
 
-REL = re.compile(r"\./textures/([a-z_]+)/([a-z_0-9]+)\.png$")
+REL = re.compile(r"\./textures/([a-z_]+)/([a-z_0-9]+)\.(png|hdr)$")
 
 
 def used(scene):
@@ -219,15 +219,13 @@ def used(scene):
     from pxr import Sdf, Usd
     st = Usd.Stage.Open(scene, Usd.Stage.LoadNone)
     out = set()
-    for prim in st.Traverse():
-        if prim.GetTypeName() != "Shader":
-            continue
+    for prim in st.Traverse():                     # materials, and lights (a dome's environment map)
         for a in prim.GetAttributes():
             if a.GetTypeName() == Sdf.ValueTypeNames.Asset:
                 v = a.Get()
                 m = REL.match(v.path) if v is not None else None
                 if m:
-                    out.add((m.group(1), m.group(2)))
+                    out.add((m.group(1), m.group(2) + "." + m.group(3)))
     return out
 
 
@@ -237,13 +235,15 @@ def localize(scene):
     n = 0
     here = os.path.dirname(os.path.abspath(scene))
     for kind, name in used(scene):
-        src = os.path.join(ROOT, kind, name + ".png")
+        src = os.path.join(ROOT, kind, name)
         if not os.path.isfile(src) and kind == "wear":
             wear_maps()
+        elif not os.path.isfile(src) and kind == "studio":
+            studio_hdri()
         elif not os.path.isfile(src) and kind in KINDS:
             m = re.match(r"[a-z]+_r(\d+)_", name)
             texture_set(kind, int(m.group(1)) / 100.0 if m else 0.5)
-        dst = os.path.join(os.path.dirname(os.path.abspath(scene)), "textures", kind, name + ".png")
+        dst = os.path.join(os.path.dirname(os.path.abspath(scene)), "textures", kind, name)
         if os.path.isfile(src) and (not os.path.isfile(dst) or os.path.getsize(dst) != os.path.getsize(src)):
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(src, dst)
@@ -308,3 +308,50 @@ def wear_maps():
     write_png(out["stain"], np.clip(_blur(stain, 1.5), 0, 1))
     out["rel"] = {k: rel(p) for k, p in out.items() if k != "rel"}
     return out
+
+
+# ---------------------------------------------------------------------------------------------- studio light
+def write_hdr(path, rgb):
+    """Radiance .hdr (RGBE, flat scanlines) of a float (H, W, 3) image."""
+    v = np.maximum(rgb.max(-1), 1e-32)
+    m, e = np.frexp(v)
+    scale = np.where(v > 1e-30, m * 256.0 / v, 0.0)
+    out = np.zeros(rgb.shape[:2] + (4,), np.uint8)
+    out[..., :3] = np.clip(rgb * scale[..., None], 0, 255).astype(np.uint8)
+    out[..., 3] = np.where(v > 1e-30, e + 128, 0).astype(np.uint8)
+    h, w = rgb.shape[:2]
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(b"#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n" + f"-Y {h} +X {w}\n".encode())
+        f.write(out.tobytes())
+    os.replace(tmp, path)
+
+
+def studio_hdri(w=2048):
+    """Lat-long studio environment: dark graded cyclorama with a large key softbox, a fill, an overhead panel and a
+    thin rim strip - soft, long highlights on paint and chrome like product renders. Returns its scene-relative
+    name and cache path."""
+    d = os.path.join(ROOT, "studio")
+    path = os.path.join(d, "studio_softbox.hdr")
+    if not os.path.isfile(path):
+        os.makedirs(d, exist_ok=True)
+        h = w // 2
+        lon = (np.arange(w) + 0.5) / w * 2 * np.pi - np.pi            # azimuth
+        lat = np.pi / 2 - (np.arange(h) + 0.5) / h * np.pi             # elevation
+        LON, LAT = np.meshgrid(lon, lat)
+        img = np.zeros((h, w, 3))
+        g = np.clip((LAT + 0.2) / 1.6, 0, 1)
+        img += (0.018 + 0.03 * np.exp(-((LAT - 0.05) / 0.25) ** 2) + 0.01 * g)[..., None] * np.array([1.0, 1.0, 1.03])
+
+        def box(az, el, wa, we, k, tint=(1.0, 1.0, 1.0)):
+            da = np.angle(np.exp(1j * (LON - np.radians(az))))
+            u = np.abs(da) / np.radians(wa / 2)
+            v = np.abs(LAT - np.radians(el)) / np.radians(we / 2)
+            m = np.clip(1.0 - np.maximum(u, v), 0, None)
+            return (np.clip(m * 6.0, 0, 1) ** 2)[..., None] * k * np.array(tint)
+        img += box(40, 32, 34, 24, 14.0, (1.0, 0.98, 0.95))           # key
+        img += box(-65, 18, 44, 28, 3.5, (0.95, 0.98, 1.0))           # fill
+        img += box(175, 48, 70, 7, 9.0)                               # rim strip
+        img += box(0, 82, 60, 18, 5.0)                                # overhead panel
+        write_hdr(path, img.astype(np.float32))
+    return {"path": path, "rel": rel(path)}

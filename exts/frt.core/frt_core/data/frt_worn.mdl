@@ -6,6 +6,7 @@ mdl 1.6;
 //  - a few scratches through the paint
 //  - grime fading up from the floor (object-space height) and dust on up-facing surfaces
 //  - stains (oil spots, drips, blotches) on up-facing surfaces, darker and glossier
+//  - a clear top coat (powder-coat resin gloss) over the paint, gone where chipped, dulled by dust and grime
 // Colours are linear. All amounts default low: a plant floor that is looked after.
 
 import ::anno::*;
@@ -13,7 +14,7 @@ import ::math::*;
 import ::state::*;
 import ::tex::*;
 import ::scene::*;
-using ::OmniPBR import OmniPBR;
+using ::OmniPBR_ClearCoat import OmniPBR_ClearCoat;
 
 float grey(uniform texture_2d t, float2 uv)
 {
@@ -42,6 +43,8 @@ export material FrtWorn(
     color dust_color = color(0.36, 0.34, 0.31),
     float dust_amount = 0.15,
     float stain_amount = 0.2,
+    float coat = 0.0,
+    float coat_roughness = 0.12,
     uniform float edge_radius = 0.0
 )
 [[ ::anno::display_name("FRT worn finish") ]]
@@ -79,7 +82,9 @@ export material FrtWorn(
     float r4 = math::lerp(r3, 0.95, dust);
     float r5 = math::lerp(r4, 0.2, stain * 0.7);
     float m = math::lerp(metallic, 1.0, metal);
-} in OmniPBR(
+    float cw = coat * (1.0 - metal) * (1.0 - primer) * (1.0 - dirt) * (1.0 - 0.8 * dust);
+    float cr = math::lerp(coat_roughness, 0.6, math::saturate(dust * 2.0 + dirt));
+} in OmniPBR_ClearCoat(
     diffuse_color_constant: c5,
     reflection_roughness_constant: r5,
     metallic_constant: m,
@@ -88,5 +93,9 @@ export material FrtWorn(
     bump_factor: 1.0,
     project_uvw: false,
     texture_scale: float2(tile),
-    round_edges_radius: edge_radius
+    round_edges_radius: edge_radius,
+    enable_clearcoat: true,
+    clearcoat_weight: cw,
+    clearcoat_reflection_roughness: cr,
+    clearcoat_flatten: 0.7
 );
