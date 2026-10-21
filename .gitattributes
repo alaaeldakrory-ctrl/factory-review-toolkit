@@ -1,0 +1,10 @@
+*.pdf binary
+*.png binary
+*.jpg binary
+*.usd binary
+*.usdc binary
+*.zip binary
+*.dxf -text
+*.py text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
