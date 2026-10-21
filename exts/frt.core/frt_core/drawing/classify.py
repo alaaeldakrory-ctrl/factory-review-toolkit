@@ -33,6 +33,13 @@ WEIGHT = {"layer": 0.35, "text": 0.7, "text_near": 0.4, "name": 0.45, "shape": 0
           "min_parts": 0.1, "max_parts": 0.05}
 
 
+# every type the reader and the scene builder know, for pickers in the review window
+KNOWN_TYPES = ["unknown", "ignore", "product_unit", "staged_kit", "station_box", "room", "area", "walkway", "aisle",
+               "column", "wall", "door", "rollup_door", "dock", "operator", "flow_rack", "parts_rack", "bin_rack",
+               "pallet_rack", "industrial_table", "lift_table", "tool_cart", "trash", "computer_station", "ramp", "scale",
+               "conveyor", "forklift", "jib_crane", "bridge_crane", "crane", "crate", "pallet"]
+
+
 @dataclass
 class Classified:
     type: str

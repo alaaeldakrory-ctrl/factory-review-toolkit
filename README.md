@@ -106,7 +106,7 @@ python tools/frt.py validate scene.usd [--auto-tag]                 check any sc
 python tools/frt.py package  scene.usd out_dir                      portable folder
 python tools/frt.py catalog                                         catalog items and their parameters
 python tools/frt.py preview  scene.usd out.png [overview|plan]      quick offline picture
-python -m pytest tests                                              47 tests
+python -m pytest tests                                              53 tests
 ```
 
 A command-line build refuses to replace a scene that Kit has open: the Kit extension leaves a `<scene>.open` marker.
@@ -138,7 +138,50 @@ at = [2800, 2400]
 params = { length = 240, top = "esd" }
 ```
 
-## Your own drawings
+## Reading real drawings: profiles, review, teaching
+
+Real layouts come from many sites and consultants. The reader is taught a drawing *standard* once, instead of being
+set up for each drawing.
+
+```
+import + calibrate -> objects (strokes grouped by layer and contact) -> classify (profile rules + taught shapes,
+each with a reason) -> stations (labels such as "ST 3" + bullet tasks) -> review / teach -> confirm -> build scene
+```
+
+**Profiles.**
+- The base profile ships in `frt_core/drawing/profiles/base.toml`. It holds generic rules in English, Spanish and
+  Italian.
+- A team profile lives in `~/.frt/profiles/<name>.toml`, starts with `extends = ["base"]` and adds the team's own
+  layers and conventions.
+- Teaching writes into the team profile, never into the base.
+
+**Per drawing.** Settings sit beside the file in `<drawing>.frt.toml`: profile, calibration and one-off corrections.
+
+**Answer keys.** `<drawing>.answers.json` holds a confirmed reading, so engine changes can be scored against every
+reviewed drawing.
+
+**In Kit, Window > Drawing Review:**
+- **Read** the drawing.
+- **Click** an object to see its type and the reason for it.
+- **Teach shape:** this shape is that type everywhere, and identical shapes follow.
+- **Only here:** this one object, in this drawing only.
+- **Ignore:** leave it out of the scene.
+- **Calibrate:** click two points and type the distance (e.g. 40').
+- **Confirm** saves the answer key; **Score** compares a fresh reading against it.
+- **Build scene** builds the USD scene from the reviewed reading and opens it.
+
+The same steps are available on the command line:
+
+```
+python tools/frt.py calibrate plan.pdf "1627,802.3;1821.5,802.3;40'" my_team
+python tools/frt.py read  plan.pdf --unknown --view view.png
+python tools/frt.py teach plan.pdf 117 flow_rack
+python tools/frt.py set   plan.pdf 42 room "name=OFFICES"
+python tools/frt.py confirm plan.pdf
+python tools/frt.py score plan.pdf other.pdf
+```
+
+## Your own drawings (sample pipeline)
 
 How the interpreter recognises things is set by a legend file: layer names, block names, label words, the station
 name pattern and the equipment tag pattern. Copy `exts/frt.core/frt_core/drawing/legend_default.toml`, adapt it to

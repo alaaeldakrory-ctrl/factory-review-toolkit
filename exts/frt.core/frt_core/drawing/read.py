@@ -46,6 +46,17 @@ class Reading:
     def items(self):
         return list(zip(self.objects, self.classes))
 
+    def reclassify(self, profile=None, min_confidence=0.3):
+        """After a correction: reload the profile and the drawing's settings, classify again (no re-import)."""
+        from .classify import load_profile as _lp
+        st = load_settings(self.drawing.source)
+        self.profile = _lp(profile or st.get("profile") or self.profile["path"])
+        self.classes = classify_all(self.objects, self.profile, min_confidence)
+        _absorb_nested(self.objects, self.classes)
+        _apply_overrides(self.objects, self.classes, st.get("overrides", []))
+        self.stations = _stations(self.drawing, self.objects, self.classes, self.profile)
+        return self
+
     def counts(self):
         out = {}
         for c in self.classes:

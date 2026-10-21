@@ -125,3 +125,17 @@ def test_answer_key_scores(team):
     assert sc["types"]["flow_rack"]["missed"] == 1          # the reader still leaves it unknown: a miss
     assert sc["types"]["jib_crane"]["found"] == 1 and sc["stations"]["tasks_ok"] == 2
     assert 0 < sc["f1"] < 1
+
+
+def test_view_mapping_round_trips(team, tmp_path):
+    from frt_core.drawing.read import read
+    from frt_core.drawing.view import render
+    r = read(team, "team", calibration=((100, 200), (140, 200), "8'"))
+    jib = next(o for o, c in r.items if c.type == "jib_crane")
+    crop = (jib.center[0] - 500, jib.center[1] - 400, jib.center[0] + 500, jib.center[1] + 400)
+    m = render(r, str(tmp_path / "v.png"), crop, 50, selected=jib, legend=False)
+    k = m["k"]
+    u, v = (jib.center[0] - m["crop"][0]) * k, (m["crop"][3] - jib.center[1]) * k     # where the jib is drawn
+    back = (m["crop"][0] + u / k, m["crop"][3] - v / k)
+    assert back == pytest.approx(jib.center)
+    assert m["size"] == (int(1000 * k) + 1, int(800 * k) + 1)

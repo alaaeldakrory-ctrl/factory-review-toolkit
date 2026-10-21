@@ -49,6 +49,9 @@ def check_support(stage, fl, rules):
         base = lo[1]
         if abs(base) <= tol_up and base >= -tol_dn:
             continue
+        on = p.GetAttribute("frt:on")
+        if on and on.Get():                                   # placed on a named support (a unit on a ramp)
+            continue
         # resting on something? a box whose top is at our base and overlaps our footprint
         supported = False
         for q, qlo, qhi in tops:
@@ -78,6 +81,9 @@ def check_overlaps(stage, fl, rules):
         p, rp, lo, hi = boxes[i]
         for j in range(i + 1, len(boxes)):
             q, rq, qlo, qhi = boxes[j]
+            onp, onq = p.GetAttribute("frt:on"), q.GetAttribute("frt:on")
+            if (onp and onp.Get() == T.id_of(q)) or (onq and onq.Get() == T.id_of(p)):
+                continue                                      # one stands on the other
             if (rp in overhead) != (rq in overhead):          # a table under a crane is the point of the crane
                 continue
             d = [min(hi[k], qhi[k]) - max(lo[k], qlo[k]) for k in range(3)]

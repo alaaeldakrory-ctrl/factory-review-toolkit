@@ -140,6 +140,50 @@ def _number_plate(s, plant, x, y, text, gw=40.0, gh=70.0, t=8.0, gap=15.0, pad=2
             rect(*seg[k], 0.27, 0.34, "rubber_black")
 
 
+# what a product can stand on, and the attachment point that is its top surface
+SUPPORTS = {"lift_table": "platform", "conveyor": "middle", "ramp": "top", "platform_scale": "platform",
+            "industrial_table": "top"}
+STACKED = ("scissor_unit", "staged_kit")
+
+
+def _plan_rect(e):
+    import math as _m
+    a = _m.radians(e.rot)
+    ex = abs(e.length / 2 * _m.cos(a)) + abs(e.depth / 2 * _m.sin(a))
+    ey = abs(e.length / 2 * _m.sin(a)) + abs(e.depth / 2 * _m.cos(a))
+    return e.x - ex, e.y - ey, e.x + ex, e.y + ey
+
+
+def _stack_on_supports(stage, equipment):
+    """A unit drawn over a ramp, scale, lift table or conveyor stands on it, not inside it."""
+    notes = []
+    sups = [e for e in equipment if e.catalog in SUPPORTS]
+    for e in equipment:
+        if e.catalog not in STACKED:
+            continue
+        r = _plan_rect(e)
+        area = (r[2] - r[0]) * (r[3] - r[1])
+        best, bo = None, 0.0
+        for s in sups:
+            q = _plan_rect(s)
+            w, h = min(r[2], q[2]) - max(r[0], q[0]), min(r[3], q[3]) - max(r[1], q[1])
+            if w > 0 and h > 0 and w * h > bo:
+                best, bo = s, w * h
+        if best is None or bo < 0.4 * area:
+            continue
+        att = stage.GetPrimAtPath(f"/World/Equipment/{best.id}/Attach/{SUPPORTS[best.catalog]}")
+        prim = stage.GetPrimAtPath(f"/World/Equipment/{e.id}")
+        if not att or not prim:
+            continue
+        top = UsdGeom.Xformable(att).GetLocalTransformation().ExtractTranslation()[1]
+        op = UsdGeom.Xformable(prim).GetOrderedXformOps()[0]
+        t = op.Get()
+        op.Set(Gf.Vec3d(t[0], float(top), t[2]))
+        prim.CreateAttribute("frt:on", Sdf.ValueTypeNames.String, custom=True).Set(best.id)
+        notes.append(f"{e.id} stands on {best.id} ({best.catalog}) at {top:.0f} cm")
+    return notes
+
+
 def _floor_marking(stage, root, plant, lib):
     s = Shapes()
     y = 0.25
@@ -277,6 +321,7 @@ def build(recipe, validate=True, log=print):
                 notes += [f"{e.id}: {w}" for w in why]
                 CAT.place(stage, "/World/Equipment", e.catalog, e.id, (x, 0, z), e.rot, params, lib, source=e.ref)
                 placed += 1
+            notes += _stack_on_supports(stage, plant.equipment)
         for it in r.get("items", []):
             x, z = WA.to_scene(plant, *it["at"]) if plant else (it["at"][0], -it["at"][1])
             p = dict(defaults.get(it["catalog"], {}))

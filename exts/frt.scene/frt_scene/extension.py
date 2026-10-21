@@ -8,15 +8,19 @@ from omni.kit.menu.utils import MenuItemDescription
 
 from frt_core import usdio
 
+from .review_window import TITLE as REVIEW_TITLE, DrawingReviewWindow
 from .window import TITLE, ReviewWindow
 
 
 class FrtSceneExtension(omni.ext.IExt):
     def on_startup(self, ext_id):
         self._window = None
-        self._menu = [MenuItemDescription(name="Factory Review", onclick_fn=self.show)]
+        self._review = None
+        self._menu = [MenuItemDescription(name="Factory Review", onclick_fn=self.show),
+                      MenuItemDescription(name="Drawing Review", onclick_fn=self.show_review)]
         mu.add_menu_items(self._menu, "Window")
         ui.Workspace.set_show_window_fn(TITLE, lambda visible: self.show() if visible else None)
+        ui.Workspace.set_show_window_fn(REVIEW_TITLE, lambda visible: self.show_review() if visible else None)
         # leave a <scene>.open marker beside the open scene so command-line builds don't swap it under us
         self._marked = None
         self._stage_sub = omni.usd.get_context().get_stage_event_stream().create_subscription_to_pop(
@@ -48,11 +52,21 @@ class FrtSceneExtension(omni.ext.IExt):
         self._window.window.visible = True
         self._window.window.focus()
 
+    def show_review(self, *_):
+        if self._review is None:
+            self._review = DrawingReviewWindow()
+        self._review.window.visible = True
+        self._review.window.focus()
+
     def on_shutdown(self):
         self._stage_sub = None
         self._unmark()
         mu.remove_menu_items(self._menu, "Window")
         ui.Workspace.set_show_window_fn(TITLE, None)
+        ui.Workspace.set_show_window_fn(REVIEW_TITLE, None)
+        if self._review:
+            self._review.destroy()
+            self._review = None
         if self._window:
             self._window.destroy()               # or a hot reload leaves a dead copy of the window behind
             self._window = None

@@ -229,13 +229,13 @@ class Ramp(Item):
         sl = min(L * 0.6, Hh / math.tan(math.radians(p["slope_deg"])))
         ang = math.atan2(Hh, sl)
         plen = math.hypot(sl, Hh)
-        c = (-L / 2 + sl / 2, Hh / 2, 0.0)
+        c = (-L / 2 + sl / 2, Hh / 2 + 0.8, 0.0)          # lifted by half the plate: its lower edge meets the floor
         ax = (math.cos(ang), math.sin(ang), 0.0)
         s.obox(c, (plen, 1.5, Wd - 4), (ax, (-ax[1], ax[0], 0.0), (0.0, 0.0, 1.0)), "steel_tread")
         s.box((-L / 2 + sl, Hh - 1.5, -Wd / 2 + 2), (L / 2, Hh, Wd / 2 - 2), "steel_tread")
         for z in (-Wd / 2, Wd / 2 - 3):                                                       # side rails / supports
             s.box((-L / 2 + sl, 0, z), (L / 2, Hh - 1.5, z + 3), p["frame"])
-            s.obox((c[0], c[1] - 3, z + 1.5), (plen, 5, 3), (ax, (-ax[1], ax[0], 0.0), (0.0, 0.0, 1.0)), p["frame"])
+            s.obox((c[0], Hh / 2 + 2.5, z + 1.5), (plen, 5, 3), (ax, (-ax[1], ax[0], 0.0), (0.0, 0.0, 1.0)), p["frame"])
         for z in (-Wd / 2 + 1, Wd / 2 - 4):                                                   # safety edge
             s.box((-L / 2 + sl, Hh, z), (L / 2, Hh + 0.4, z + 3), "floor_yellow")
         shapes_to_stage(stage, path, s, lib)
