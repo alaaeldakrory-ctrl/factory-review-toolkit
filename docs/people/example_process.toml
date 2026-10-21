@@ -1,0 +1,100 @@
+# Example process for frt_core.people: two workers, a parts table, an assembly bench and a wiring panel.
+# Positions are world cm (Y up). A station is where a worker stands to work and which way they face (yaw, deg:
+# 0 = facing +Z). Step targets are world points on the work; `after` lists the steps that must be finished first.
+# Motions are catalog ids (exts/frt.core/frt_core/people/data/motions.toml).
+
+[process]
+name = "Bracket and harness - demo"
+
+[[worker]]
+id = "A"
+body = "W50M"
+start = [-250, -260]
+yaw = 0
+
+[[worker]]
+id = "B"
+body = "W05F"
+start = [-120, -300]
+yaw = 90
+
+[[station]]
+id = "parts"            # parts table: worker faces -Z
+spot = [-250, -88]
+yaw = 180
+
+[[station]]
+id = "bench"            # assembly bench, left half
+spot = [-45, -12]
+yaw = 0
+
+[[station]]
+id = "bench_right"      # assembly bench, right half
+spot = [45, -12]
+yaw = 0
+
+[[station]]
+id = "panel"            # wiring panel
+spot = [230, -15]
+yaw = 0
+
+[[step]]
+id = "kit_bracket"
+worker = "A"
+station = "parts"
+motion = "handle.pick.bin_front"
+pick = [-235, 95, -140]
+place = [-275, 95, -128]
+
+[[step]]
+id = "tighten_1"
+worker = "A"
+station = "bench"
+motion = "fasten.ratchet.tighten"
+target = [-37, 99, 38]
+strokes = 5
+after = ["kit_bracket"]
+
+[[step]]
+id = "tighten_2"
+worker = "A"
+station = "bench"
+motion = "fasten.ratchet.tighten"
+target = [-53, 99, 38]
+strokes = 5
+after = ["tighten_1"]
+
+[[step]]
+id = "torque_1"
+worker = "A"
+station = "bench"
+motion = "fasten.torque.final"
+target = [-37, 99, 38]
+after = ["tighten_2"]
+
+[[step]]
+id = "connect_harness"
+worker = "B"
+station = "panel"
+motion = "wire.connect"
+target = [230, 112, 32]
+axis = [0, 0, 1]
+
+[[step]]
+id = "screw_cover"
+worker = "B"
+station = "panel"
+motion = "fasten.screwdriver.manual"
+target = [212, 100, 33]
+axis = [0, 0, 1]
+turns = 4
+after = ["connect_harness"]
+
+[[step]]
+id = "check_bolts"
+worker = "B"
+station = "bench_right"
+motion = "inspect.walk_around"
+target = [45, 97, 38]
+seconds = 2
+after = ["screw_cover", "torque_1"]

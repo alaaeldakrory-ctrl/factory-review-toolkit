@@ -64,3 +64,29 @@ def test_solver_and_generators():
     R, P = fk(sk, prev.pose)
     grip = np.asarray(f.targets[0].point)
     assert np.linalg.norm(P["hand_r"] - grip) < 12.0                               # hand on the tool
+
+
+def test_process_planner_and_rules():
+    from frt_core.people import process as PR
+    from frt_core.people import rules as RU
+    from frt_core.people.navigation import NavGrid
+    proc = {"worker": [{"id": "A", "body": "W50M", "start": [-200, 0], "yaw": 90},
+                       {"id": "B", "body": "W05F", "start": [200, 0], "yaw": -90}],
+            "station": [{"id": "s1", "spot": [0, -20], "yaw": 0}, {"id": "s2", "spot": [0, 20], "yaw": 180}],
+            "step": [{"id": "a", "worker": "A", "station": "s1", "motion": "inspect.walk_around", "target": [0, 95, 20],
+                      "seconds": 1},
+                     {"id": "b", "worker": "B", "station": "s2", "motion": "inspect.walk_around", "target": [0, 95, -20],
+                      "seconds": 1, "after": ["a"]}]}
+    nav = NavGrid([(-30, -5, 30, 5)])                              # a thin bench between the two spots
+    pl = PR.Planner(proc, nav)
+    plan = pl.plan()
+    assert plan.step_end["b"] > plan.step_end["a"]                  # B waits for A
+    assert not pl.conflicts(plan)                                   # and nobody walks into anybody
+    kinds = [s.kind for s in plan.segments["B"]]
+    assert "walk" in kinds and kinds[-1] == "work"                  # (B may first give way while A walks in)
+    s, parts = RU.rula_frame({"shoulder_r": 100, "elbow_r": 120, "wrist_r": 40, "neck_flexion": 35,
+                              "trunk_flexion": 45, "knee_l": 10, "knee_r": 10}, "ratchet")
+    assert s >= 6 and parts["upper_arm"] == 4
+    ok, _ = RU.rula_frame({"shoulder_r": 15, "elbow_r": 80, "wrist_r": 2, "neck_flexion": 5, "trunk_flexion": 2,
+                           "knee_l": 5, "knee_r": 5})
+    assert ok <= 2

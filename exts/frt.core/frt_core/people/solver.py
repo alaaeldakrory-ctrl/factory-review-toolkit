@@ -55,6 +55,14 @@ class Stance:
     left: tuple = None                            # ankle point of the left / right foot (worker frame)
     right: tuple = None
     yaw: float = 0.0                              # feet direction (deg about Y; 0 = facing +Z)
+    yaw_l: float = None                           # per-foot direction (walking, turning); default `yaw`
+    yaw_r: float = None
+    lift_l: float = 0.0                           # swing foot: toe-up pitch (deg) while it is in the air
+    lift_r: float = 0.0
+
+    def foot_yaw(self, s):
+        v = self.yaw_l if s == "l" else self.yaw_r
+        return self.yaw if v is None else v
 
 
 @dataclass
@@ -142,7 +150,7 @@ class PostureSolver:
         self.worker = worker
 
     # ------------------------------------------------------------------ building a pose from the variables
-    def build(self, v, targets, look, stance, free_arms="hang"):
+    def build(self, v, targets, look, stance, free_arms="hang", swing=None):
         dx, drop, dz, yaw, hinge, flex, lat, twist = v
         sk = self.sk
         pose = Pose(pelvis=np.array([dx, -drop, dz]))
@@ -170,7 +178,7 @@ class PostureSolver:
             Rt = frame_rot(rest_thigh, FWD, td, pole)
             n = np.cross(td, cd)
             Rc = axis_angle(n, math.radians(angle(td, cd))) @ Rt if np.linalg.norm(n) > 1e-9 else Rt
-            Rf = ry(stance.yaw)
+            Rf = ry(stance.foot_yaw(s)) @ rx(-getattr(stance, f"lift_{s}"))
             pose.rot[f"thigh_{s}"] = R["pelvis"].T @ Rt
             pose.rot[f"calf_{s}"] = Rt.T @ Rc
             pose.rot[f"foot_{s}"] = Rc.T @ Rf
@@ -184,6 +192,8 @@ class PostureSolver:
             S0 = P[f"upperarm_{s}"]
             if t is None:
                 grip_pt = S0 + DOWN * (sum(self.L[s]) + self.hand_len * 0.45) * 0.97 + R["spine_03"] @ FWD * 4.0
+                if swing and s in swing:                                         # walking arm swing
+                    grip_pt = grip_pt + R["pelvis"] @ FWD * swing[s] + UP * abs(swing[s]) * 0.18
                 fingers, palm, gname = DOWN + R["spine_03"] @ FWD * 0.1, np.array([-sx, 0, 0.0]), "relaxed"
                 wgt = 0.0
             else:
@@ -251,9 +261,9 @@ class PostureSolver:
         for s in ("l", "r"):
             a = np.asarray(getattr(stance, "left" if s == "l" else "right"), float)
             for ox, oz in ((-5, -6), (5, -6), (-5, 18), (5, 18)):
-                q = a + ry(stance.yaw) @ np.array([ox, 0, oz])
+                q = a + ry(stance.foot_yaw(s)) @ np.array([ox, 0, oz])
                 feet.append((q[0], q[2]))
-        terms["balance"] = (_outside((c[0], c[2]), _hull(feet)) / 1.5) ** 2 * 20.0
+        terms["balance"] = (_outside((c[0], c[2]), _hull(feet)) / 1.5) ** 2 * (20.0 if not swing else 2.0)
         angles.update({"trunk_flexion": angle(Rall["spine_03"] @ UP, UP), "trunk_side": lat, "trunk_twist": twist,
                        "knee_l": angle(Pall["calf_l"] - Pall["thigh_l"], Pall["foot_l"] - Pall["calf_l"]),
                        "knee_r": angle(Pall["calf_r"] - Pall["thigh_r"], Pall["foot_r"] - Pall["calf_r"])})
@@ -271,12 +281,12 @@ class PostureSolver:
         pose.rot[f"thumb_03_{s}"] = rz(-sx * t3)
 
     # ------------------------------------------------------------------ solving
-    def solve(self, targets, look=None, stance=None, prev=None, smooth=1.0, seeds=None):
+    def solve(self, targets, look=None, stance=None, prev=None, smooth=1.0, seeds=None, swing=None):
         stance = stance or self.default_stance()
         prev_v = prev.v if isinstance(prev, Solution) else (None if prev is None else np.asarray(prev, float))
 
         def f(v):
-            _, terms, _, _ = self.build(v, targets, look, stance)
+            _, terms, _, _ = self.build(v, targets, look, stance, swing=swing)
             c = sum(terms.values())
             if prev_v is not None:
                 c += smooth * float(np.sum(((v - prev_v) / SCALE) ** 2)) * 0.5
@@ -290,7 +300,7 @@ class PostureSolver:
             if best is None or fx < best[1]:
                 best = (x, fx)
         x, fx = best
-        pose, terms, angles, _ = self.build(x, targets, look, stance)
+        pose, terms, angles, _ = self.build(x, targets, look, stance, swing=swing)
         return Solution(pose, fx, terms, angles, x)
 
     def default_stance(self, width=None, yaw=0.0):

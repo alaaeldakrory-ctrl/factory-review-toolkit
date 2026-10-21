@@ -21,6 +21,11 @@ class Frame:
     targets: list
     look: tuple = None
     tools: dict = field(default_factory=dict)     # instance name -> (tool key, 4x4 tool -> worker)
+    root: tuple = None                            # (x, z, yaw) in the world while walking; None = at the work spot
+    stance: object = None                         # solver.Stance in the root frame (walking feet)
+    swing: dict = None                            # free-arm swing (cm forward per side) while walking
+    static: bool = False                          # same as the previous frame (waiting): reuse its solution
+    label: str = ""                               # step / phase name (timeline, findings)
 
 
 def ease(u):
