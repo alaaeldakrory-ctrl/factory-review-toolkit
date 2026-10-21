@@ -21,7 +21,8 @@ import math
 from pxr import Gf, Sdf, UsdGeom
 
 from .base import Item, Param, new_shapes, register, shapes_to_stage
-from .items_crane import finned_motor, sign_text
+from .items_crane import finned_motor, nameplate, sign_text
+from . import details as DT
 from .items_flow import poly
 
 BOLT = "bolt_zinc"
@@ -106,6 +107,126 @@ def castor(s, x, z, top, swivel, col):
         s.rbox((x + 3.5, wy + 3.5, z), (3.0, 0.8, 5.0), 0.3, "powder_red", seg=1)                 # brake pedal
 
 
+def power_unit(s, L, W, y1, g):
+    """Hydraulic power pack on the handle-end bay: tank on rubber mounts with a strap, manifold block with relief
+    valve, solenoid valve and breather, flanged motor with nameplate, pressure hose to the lift cylinder."""
+    px = L / 2 - UNIT / 2
+    yp = y1 + 1.0
+    s.rbox((px, y1 + 0.5, 0), (UNIT - 4, 1.0, W - 12), 0.3, "steel_dark", seg=1)                       # mounting plate
+    for dx in (-UNIT / 2 + 4, UNIT / 2 - 4):
+        for dz in (-W / 2 + 9, W / 2 - 9):
+            s.bolt((px + dx, yp, dz), (0, 1, 0), 1.0, BOLT)
+    tx, tz = px - 3.0, -W / 4
+    for k in range(3):                                                                               # rubber mounts
+        a = 2 * math.pi * k / 3 + 0.5
+        mx, mz = tx + 4.5 * math.cos(a), tz + 4.5 * math.sin(a)
+        s.lathe((mx, yp, mz), (mx, yp + 2.0, mz), [(0, 1.6), (0.5, 1.8), (1, 1.6)], "rubber_black", sides=14)
+    y_t0, y_t1 = yp + 2.0, yp + 26.0
+    s.lathe((tx, y_t0, tz), (tx, y_t1, tz), [(0, 6.6), (0.02, 7.3), (0.05, 7.4), (0.95, 7.4), (0.98, 7.3), (1, 6.6)],
+            "aluminium", sides=36)                                                                   # oil tank
+    for y_ in (y_t0 + 0.9, y_t1 - 0.9):
+        DT.weld_bead(s, (tx, y_, tz), (0, 1, 0), 7.35, "aluminium", bead=0.22)
+    s.lathe((tx, yp + 11.0, tz), (tx, yp + 13.5, tz), [(0, 7.55), (1, 7.55)], "stainless", sides=36)    # strap
+    s.rbox((tx + 7.9, yp + 12.2, tz), (1.4, 2.5, 3.0), 0.3, "stainless", seg=1)
+    s.bolt((tx + 8.6, yp + 12.2, tz), (1, 0, 0), 0.8, BOLT)
+    DT.hex_nut(s, (tx, y_t0 + 2.0, tz + 7.3), (0, 0, 1), 1.6, 0.7, BOLT)                               # drain plug
+    s.lathe((tx + 7.25, yp + 7.0, tz), (tx + 7.75, yp + 7.0, tz), [(0, 1.3), (1, 1.2)], "chrome", sides=18)   # sight glass
+    s.lathe((tx + 7.6, yp + 7.0, tz), (tx + 7.8, yp + 7.0, tz), [(0, 0.85), (1, 0.85)], "brass", sides=14)
+    ym = y_t1 + 3.0                                                                                  # manifold block
+    s.rbox((tx, ym, tz), (13.0, 6.0, 13.0), 0.8, "cast_aluminium", seg=2)
+    for dx, dz in ((-5, -5), (-5, 5), (5, -5), (5, 5)):
+        s.bolt((tx + dx, ym + 3.0, tz + dz), (0, 1, 0), 0.7, BOLT)
+    e = DT.fitting(s, (tx - 6.5, ym, tz), (-1, 0, 0), 1.4)                                            # relief valve
+    knurl = [(0, 0.9)] + [v for k in range(5) for v in ((0.1 + k * 0.18, 1.0), (0.19 + k * 0.18, 0.9))] + [(1, 0.8)]
+    s.lathe(e, (e[0] - 2.5, e[1], e[2]), knurl, "steel_machined", sides=16)
+    q = DT.hex_nut(s, (tx, ym, tz + 6.5), (0, 0, 1), 2.0, 0.8, BOLT)                                  # solenoid valve
+    s.lathe(q, (q[0], q[1], q[2] + 5.0), [(0, 2.3), (0.05, 2.5), (0.95, 2.5), (1, 2.2)], "plastic_black", sides=24)
+    s.rbox((tx, ym + 3.4, q[2] + 2.5), (3.4, 2.2, 3.4), 0.4, "plastic_black", seg=1)                   # DIN plug
+    s.bolt((tx, ym + 4.5, q[2] + 2.5), (0, 1, 0), 0.5, "stainless")
+    ribs = [(0, 1.6)] + [v for k in range(4) for v in ((0.15 + k * 0.2, 1.75), (0.25 + k * 0.2, 1.6))] + [(1, 1.2)]
+    s.lathe((tx + 4.0, ym + 3.0, tz - 4.0), (tx + 4.0, ym + 5.5, tz - 4.0), ribs, "plastic_black", sides=18)   # breather
+    s.lathe((tx, ym + 3.0, tz), (tx, ym + 4.2, tz), [(0, 6.4), (1, 6.4)], "cast_aluminium", sides=32)  # motor flange
+    for k in range(4):
+        a = 2 * math.pi * k / 4 + math.pi / 4
+        s.bolt((tx + 5.4 * math.cos(a), ym + 4.2, tz + 5.4 * math.sin(a)), (0, 1, 0), 0.7, BOLT)
+    finned_motor(s, (tx, ym + 4.2, tz + 0.01), (tx, ym + 20.0, tz + 0.02), 5.5, "powder_anthracite", "powder_black")
+    nameplate(s, (tx - 0.01, ym + 11.5, tz - 6.4), (0, 0, -1), (1, 0, 0), 5.5, 3.4)
+    fx = DT.fitting(s, (tx + 6.5, ym - 1.0, tz), (1, 0, 0), 1.4)                                      # pressure port
+    DT.hose(s, [fx, (fx[0] + 3, fx[1] - 4, fx[2]), (fx[0] + 1, y1 + 3.0, tz + 10), (g.ax + 22, y1 - 3.0, -2.0),
+                (g.ax + 9, g.ay + 2.5, -1.0)], 0.75)
+    return (tx, ym, q[2] + 2.5)
+
+
+def control_box(s, L, W, y1):
+    """Control box on a bracket: IP65 enclosure, E-stop, power lamp, key switch, UP / DOWN buttons with legends,
+    warning label, cable glands with the motor, valve and supply cables."""
+    px = L / 2 - UNIT / 2
+    bx, by, bz = px + 3.0, y1 + 24.0, W / 4 - 1.0
+    r, u, n = (0, 0, -1), (0, 1, 0), (1, 0, 0)
+    w, h, d = 15.0, 25.0, 8.0
+    p = (bx - d / 2, by, bz)
+    s.rbox((bx - d / 2 - 0.4, y1 + 12.0, bz), (0.8, 24.0, 6.0), 0.2, "steel_dark", seg=1)              # bracket
+    s.rbox((bx - d / 2 - 0.4, y1 + 1.4, bz), (6.0, 0.8, 6.0), 0.2, "steel_dark", seg=1)
+    for dy in (-6, 6):
+        s.bolt((bx - d / 2 - 0.8, by + dy, bz), (-1, 0, 0), 0.6, BOLT)
+    face = DT.enclosure(s, p, r, u, n, w, h, d)
+    DT.estop(s, DT.at(face, r, u, n, 0, 7.0), r, u, n, 3.6)
+    DT.pilot_lamp(s, DT.at(face, r, u, n, -3.8, 1.2), r, u, n, "lamp_white")
+    DT.legend(s, DT.at(face, r, u, n, -3.8, -1.3), r, u, n, "POWER", 0.6)
+    DT.key_switch(s, DT.at(face, r, u, n, 3.8, 1.2), r, u, n)
+    DT.legend(s, DT.at(face, r, u, n, 3.8, -1.3), r, u, n, "ON", 0.6)
+    DT.push_button(s, DT.at(face, r, u, n, -3.6, -5.0), r, u, n, "floor_green", arrow=1)
+    DT.legend(s, DT.at(face, r, u, n, -3.6, -7.6), r, u, n, "UP", 0.7)
+    DT.push_button(s, DT.at(face, r, u, n, 3.6, -5.0), r, u, n, "plastic_black", arrow=-1)
+    DT.legend(s, DT.at(face, r, u, n, 3.6, -7.6), r, u, n, "DOWN", 0.7)
+    DT.warning(s, DT.at(face, r, u, n, 0, -10.2, 0.05), r, n, 2.6)
+    yb = by - h / 2
+    tx, ym, tz = L / 2 - UNIT / 2 - 3.0, y1 + 30.0, -W / 4
+    DT.gland(s, (bx - 1.0, yb, bz + 3.5), (0, -1, 0), 1.6,
+             [(bx - 1.0, y1 + 3.0, bz + 3.5), (tx + 9.5, y1 + 3.0, tz + 9.0), (tx + 9.0, ym + 2.0, tz + 7.5),
+              (tx + 8.8, ym + 8.0, tz + 6.8), (tx + 8.7, ym + 12.1, tz + 5.6)],
+             cable_r=0.45)                                                                           # to the motor
+    DT.gland(s, (bx - 1.0, yb, bz), (0, -1, 0), 1.4,
+             [(bx - 1.0, y1 + 3.5, bz), (tx + 3.0, y1 + 3.5, tz + 12.5), (tx + 2.0, ym + 1.0, tz + 12.5),
+              (tx + 0.5, ym + 4.4, tz + 11.2)],
+             cable_r=0.35)                                                                           # to the valve
+    DT.gland(s, (bx - 1.0, yb, bz - 3.5), (0, -1, 0), 1.6,
+             [(bx - 1.0, by - 18, bz - 3.5), (bx + 3, y1 + 6, bz - 7), (L / 2 - 1.0, y1 + 5, bz - 9),
+              (L / 2 + 2.0, y1 + 14, bz - 10)], cable_r=0.5)                                         # supply cable
+    s.rbox((L / 2 + 2.0, y1 + 15.5, bz - 10), (2.6, 3.0, 4.0), 0.6, "plastic_black", seg=2)            # plug on its hook
+
+
+def tow_handle(s, L, y1, col):
+    """Tow / push handle: clevis on the base, pivot bolt with nuts, bent tube yoke welded to a boss, crossbar with
+    ribbed grips, return spring."""
+    hx = L / 2 - 2.0
+    py = y1 + 4.0
+    for uz in (-1, 1):                                                                               # clevis plates
+        s.rbox((hx, py - 0.5, uz * 4.2), (5.0, 8.0, 0.8), 0.3, col, seg=1)
+    s.rbox((hx - 1.5, y1 + 0.4, 0), (6.0, 0.8, 10.0), 0.3, col, seg=1)
+    s.cylinder((hx, py, -5.6), (hx, py, 5.6), 0.8, "steel_machined", 12)                              # pivot bolt
+    DT.hex_nut(s, (hx, py, 4.6), (0, 0, 1), 1.9, 0.9, BOLT)
+    DT.hex_nut(s, (hx, py, -4.6), (0, 0, -1), 1.9, 0.7, BOLT)
+    s.lathe((hx, py, -3.6), (hx, py, 3.6), [(0, 2.0), (0.1, 2.3), (0.9, 2.3), (1, 2.0)], "powder_black_tex", sides=20)
+    top = (hx + 26.0, y1 + 50.0)
+    for uz in (-1, 1):
+        start = (hx + 1.6, py + 1.2, uz * 2.6)
+        path = DT.bend([start, (hx + 10, y1 + 18, uz * 5.5), (hx + 22, y1 + 40, uz * 4.5), (top[0], top[1], uz * 3.2)], 5.0)
+        s.sweep(path, 1.25, "powder_black_tex", sides=16)
+        d0 = tuple(b_ - a_ for a_, b_ in zip(path[0], path[1]))
+        DT.weld_bead(s, start, _unit(d0), 1.25, "powder_black_tex")
+        DT.weld_bead(s, (top[0], top[1] - 1.2, uz * 3.2), (0, 1, 0), 1.25, "powder_black_tex")
+    s.cylinder((top[0], top[1], -14.5), (top[0], top[1], 14.5), 1.25, "powder_black_tex", 16)         # crossbar
+    for uz in (-1, 1):
+        DT.grip(s, (top[0], top[1], uz * 5.0), (top[0], top[1], uz * 15.2), 1.25)
+    DT.spring(s, (hx + 5.0, py + 6.0, 0), (hx - 4.0, y1 + 1.0, 0), 0.7, 0.16, 9)                       # return spring
+
+
+def _unit(v):
+    m = math.sqrt(sum(c * c for c in v)) or 1.0
+    return tuple(c / m for c in v)
+
+
 class ScissorTable(Item):
     def footprint(self, p):
         return p["length"], p["width"]
@@ -175,40 +296,9 @@ class ScissorTable(Item):
                     s.bolt((fx + 3, 1.0, uz * (W / 2 - 1.0)), (0, 1, 0), 1.0, BOLT)
         # ------------------------------------------------------------------ power unit + handle (mobile)
         if G["unit"]:
-            px = L / 2 - UNIT / 2
-            s.rbox((px, y1 + 0.5, 0), (UNIT - 4, 1.0, W - 12), 0.3, "steel_dark", seg=1)                  # mounting plate
-            s.lathe((px - 4, y1 + 1, -W / 4), (px - 4, y1 + 26, -W / 4), [(0, 7), (0.05, 7.4), (0.95, 7.4), (1, 6)],
-                    "aluminium", sides=28)                                                                  # oil tank
-            s.lathe((px - 4, y1 + 26, -W / 4), (px - 4, y1 + 29, -W / 4), [(0, 2.2), (1, 1.6)], "plastic_black", sides=14)
-            finned_motor(s, (px - 4, y1 + 29, -W / 4 + 0.01), (px - 4, y1 + 44, -W / 4 + 0.02), 5.5, "powder_anthracite",
-                         "powder_black")
-            bx_, by_, bz_ = px + 2, y1 + 24, W / 4 - 2                                                    # control box
-            s.rbox((bx_, by_, bz_), (9.0, 26.0, 18.0), 1.2, "powder_lightgrey", seg=2)
-            s.rbox((bx_ - 4, y1 + 8, bz_), (2.0, 16.0, 4.0), 0.3, "steel_dark", seg=1)                    # bracket
-            fx = bx_ + 4.5
-            s.lathe((fx, by_ + 7, bz_), (fx + 1.8, by_ + 7, bz_), [(0, 3.0), (0.3, 3.0), (0.4, 2.0), (1, 2.6)],
-                    "powder_red", sides=20)                                                                 # E-stop
-            s.rbox((fx + 0.05, by_ + 7, bz_), (0.1, 8.0, 8.0), 0.3, "powder_yellow", seg=1)
-            for k, (m, dy) in enumerate((("floor_green", 0.0), ("plastic_black", -5.0))):                 # up / down
-                s.lathe((fx, by_ + dy, bz_ - 3), (fx + 1.0, by_ + dy, bz_ - 3), [(0, 1.5), (1, 1.4)], m, sides=14)
-            s.lathe((fx, by_ - 2.5, bz_ + 4), (fx + 1.2, by_ - 2.5, bz_ + 4), [(0, 1.1), (0.6, 1.1), (1, 0.7)],
-                    "powder_orange", sides=12)                                                              # pilot lamp
-            for dy, dz in ((12, 8), (12, -8), (-12, 8), (-12, -8)):
-                s.bolt((fx, by_ + dy * 0.9, bz_ + dz * 0.9), (1, 0, 0), 0.5, "stainless")
-            s.lathe((bx_, by_ - 13, bz_ - 4), (bx_, by_ - 15.5, bz_ - 4), [(0, 1.4), (1, 1.0)], "plastic_black", sides=10)
-            s.sweep([(bx_, by_ - 15.5, bz_ - 4), (bx_ - 3, y1 + 4, 0), (px - 4, y1 + 36, -W / 4 + 7)], 0.5, "cable_pvc",
-                    sides=8)                                                                                # motor cable
-            s.sweep([(px - 4, y1 + 6, -W / 4 + 7), (px - 14, y1 + 3, -W / 4 + 4), (g.ax + 6, g.ay + 1, -3.0)], 0.9,
-                    "rubber_black", sides=10)                                                               # hydraulic hose
-            hx = L / 2 - 2                                                                                   # tow handle
-            s.rbox((hx, y1 + 3, 0), (3.0, 6.0, 16.0), 0.5, col, seg=1)
-            for uz in (-1, 1):
-                s.sweep([(hx, y1 + 4, uz * 6), (hx + 10, y1 + 18, uz * 6), (hx + 22, y1 + 40, uz * 9),
-                         (hx + 26, y1 + 50, uz * 12)], 1.3, "powder_black", sides=12)
-            s.cylinder((hx + 26, y1 + 50, -14), (hx + 26, y1 + 50, 14), 1.3, "powder_black", 12)
-            for uz in (-1, 1):
-                s.lathe((hx + 26, y1 + 50, uz * 4), (hx + 26, y1 + 50, uz * 13), [(0, 1.9), (0.1, 2.1), (0.9, 2.1), (1, 1.9)],
-                        "rubber_black", sides=14)                                                           # grips
+            power_unit(s, L, W, y1, g)
+            control_box(s, L, W, y1)
+            tow_handle(s, L, y1, col)
         shapes_to_stage(stage, path, s, lib)
         # ------------------------------------------------------------------ deck (rises)
         hr = h

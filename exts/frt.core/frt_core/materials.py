@@ -22,7 +22,12 @@ TEX = {
     "satin_n": "Paint/Paint_Satin/Paint_Satin_N.png",
     "rubber_n": "Rubber/Rough/T_Rubber_Black_Rough_A_Normal.png",
     "steel_n": "Metals/Steel/T_Steel_A1_Normal.png",
+    "grainy_n": "Plastics/Grainy/T_Plastic_Grainy_A1_Normal.png",     # moulded ABS / PA grain
+    "plastic_n": "Plastics/Misc/T_Plastic_Normal.png",
+    "rubber_new_n": "Rubber/New/T_Rubber_New_A1_Normal.png",
 }
+# self-lit looks: pilot lamps, LEDs, light fittings (OmniPBR emission, intensity in nits-ish units)
+EMISSIVE = {"light_emit": 4000.0, "lamp_orange": 900.0, "lamp_green": 700.0, "lamp_white": 900.0}
 
 
 def srgb_to_linear(c):
@@ -53,7 +58,7 @@ LOOKS = {
     "chrome": ((0.85, 0.86, 0.87), 0.12, 1.0, None, 0.0, 0.0),
     "rubber_black": ((0.05, 0.05, 0.05), 0.85, 0.0, "rubber_n", 0.8, 0.0),
     "belt_black": ((0.08, 0.08, 0.085), 0.75, 0.0, "rubber_n", 0.6, 0.0),
-    "plastic_black": ((0.06, 0.06, 0.065), 0.45, 0.0, None, 0.0, 0.0),
+    "plastic_black": ((0.06, 0.06, 0.065), 0.45, 0.0, "grainy_n", 0.35, 0.2),
     "plastic_blue": (_rgb("#1f5fae"), 0.40, 0.0, None, 0.0, 0.0),
     "plastic_grey": (_rgb("#6d7377"), 0.45, 0.0, None, 0.0, 0.0),
     "wood_top": (_rgb("#c9a170"), 0.60, 0.0, "satin_n", 0.4, 0.2),          # birch / beech worktop
@@ -74,9 +79,18 @@ LOOKS = {
     "cast_aluminium": ((0.66, 0.67, 0.68), 0.45, 1.0, "steel_n", 0.3, 0.0),  # motor / gear housings
     "cable_pvc": ((0.04, 0.04, 0.045), 0.35, 0.0, "rubber_n", 0.3, 0.0),     # cable sheath
     "concrete": (_rgb("#a6a39b"), 0.85, 0.0, None, 0.0, 0.0),                # grout, plinths
+    "abs_lightgrey": (_rgb("#d4d5d0"), 0.42, 0.0, "grainy_n", 0.3, 0.25),   # RAL 7035 ABS / PC enclosure
+    "powder_black_tex": (_rgb("#1a1b1d"), 0.62, 0.0, "powder_n", 1.4, 0.35),  # textured powder coat (handles)
+    "grip_rubber": (_rgb("#161616"), 0.80, 0.0, "rubber_new_n", 1.0, 0.3),    # TPE handle grips
+    "hose_rubber": (_rgb("#101010"), 0.62, 0.0, "rubber_n", 0.6, 0.25),       # hydraulic hose cover
+    "brass": (_rgb("#b59a52"), 0.32, 1.0, "steel_n", 0.15, 0.1),              # fittings, valve bodies
+    "label_vinyl": (_rgb("#f1f1ee"), 0.28, 0.0, None, 0.0, 0.0),              # printed vinyl legends
+    "lamp_orange": (_rgb("#ff8a1e"), 0.20, 0.0, None, 0.0, 0.0),
+    "lamp_green": (_rgb("#35d45a"), 0.20, 0.0, None, 0.0, 0.0),
+    "lamp_white": (_rgb("#fff6e8"), 0.20, 0.0, None, 0.0, 0.0),
     "hole": (_rgb("#0a0b0c"), 0.95, 0.0, None, 0.0, 0.0),                    # punched holes, recesses (seen as shadow)
     "nylon_white": (_rgb("#dcd9cf"), 0.38, 0.0, None, 0.0, 0.0),             # flow wheels, ball cages
-    "plastic_red": (_rgb("#b3261e"), 0.40, 0.0, None, 0.0, 0.0),
+    "plastic_red": (_rgb("#b3261e"), 0.30, 0.0, "plastic_n", 0.15, 0.0),     # glossy moulded (E-stop)
     "plastic_yellow": (_rgb("#e0a800"), 0.40, 0.0, None, 0.0, 0.0),
 }
 
@@ -107,6 +121,7 @@ PRESETS = {
     "cast_aluminium": "Metals/Aluminum_Cast_A.mdl",
     "cable_pvc": "Rubber/Rubber_Black_Glossy_A.mdl",
     "concrete": "Concrete/Concrete_Smooth_A.mdl",
+    "brass": "Metals/Brass_A.mdl",
     "wood_top": "Wood/Plywood_A_Tiling.mdl",
 }
 
@@ -163,10 +178,10 @@ class MaterialLibrary:
         sh.CreateInput("diffuse_color_constant", C3).Set(Gf.Vec3f(*lin))
         sh.CreateInput("reflection_roughness_constant", F).Set(float(rough))
         sh.CreateInput("metallic_constant", F).Set(float(metal))
-        if name == "light_emit":
+        if name in EMISSIVE:
             sh.CreateInput("enable_emission", B).Set(True)
             sh.CreateInput("emissive_color", C3).Set(Gf.Vec3f(*lin))
-            sh.CreateInput("emissive_intensity", F).Set(4000.0)
+            sh.CreateInput("emissive_intensity", F).Set(EMISSIVE[name])
         tex_ok = self.textures and os.path.isdir(self.textures)
         if normal and tex_ok:
             inp = sh.CreateInput("normalmap_texture", A)
@@ -186,7 +201,7 @@ class MaterialLibrary:
         mat.CreateDisplacementOutput("mdl").ConnectToSource(out)
         mat.CreateVolumeOutput("mdl").ConnectToSource(out)
         pv = self._preview(mat, path, lin, rough, metal, C3, F)
-        if name == "light_emit":
+        if name in EMISSIVE:
             pv.CreateInput("emissiveColor", C3).Set(Gf.Vec3f(*lin))
         ref = MatRef(mat, srgb)
         self._cache[name] = ref
