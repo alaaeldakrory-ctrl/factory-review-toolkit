@@ -1,0 +1,7 @@
+build/
+out/
+__pycache__/
+*.pyc
+*.building.usd*
+*.lockcheck
+.pytest_cache/

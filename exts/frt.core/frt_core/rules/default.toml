@@ -1,0 +1,35 @@
+# Default rule pack. Every limit a check uses lives here, so a plant or company can override it with its own pack
+# (rules.load(["default.toml", "my_plant.toml"]) — later packs win). Units are in the key names.
+
+[validate]
+floating_tolerance_cm = 1.0        # an unsupported object may sit at most this far above its support
+sunk_tolerance_cm = 1.0            # ... or this far below the floor / its support
+overlap_min_cm3 = 2000.0           # ignore box overlaps smaller than this (touching parts)
+overlap_ignore_roles = ["floor", "building", "aisle", "walkway", "zone", "keepout", "camera", "column", "wall", "door", "dock"]
+absolute_paths = "warning"         # severity for asset paths that only work on this PC
+
+# expected size ranges per role (largest plan dimension and height, cm); outside the range = probably wrong units
+[validate.size]
+table = { plan = [60, 400], height = [60, 130] }
+lift_table = { plan = [60, 400], height = [15, 250] }
+flow_rack = { plan = [80, 1200], height = [100, 400] }
+bin_rack = { plan = [40, 600], height = [60, 300] }
+pallet_rack = { plan = [100, 3000], height = [100, 1500] }
+conveyor = { plan = [50, 5000], height = [20, 300] }
+pallet = { plan = [80, 130], height = [8, 250] }
+crate = { plan = [20, 400], height = [15, 300] }
+forklift = { plan = [100, 500], height = [150, 600] }
+worker = { plan = [20, 120], height = [140, 210] }
+crane_jib = { plan = [150, 1200], height = [200, 900] }
+crane_bridge = { plan = [500, 4000], height = [300, 2500] }
+
+[layout]
+main_aisle_min_cm = 360            # forklift two-way aisle
+cross_aisle_min_cm = 240           # one-way / pedestrian cross aisle
+walkway_min_cm = 90                # pedestrian walkway
+exit_travel_max_cm = 6100          # max travel distance to an exit (200 ft, sprinklered, typical)
+equipment_clearance_cm = 90        # clear space in front of electrical panels / machines
+
+[safety]
+forklift_pedestrian_separation_cm = 100
+fall_height_cm = 120               # edges higher than this need guarding
