@@ -54,7 +54,7 @@ class Reading:
         self.classes = classify_all(self.objects, self.profile, min_confidence)
         _absorb_nested(self.objects, self.classes)
         _apply_overrides(self.objects, self.classes, st.get("overrides", []))
-        self.stations = _stations(self.drawing, self.objects, self.classes, self.profile)
+        self.stations = _stations(self.drawing, self.objects, self.classes, self.profile, st.get("stations", []))
         return self
 
     def counts(self):
@@ -86,7 +86,34 @@ def _clean_task(t, bullets):
     return " ".join(words).strip()
 
 
-def _stations(dr, objs, classes, prof):
+def _station_point(st):
+    return ((st.box[0] + st.box[2]) / 2, (st.box[1] + st.box[3]) / 2)
+
+
+def _apply_station_names(stations, names):
+    """Names and tasks given in review (stations nobody labelled, or a better name): matched by position."""
+    for nm in names:
+        best = min(stations, key=lambda st: math.dist(_station_point(st), nm["at"]), default=None)
+        if best is None or math.dist(_station_point(best), nm["at"]) > nm.get("reach", 150):
+            continue
+        if nm.get("name"):
+            best.name = nm["name"]
+        if "tasks" in nm:
+            best.tasks = list(nm["tasks"])
+        best.box_from += " (named in review)"
+
+
+def name_station(path, station, name, tasks=None):
+    """Save a station's name (and tasks) for this drawing; it sticks to the station's place."""
+    at = [round(v, 1) for v in _station_point(station)]
+    cur = [n for n in load_settings(path).get("stations", []) if math.dist(n["at"], at) > 150]
+    entry = {"at": at, "name": name}
+    if tasks is not None:
+        entry["tasks"] = list(tasks)
+    return save_settings(path, stations=cur + [entry])
+
+
+def _stations(dr, objs, classes, prof, names=None):
     cfg = prof.get("stations", {})
     pat = re.compile(cfg.get("label", r"^(ST|STATION|TEST)\s*(\d{1,3})"), re.I)
     reach = cfg.get("search_cm", 700)
@@ -152,6 +179,7 @@ def _stations(dr, objs, classes, prof):
         title = (f"Test {num}" if kind in ("TEST", "PRUEBA", "COLLAUDO") else f"Station {num}")
         out.append(ReadStation(title, tasks, p, tuple(round(v, 1) for v in box), src, anchor))
     out += _unlabelled_stations(objs, classes, used, cfg)
+    _apply_station_names(out, names or [])
     out.sort(key=lambda s: (s.name.split()[0], int(re.sub(r"\D", "", s.name.split()[-1]) or 0)))
     return out
 
@@ -293,6 +321,7 @@ def _cached(path, kw, imp, make, use_cache=True):
             with open(cp, "rb") as fh:
                 k, dr, objs = pickle.load(fh)
             if k == key:
+                dr.source = path                       # the cache may have been made from another working folder
                 dr.notes = [n for n in dr.notes if not n.startswith("from cache")] + ["from cache"]
                 return dr, objs
         except Exception:   # noqa: BLE001  a broken or old cache is simply rebuilt
@@ -308,6 +337,7 @@ def _cached(path, kw, imp, make, use_cache=True):
 
 
 def read(path, profile=None, calibration=None, scale=None, min_confidence=0.3, use_cache=True):
+    path = os.path.abspath(path)
     st = load_settings(path)
     if calibration is None and "calibration" in st:
         c = st["calibration"]
@@ -324,7 +354,7 @@ def read(path, profile=None, calibration=None, scale=None, min_confidence=0.3, u
     _absorb_nested(objs, classes)
     _apply_overrides(objs, classes, st.get("overrides", []))
     r = Reading(dr, objs, classes, profile=prof)
-    r.stations = _stations(dr, objs, classes, prof)
+    r.stations = _stations(dr, objs, classes, prof, st.get("stations", []))
     if (path.lower().endswith(".pdf") and calibration is None and not scale and prof.get("sizes")
             and any("assumed 1:100" in n for n in dr.notes)):
         # no scale on the sheet: use the team's standard blocks, remember it, read again at that scale

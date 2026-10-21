@@ -164,3 +164,15 @@ def test_shx_labels_and_rotated_text(tmp_path):
     dr = pdf_import.load(path, scale=100)
     t = next(t for t in dr.texts if t.text == "7 LEVELS")
     assert t.layer == "SHX" and t.width > t.height
+
+
+def test_name_unlabelled_station(team):
+    from frt_core.drawing.read import name_station, read, save_settings
+    save_settings(team, profile="team", calibration={"a": [100, 200], "b": [140, 200], "distance": "8'"})
+    r = read(team)
+    st = next(s for s in r.stations if s.name == "Station 3")
+    name_station(team, st, "ST 3 Battery", ["Battery Install", "Torque check"])
+    r2 = read(team)
+    named = next(s for s in r2.stations if s.name == "ST 3 Battery")
+    assert named.tasks == ["Battery Install", "Torque check"] and "named in review" in named.box_from
+    assert any(s.name == "Test 1" for s in r2.stations)                   # the others keep their names

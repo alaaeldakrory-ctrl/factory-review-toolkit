@@ -177,11 +177,16 @@ class DrawingReviewWindow:
         self._found.text = ", ".join(f"{n} {t.replace('_', ' ')}" for t, n in r.counts().items())
         self._stations.clear()
         with self._stations:
+            ui.Label("Go flies to it; type a name (and tasks, separated by ;) and Save", style={"color": GREY})
             for st in r.stations:
-                with ui.HStack(height=0, spacing=4):
-                    ui.Button(st.name, width=80, clicked_fn=lambda st=st: self._goto(((st.box[0] + st.box[2]) / 2,
-                                                                                      (st.box[1] + st.box[3]) / 2), 40))
-                    ui.Label("; ".join(st.tasks) or "-", word_wrap=True, style={"color": GREY})
+                with ui.HStack(height=24, spacing=4):
+                    ui.Button("Go", width=34, clicked_fn=lambda st=st: self._goto(((st.box[0] + st.box[2]) / 2,
+                                                                                   (st.box[1] + st.box[3]) / 2), 40))
+                    nm = ui.StringField(width=110)
+                    nm.model.set_value(st.name)
+                    tk = ui.StringField(tooltip="tasks, separated by ;")
+                    tk.model.set_value("; ".join(st.tasks))
+                    ui.Button("Save", width=44, clicked_fn=lambda st=st, nm=nm, tk=tk: self._run(self._name_station(st, nm, tk)))
         self._unknown.clear()
         unk = sorted((o for o, c in r.items if c.type == "unknown" and max(o.size) >= 40),
                      key=lambda o: -o.size[0] * o.size[1])
@@ -193,10 +198,10 @@ class DrawingReviewWindow:
 
     # ------------------------------------------------------------------ view
     def _extent(self):
-        dr = self.reading.drawing
-        xs = [q[0] for p in dr.polys for q in p.pts] or [0, 1]
-        ys = [q[1] for p in dr.polys for q in p.pts] or [0, 1]
-        return min(xs), min(ys), max(xs), max(ys)
+        """Extent of the objects found (the drawing's own frame and title block included), fast on big sheets."""
+        objs = [o for o, c in self.reading.items if c.type not in ("ignore",)] or self.reading.objects
+        return (min(o.bbox[0] for o in objs), min(o.bbox[1] for o in objs), max(o.bbox[2] for o in objs),
+                max(o.bbox[3] for o in objs))
 
     def _render(self):
         if self.reading is None:
@@ -328,6 +333,12 @@ class DrawingReviewWindow:
         t = t or tt
         RD.add_override(self._drawing(), o.center, t, params, [max(o.size), min(o.size)])
         await self._after_change(f"#{o.id} is {'ignored' if t == 'none' else 'a ' + t} in this drawing")
+
+    async def _name_station(self, st, nm, tk):
+        name = nm.model.get_value_as_string().strip()
+        tasks = [t.strip() for t in tk.model.get_value_as_string().split(";") if t.strip()]
+        RD.name_station(self._drawing(), st, name or st.name, tasks)
+        await self._after_change(f"{st.name} is now {name or st.name}" + (f" ({len(tasks)} tasks)" if tasks else ""))
 
     # ------------------------------------------------------------------ calibration / key / build
     def _start_calib(self):

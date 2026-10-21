@@ -50,11 +50,23 @@ def render(reading, out, crop=None, px_per_m=12.0, show_unknown=True, min_unknow
 
     def inside(bb):
         return bb[2] >= x0 and bb[0] <= x1 and bb[3] >= y0 and bb[1] <= y1
-    for s in dr.segs:
-        if inside((min(s.a[0], s.b[0]), min(s.a[1], s.b[1]), max(s.a[0], s.b[0]), max(s.a[1], s.b[1]))):
-            d.line([P(s.a), P(s.b)], fill=(200, 200, 200), width=1)
-    for p in dr.polys:
-        if inside(p.bbox()):
+    # the drawing itself: arrays built once per drawing, then only what is in view and at least ~a pixel long
+    import numpy as np
+    if getattr(dr, "_seg_np", None) is None or len(dr._seg_np) != len(dr.segs):
+        dr._seg_np = np.array([(s.a[0], s.a[1], s.b[0], s.b[1]) for s in dr.segs], dtype=np.float32).reshape(-1, 4)
+        dr._poly_bb = np.array([p.bbox() for p in dr.polys], dtype=np.float32).reshape(-1, 4)
+    A = dr._seg_np
+    if len(A):
+        lo_x, hi_x = np.minimum(A[:, 0], A[:, 2]), np.maximum(A[:, 0], A[:, 2])
+        lo_y, hi_y = np.minimum(A[:, 1], A[:, 3]), np.maximum(A[:, 1], A[:, 3])
+        m = (hi_x >= x0) & (lo_x <= x1) & (hi_y >= y0) & (lo_y <= y1) & (((hi_x - lo_x) + (hi_y - lo_y)) * k >= 0.8)
+        for x_a, y_a, x_b, y_b in A[m]:
+            d.line([((x_a - x0) * k, (y1 - y_a) * k), ((x_b - x0) * k, (y1 - y_b) * k)], fill=(200, 200, 200), width=1)
+    B = dr._poly_bb
+    if len(B):
+        m = (B[:, 2] >= x0) & (B[:, 0] <= x1) & (B[:, 3] >= y0) & (B[:, 1] <= y1) &             (((B[:, 2] - B[:, 0]) + (B[:, 3] - B[:, 1])) * k >= 1.5)
+        for i in np.nonzero(m)[0]:
+            p = dr.polys[int(i)]
             d.line([P(q) for q in p.pts] + [P(p.pts[0])], fill=(185, 185, 185), width=1)
     f_small, f_big = _font(12), _font(15)
     for o, c in reading.items:

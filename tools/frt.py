@@ -8,6 +8,7 @@
     python tools/frt.py set      plant.pdf <object id> <type> [key=value]   correct one object in this drawing only
     python tools/frt.py learn-sizes plant.pdf                         remember the team's block sizes (calibrated drawing)
     python tools/frt.py baseline plant.pdf                              keep this reading to spot changes (not an answer key)
+    python tools/frt.py name-station plant.pdf "Unnamed 3" "ST 3" ["task; task"]   name a station in this drawing
     python tools/frt.py confirm  plant.pdf                              save the reviewed reading as its answer key
     python tools/frt.py score    plant.pdf [more ...]                   score the reader against the answer keys
     python tools/frt.py drawing  plant.dxf|plant.pdf [legend.toml]     read a drawing and print what was recognised
@@ -114,6 +115,12 @@ def main(argv):
         for s_ in sz:
             print(f"  {s_['type']} on {s_['layer']}: {s_['size'][0]:.0f} x {s_['size'][1]:.0f} cm ({s_['count']} seen)")
         print("->", path)
+    elif cmd == "name-station":
+        from frt_core.drawing.read import name_station, read
+        st = next(s_ for s_ in read(args[0]).stations if s_.name == args[1])
+        tasks = [t.strip() for t in args[3].split(";")] if len(args) > 3 else None
+        name_station(args[0], st, args[2], tasks)
+        print(f"{args[1]} -> {args[2]}")
     elif cmd == "baseline":
         from frt_core.drawing import answers
         from frt_core.drawing.read import read
