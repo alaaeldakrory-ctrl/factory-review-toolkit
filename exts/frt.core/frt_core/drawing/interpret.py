@@ -55,6 +55,8 @@ class Station:
     y1: float
     ref: str = ""
     label_inside: bool = True
+    tasks: List[str] = field(default_factory=list)
+    box_from: str = "drawing"
 
 
 @dataclass
@@ -70,6 +72,9 @@ class Plant:
     walkways: List[Tuple[float, float, float, float]] = field(default_factory=list)
     stations: List[Station] = field(default_factory=list)
     equipment: List[Equip] = field(default_factory=list)
+    rooms: List[dict] = field(default_factory=list)        # {"name", "box": [x0, y0, x1, y1]} -> walls
+    zones: List[dict] = field(default_factory=list)        # marked areas without walls
+    operators: List[dict] = field(default_factory=list)    # proposed worker positions, to be confirmed
     unknown: List[dict] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
 
@@ -185,6 +190,8 @@ def interpret(dr, legend=None):
 def phrases(texts):
     """Join words that sit on one line next to each other ("STATION" "3" -> "STATION 3"); DXF texts are usually
     whole already, PDF words never are. Returns [(phrase, centre)]."""
+    if texts and all(getattr(t, "width", 0) for t in texts):
+        return [(t.text, t.pos) for t in texts]           # PDF text comes as whole lines already
     words = sorted(texts, key=lambda t: (-t.pos[1], t.pos[0]))
     out, used = [], set()
     for i, w in enumerate(words):

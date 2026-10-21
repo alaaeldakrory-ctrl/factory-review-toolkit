@@ -29,7 +29,7 @@ except ImportError:
 PROFILES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles")
 USER_PROFILES = os.path.join(os.path.expanduser("~"), ".frt", "profiles")
 EVIDENCE = ("layer", "text", "name", "shape", "size_cm", "short_cm", "min_parts", "max_parts")
-WEIGHT = {"layer": 0.25, "text": 0.7, "text_near": 0.4, "name": 0.45, "shape": 0.15, "size_cm": 0.15, "short_cm": 0.1,
+WEIGHT = {"layer": 0.35, "text": 0.7, "text_near": 0.4, "name": 0.45, "shape": 0.15, "size_cm": 0.15, "short_cm": 0.1,
           "min_parts": 0.1, "max_parts": 0.05}
 
 

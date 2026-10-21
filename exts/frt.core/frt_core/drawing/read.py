@@ -185,6 +185,43 @@ def save_settings(path, **values):
     return cur
 
 
+def pick(objs, p, size=None):
+    """The object a reviewer means by a point: the smallest one containing it (or, given its size, the one of that
+    size), else the nearest within 1 m."""
+    hits = [o for o in objs if o.contains(p)]
+    if hits and size:
+        best = min(hits, key=lambda o: abs(max(o.size) - size[0]) + abs(min(o.size) - size[1]))
+        if abs(max(best.size) - size[0]) < 0.1 * size[0] + 10:
+            return best
+    if hits:
+        return min(hits, key=lambda o: o.size[0] * o.size[1])
+    near = min(objs, key=lambda o: math.dist(o.center, p), default=None)
+    return near if near is not None and math.dist(near.center, p) < 100 else None
+
+
+def _apply_overrides(objs, classes, overrides):
+    """Per-drawing corrections from review: {at = [x, y] (drawing cm), type = "room", params = {...}}."""
+    from .classify import Classified
+    pos = {id(o): i for i, o in enumerate(objs)}
+    for ov in overrides:
+        o = pick(objs, tuple(ov["at"]), ov.get("size"))
+        if o is None:
+            continue
+        t = ov["type"] if ov["type"] != "none" else "ignore"
+        classes[pos[id(o)]] = Classified(t, 1.0, "set by reviewer", params=dict(ov.get("params", {})))
+
+
+def add_override(path, at, type_, params=None, size=None):
+    cur = load_settings(path).get("overrides", [])
+    cur = [o for o in cur if not (math.dist(o["at"], at) <= 1.0 and o.get("size") == size)]
+    entry = {"at": [round(at[0], 1), round(at[1], 1)], "type": type_}
+    if size:
+        entry["size"] = [round(size[0], 1), round(size[1], 1)]
+    if params:
+        entry["params"] = params
+    return save_settings(path, overrides=cur + [entry])
+
+
 def read(path, profile=None, calibration=None, scale=None, min_confidence=0.3):
     st = load_settings(path)
     if calibration is None and "calibration" in st:
@@ -201,6 +238,7 @@ def read(path, profile=None, calibration=None, scale=None, min_confidence=0.3):
     objs = find_objects(dr, gap_cm=imp.get("gap_cm", 8.0), ignore_layers=imp.get("ignore_layers", []))
     classes = classify_all(objs, prof, min_confidence)
     _absorb_nested(objs, classes)
+    _apply_overrides(objs, classes, st.get("overrides", []))
     r = Reading(dr, objs, classes, profile=prof)
     r.stations = _stations(dr, objs, classes, prof)
     return r

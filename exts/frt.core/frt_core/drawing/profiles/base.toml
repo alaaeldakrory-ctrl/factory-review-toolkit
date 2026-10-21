@@ -9,6 +9,7 @@ name = "Base (generic, EN/ES/IT)"
 ignore_layers = ["*COMENTARIO*", "*COMMENT*", "*COMMENTI*", "*NOTA*", "*NOTE*", "DEFPOINTS", "*VIEWPORT*", "*TITLE*"]
 
 [stations]
+# physical items carry a minimum width (short_cm): a label sitting on a sliver of a line is never the object
 # a station name: ST 1, STN 5, STATION 3, ESTACION 2, ESTACIÓN 2, STAZIONE 4, POSTAZIONE 4, CELL 2, WS 4, TEST 3
 label = '^(ST|STN|STA|STATION|ESTACION|ESTACIÓN|EST|STAZIONE|POSTAZIONE|CELL|CELDA|CELLA|WS|TEST|PRUEBA|COLLAUDO)\s*[-_#.]?\s*(\d{1,3}[A-Z]?)\b'
 search_cm = 700                    # how far above/beside the label to look for the station's unit or box
@@ -58,6 +59,7 @@ type = "bridge_crane"
 text = ["*BRIDGE*", "*PUENTE GRUA*", "*PUENTE GRÚA*", "*CARROPONTE*", "*CARRO PONTE*", "*OVERHEAD CRANE*", "*WORKSTATION CRANE*"]
 near = true
 size_cm = [200, 6000]
+short_cm = [150, 6000]
 param = { capacity = 'text:\d[\d,.]*\s*(lb|lbs|kg|t|ton)' }
 
 [[rules]]
@@ -66,54 +68,68 @@ layer = ["*OVERHEAD*", "*CRANE*", "*GRUA*", "*GRÚA*", "*GRU*"]
 size_cm = [150, 6000]
 
 # ------------------------------------------------------------------------------------------ equipment by label
+short_cm = [150, 100000]
+
 [[rules]]
 type = "lift_table"
 text = ["LIFT TABLE", "*LIFT TABLE*", "*MESA ELEVADORA*", "*MESA DE ELEVACION*", "*TAVOLA ELEVATRICE*", "*SCISSOR TABLE*"]
 near = true
+short_cm = [40, 100000]
 
 [[rules]]
 type = "flow_rack"
 text = ["*FLOW RACK*", "*FLOWRACK*", "*RACK DE FLUJO*", "*FLUJO*", "*SCAFFALE A GRAVIT*", "*CARTON FLOW*"]
+short_cm = [30, 100000]
 
 [[rules]]
 type = "pallet_rack"
 text = ["*PALLET RACK*", "*RACKING*", "*RACK SELECTIVO*", "*SCAFFALATURA*", "*ESTANTERIA*"]
+short_cm = [40, 100000]
 
 [[rules]]
 type = "parts_rack"
 text = ["*RACK*", "*SHELF*", "*SHELVING*", "*ESTANTE*", "*SCAFFALE*"]
+short_cm = [20, 100000]
 
 [[rules]]
 type = "tool_cart"
 text = ["*CART*", "*CARRITO*", "*CARRO*", "*CARRELLO*", "*TROLLEY*"]
+short_cm = [25, 100000]
 
 [[rules]]
 type = "industrial_table"
 text = ["*TABLE*", "*BENCH*", "*MESA*", "*BANCO*", "*TAVOLO*", "*BANCO DI LAVORO*", "*W. TABLE*"]
+short_cm = [30, 100000]
 
 [[rules]]
 type = "trash"
 text = ["TRASH", "*BASURA*", "*RIFIUTI*", "*WASTE*", "*SCRAP*", "*CHATARRA*"]
+short_cm = [20, 100000]
 
 [[rules]]
 type = "computer_station"
 text = ["*COMPUTER*", "*PC STATION*", "*COMPUTADORA*", "*COMPUTADOR*", "*POSTAZIONE PC*", "*TERMINAL*"]
+short_cm = [20, 100000]
 
 [[rules]]
 type = "computer_station"
 layer = ["*COMPUTER*", "*COMPUTADORA*"]
+short_cm = [20, 100000]
 
 [[rules]]
 type = "ramp"
 text = ["*RAMP*", "*RAMPA*"]
+short_cm = [40, 100000]
 
 [[rules]]
 type = "scale"
 text = ["SCALE", "*SCALE*", "*BASCULA*", "*BÁSCULA*", "*BILANCIA*", "*PESA*"]
+short_cm = [40, 100000]
 
 [[rules]]
 type = "conveyor"
 text = ["*CONVEYOR*", "*TRANSPORTADOR*", "*BANDA*", "*NASTRO*", "*TRASPORTATORE*", "*RODILLOS*", "*RULLIERA*"]
+short_cm = [20, 100000]
 
 [[rules]]
 type = "forklift"

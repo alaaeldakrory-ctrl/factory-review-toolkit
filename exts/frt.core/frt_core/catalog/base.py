@@ -50,6 +50,19 @@ class Item:
             out[k] = v
         return out
 
+    def clamp(self, given):
+        """Numbers brought into their ranges (drawings are not always realistic): (params, [notes])."""
+        out, notes = dict(given or {}), []
+        for k, v in list(out.items()):
+            p = self.params.get(k)
+            if p is None:
+                del out[k]
+                notes.append(f"{self.key}: no parameter {k!r}, ignored")
+            elif p.lo is not None and isinstance(v, (int, float)) and not isinstance(v, bool) and not p.lo <= v <= p.hi:
+                out[k] = min(max(v, p.lo), p.hi)
+                notes.append(f"{self.key}.{k}={v:g} {p.unit} outside {p.lo:g}..{p.hi:g}, used {out[k]:g}")
+        return out, notes
+
     def footprint(self, p):
         """(length along X, depth along Z) in cm."""
         raise NotImplementedError

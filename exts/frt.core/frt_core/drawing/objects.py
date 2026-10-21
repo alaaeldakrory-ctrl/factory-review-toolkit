@@ -207,8 +207,14 @@ def find_objects(dr, gap_cm=3.0, standalone_cm=40.0, text_reach_cm=120.0, ignore
 def _attach_texts(dr, objs, reach):
     from .interpret import phrases
     order = sorted(objs, key=lambda o: o.size[0] * o.size[1])
+    sizes = {}
+    for t in dr.texts:                                     # each phrase's own extent, to skip its own strokes
+        w = getattr(t, "width", 0) or len(t.text) * 0.6 * t.height
+        sizes[t.text.strip()] = (max(sizes.get(t.text.strip(), (0, 0))[0], w), t.height)
     for txt, p in phrases(dr.texts):
-        hosts = [o for o in order if o.contains(p) and max(o.size) < 3000]
+        tw, th = sizes.get(txt.strip(), (len(txt) * 0.6 * 30, 30))
+        hosts = [o for o in order if o.contains(p) and max(o.size) < 3000
+                 and not (max(o.size) <= 1.4 * max(tw, th) + 10 and min(o.size) <= 2.5 * min(tw, th) + 10)]
         if hosts:
             hosts[0].texts.append(txt)
             for o in hosts[1:]:
@@ -216,6 +222,8 @@ def _attach_texts(dr, objs, reach):
             continue
         best, bd = None, reach
         for o in objs:
+            if max(o.size) >= 3000:                        # a building outline or a hall zone never owns a label
+                continue
             d = math.hypot(max(o.bbox[0] - p[0], 0, p[0] - o.bbox[2]), max(o.bbox[1] - p[1], 0, p[1] - o.bbox[3]))
             if d < bd:
                 best, bd = o, d

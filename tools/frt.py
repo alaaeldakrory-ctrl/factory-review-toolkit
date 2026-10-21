@@ -1,6 +1,13 @@
 """Factory Review Toolkit command line (no Kit needed).
 
     python tools/frt.py build    samples/recipes/demo_plant.toml      build a scene from a recipe (+ validate)
+    python tools/frt.py calibrate plant.pdf "x0,y0;x1,y1;40'" [profile]  a PDF's scale from a known distance (page points)
+    python tools/frt.py read     plant.dxf|.pdf [--profile P] [--unknown] [--view out.png] [--crop x0,y0,x1,y1]
+                                                                         what the reader understood, with reasons
+    python tools/frt.py teach    plant.pdf <object id> <type> [key=value]   name a shape; identical shapes follow
+    python tools/frt.py set      plant.pdf <object id> <type> [key=value]   correct one object in this drawing only
+    python tools/frt.py confirm  plant.pdf                              save the reviewed reading as its answer key
+    python tools/frt.py score    plant.pdf [more ...]                   score the reader against the answer keys
     python tools/frt.py drawing  plant.dxf|plant.pdf [legend.toml]     read a drawing and print what was recognised
     python tools/frt.py diff     old.dxf|old.plant.json new.dxf|.pdf     what changed between two drawing revisions
     python tools/frt.py layout   plant.dxf|.pdf|scene.plant.json       layout checks: aisles, exits, stations
@@ -46,6 +53,13 @@ def main(argv):
         p0, p1, dist = args[1].split(";")
         cal = {"a": [float(v) for v in p0.split(",")], "b": [float(v) for v in p1.split(",")], "distance": dist}
         print("saved", save_settings(args[0], calibration=cal, profile=args[2] if len(args) > 2 else None))
+    elif cmd == "set":
+        from frt_core.drawing.read import add_override, read
+        r = read(args[0])
+        o = next(o for o in r.objects if o.id == int(args[1]))
+        params = dict(kv.split("=", 1) for kv in args[3:]) or None
+        add_override(args[0], o.center, args[2], params, [max(o.size), min(o.size)])
+        print(f"#{o.id} ({o.layer}, {max(o.size) / 100:.1f} x {min(o.size) / 100:.1f} m) is a {args[2]} in this drawing")
     elif cmd in ("read", "teach"):
         from frt_core.drawing.read import read, save_settings
         a = list(args)

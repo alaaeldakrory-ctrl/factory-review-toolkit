@@ -92,6 +92,12 @@ def params_from_drawing(e, defaults):
         p["boom"] = round(max(L, D) / 2)                  # drawn as its swing circle
     elif e.catalog == "bridge_crane":
         p.update(span=round(L - 50), runway=round(D))
+    elif e.catalog in ("scissor_unit", "staged_kit", "tool_cart", "ramp", "platform_scale"):
+        p.update(length=round(L), width=round(D))
+    elif e.catalog == "trash_bin":
+        p["diameter"] = round(max(30, min(150, (L + D) / 2)))
+    elif e.catalog == "computer_station":
+        p.update(length=round(max(40, min(200, L))), depth=round(max(40, min(150, D))))
     elif e.catalog == "pallet_rack":
         bw = p.get("bay_width", 270.0)
         p["bays"] = max(1, round((L - 8) / (bw + 8)))
@@ -156,6 +162,26 @@ def _floor_marking(stage, root, plant, lib):
             bx, bz = WA.to_scene(plant, *b)
             s.box((ax, 0.06, az), (bx, 0.26, bz), "floor_white")
         _number_plate(s, plant, x0 + 30, y0 + 30, st.name.split()[-1])         # front-left (south-west) corner
+    for room in getattr(plant, "rooms", []):                                   # rooms: walls with one doorway
+        x0, y0, x1, y1 = room["box"]
+        t, h, gap = 15.0, 300.0, 120.0
+        cxp, cyp = plant.width / 2, plant.depth / 2
+        facing = min((("S", abs(y0 - cyp)), ("N", abs(y1 - cyp)), ("W", abs(x0 - cxp)), ("E", abs(x1 - cxp))),
+                     key=lambda kv: kv[1])[0] if not (x0 <= cxp <= x1 and y0 <= cyp <= y1) else "S"
+        sides = {"S": ((x0, y0), (x1, y0 + t)), "N": ((x0, y1 - t), (x1, y1)), "W": ((x0, y0), (x0 + t, y1)),
+                 "E": ((x1 - t, y0), (x1, y1))}
+        for side, ((ax0, ay0), (ax1, ay1)) in sides.items():
+            parts = [((ax0, ay0), (ax1, ay1))]
+            if side == facing:                                                 # doorway in the middle, facing the hall
+                if side in "SN":
+                    m = (ax0 + ax1) / 2
+                    parts = [((ax0, ay0), (m - gap / 2, ay1)), ((m + gap / 2, ay0), (ax1, ay1))]
+                else:
+                    m = (ay0 + ay1) / 2
+                    parts = [((ax0, ay0), (ax1, m - gap / 2)), ((ax0, m + gap / 2), (ax1, ay1))]
+            for (px0, py0), (px1, py1) in parts:
+                (sx0, sz0), (sx1, sz1) = WA.to_scene(plant, px0, py0), WA.to_scene(plant, px1, py1)
+                s.box((min(sx0, sx1), 0, min(sz0, sz1)), (max(sx0, sx1), h, max(sz0, sz1)), "powder_lightgrey")
     if s.groups:
         s.build(stage, f"{root}/Geom", lib.refs(list(s.groups)))
     for st in plant.stations:
@@ -210,7 +236,13 @@ def build(recipe, validate=True, log=print):
         kw = {}
         if d["file"].lower().endswith(".pdf") and d.get("pdf_scale"):
             kw["scale"] = float(d["pdf_scale"])
-        plant = DRW.read_plant(d["file"], d.get("legend") or None, **kw)
+        if d.get("profile") or os.path.isfile(d["file"] + ".frt.toml"):
+            # the reviewed reader: profile + per-drawing settings (calibration, corrections) beside the drawing
+            from .drawing.read import read as _read
+            from .drawing.to_plant import to_plant
+            plant = to_plant(_read(d["file"], d.get("profile") or None, scale=kw.get("scale")))
+        else:
+            plant = DRW.read_plant(d["file"], d.get("legend") or None, **kw)
         notes += plant.notes
         log(f"drawing: {os.path.basename(d['file'])}: {plant.width / 100:.1f} x {plant.depth / 100:.1f} m, "
             f"{len(plant.doors)} doors, {len(plant.equipment)} equipment items, {len(plant.unknown)} unknown")
@@ -234,8 +266,16 @@ def build(recipe, validate=True, log=print):
                     notes.append(f"{e.id}: no catalog item {e.catalog!r}")
                     continue
                 x, z = WA.to_scene(plant, e.x, e.y)
-                CAT.place(stage, "/World/Equipment", e.catalog, e.id, (x, 0, z), e.rot, params_from_drawing(e, defaults),
-                          lib, source=e.ref)
+                params = params_from_drawing(e, defaults)
+                known = CAT.CATALOG[e.catalog].params
+                for kv in (e.label or "").split(";"):         # values the reader took from labels / layers
+                    if "=" in kv:
+                        k, v = (x.strip() for x in kv.split("=", 1))
+                        if k in known and isinstance(known[k].default, str):
+                            params[k] = v
+                params, why = CAT.CATALOG[e.catalog].clamp(params)
+                notes += [f"{e.id}: {w}" for w in why]
+                CAT.place(stage, "/World/Equipment", e.catalog, e.id, (x, 0, z), e.rot, params, lib, source=e.ref)
                 placed += 1
         for it in r.get("items", []):
             x, z = WA.to_scene(plant, *it["at"]) if plant else (it["at"][0], -it["at"][1])

@@ -146,6 +146,7 @@ register(JibCrane("jib_crane", "crane_jib", "Pillar jib crane with chain hoist",
     "trolley": Param(0.7, "trolley position along the boom (0-1)", 0, 1),
     "hook_height": Param(180.0, "hook height above the floor", 20, 800, "cm"),
     "colour": Param("powder_yellow", "crane finish"),
+    "capacity": Param("", "rated load as on the drawing, e.g. 2000lb"),
 }))
 
 
@@ -210,4 +211,5 @@ register(BridgeCrane("bridge_crane", "crane_bridge", "Freestanding bridge (works
     "hook_height": Param(200.0, "hook height above the floor", 30, 1200, "cm"),
     "colour": Param("powder_yellow", "bridge, trucks, hoist"),
     "column_colour": Param("powder_grey", "columns and runways"),
+    "capacity": Param("", "rated load as on the drawing, e.g. 4000lb"),
 }))
