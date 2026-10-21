@@ -209,3 +209,27 @@ def test_layout_checks():
     widths = [f for f in layout.check(a, strict) if f.check == "layout.aisle_width"]
     assert len(widths) == 2
     assert not any(f.check == "layout.exit_travel" for f in layout.check(a, strict))
+
+
+def test_smooth_primitives_make_consistent_meshes(stage):
+    import numpy as np
+    from frt_core.geom import Shapes
+    s = Shapes()
+    s.rbox((0, 50, 0), (40, 100, 30), 4, "m")
+    s.lathe((0, 0, 0), (30, 0, 0), [(0, 0), (0.05, 10), (0.9, 10), (0.95, 11), (1, 6)], "m")
+    s.sweep([(0, 0, 0), (50, -20, 0), (100, 0, 0)], 1.0, "m", radii=[1.0, 1.5, 1.0])
+    s.torus((0, 0, 0), (0, 0, 1), 3, 0.8, "m", stretch=4)
+    s.bolt((0, 0, 0), (0, 1, 0), 2.0, "m", length=5)
+    P, C, I, N = s.groups["m"]
+    assert sum(C) == len(I) == len(N)
+    assert max(I) < len(P) and min(C) >= 3
+    n = np.asarray(N, float)
+    assert np.allclose(np.linalg.norm(n, axis=1), 1.0, atol=1e-6)
+    pts = np.asarray(P, float)
+    rb = pts[: (2 * (3 + 1)) ** 2 * 6]                            # the rounded box comes first (8 x 8 per face)
+    assert rb[:, 0].max() == pytest.approx(20) and rb[:, 1].min() == pytest.approx(0)
+    corner = np.linalg.norm(rb - np.array([20, 100, 15]), axis=1).min()
+    assert corner > 1.0                                           # the corner is rounded off
+    m = s.build(stage, "/World/T", None)[0]
+    st = m.GetPrim().GetAttribute("primvars:st").Get()
+    assert st is not None and len(st) == len(I)                   # UVs for every face corner

@@ -65,12 +65,52 @@ LOOKS = {
     "steel_tread": ((0.45, 0.46, 0.48), 0.45, 1.0, "steel_n", 0.5, 0.0),
     "stretch_wrap": (_rgb("#d6dee2"), 0.18, 0.0, None, 0.0, 0.0),
     "light_emit": ((1.0, 1.0, 0.97), 0.30, 0.0, None, 0.0, 0.0),
+    # finishes for detailed parts
+    "bolt_zinc": ((0.70, 0.71, 0.72), 0.30, 1.0, "steel_n", 0.1, 0.0),       # zinc-plated fasteners
+    "steel_machined": ((0.62, 0.63, 0.65), 0.22, 1.0, "steel_n", 0.1, 0.0),  # wheels, axles, shafts
+    "steel_blued": ((0.18, 0.19, 0.21), 0.35, 1.0, "steel_n", 0.2, 0.0),     # load chain
+    "cast_aluminium": ((0.66, 0.67, 0.68), 0.45, 1.0, "steel_n", 0.3, 0.0),  # motor / gear housings
+    "cable_pvc": ((0.04, 0.04, 0.045), 0.35, 0.0, "rubber_n", 0.3, 0.0),     # cable sheath
+    "concrete": (_rgb("#a6a39b"), 0.85, 0.0, None, 0.0, 0.0),                # grout, plinths
+}
+
+# Textured NVIDIA presets (OmniPBR with albedo / ORM / normal sets) used for RTX when the asset packs are installed;
+# meshes carry box-projected UVs in metres (geom.Shapes), so the textures land at real scale on any part.
+PRESETS = {
+    "powder_yellow": "Paint/Painted_Metal_Yellow_A.mdl",
+    "powder_orange": "Paint/Painted_Metal_Orange_A.mdl",
+    "powder_blue": "Paint/Painted_Metal_Blue_A.mdl",
+    "powder_green": "Paint/Painted_Metal_Green_A.mdl",
+    "powder_red": "Paint/Painted_Metal_Red_A.mdl",
+    "powder_grey": "Paint/Painted_Metal_Grey_Glossy_A.mdl",
+    "powder_lightgrey": "Paint/Painted_Metal_White_Rough_A.mdl",
+    "powder_dark": "Paint/Powdercoat_Black_A.mdl",
+    "galvanised": "Metals/Metal_Steel_Textured_A.mdl",
+    "stainless": "Metals/Steel_Stainless_Brushed_A.mdl",
+    "aluminium": "Metals/Aluminium_Brushed_A.mdl",
+    "steel_dark": "Metals/Iron_A.mdl",
+    "chrome": "Metals/Chrome_A.mdl",
+    "rubber_black": "Rubber/Rubber_Black_Dirty_A.mdl",
+    "belt_black": "Rubber/Rubber_Black_Lined_A.mdl",
+    "bolt_zinc": "Metals/Steel_A.mdl",
+    "steel_machined": "Metals/Steel_Bright_A.mdl",
+    "steel_blued": "Metals/Steel_Blued_A.mdl",
+    "cast_aluminium": "Metals/Aluminum_Cast_A.mdl",
+    "cable_pvc": "Rubber/Rubber_Black_Glossy_A.mdl",
+    "concrete": "Concrete/Concrete_Smooth_A.mdl",
+    "wood_top": "Wood/Plywood_A_Tiling.mdl",
 }
 
 
+# preset tweaks: painted steel is semi-matte powder coat, not a glossy finish
+PAINT_TUNE = {"reflection_roughness_constant": 0.55, "reflection_roughness_texture_influence": 0.35}
+PRESET_TUNE = {name: PAINT_TUNE for name, path in PRESETS.items() if path.startswith("Paint/")}
+
+
 class MaterialLibrary:
-    def __init__(self, stage, root="/World/Looks", textures=NV_MATS):
+    def __init__(self, stage, root="/World/Looks", textures=NV_MATS, presets=True):
         self.stage, self.root, self.textures = stage, root.rstrip("/"), textures
+        self.presets = presets
         self._cache = {}
 
     def names(self):
@@ -86,10 +126,25 @@ class MaterialLibrary:
         path = f"{self.root}/{name}"
         mat = UsdShade.Material.Define(self.stage, path)
         sh = UsdShade.Shader.Define(self.stage, path + "/OmniPBR")
-        sh.SetSourceAsset(Sdf.AssetPath("OmniPBR.mdl"), "mdl")
-        sh.SetSourceAssetSubIdentifier("OmniPBR", "mdl")
         C3, F, B, A, F2 = (Sdf.ValueTypeNames.Color3f, Sdf.ValueTypeNames.Float, Sdf.ValueTypeNames.Bool,
                            Sdf.ValueTypeNames.Asset, Sdf.ValueTypeNames.Float2)
+        preset = PRESETS.get(name) if self.presets else None
+        if preset and self.textures and os.path.isfile(self.textures + preset):
+            # the textured preset as it ships (its texture paths are relative to the .mdl); UVs come from the mesh
+            sh.SetSourceAsset(Sdf.AssetPath(self.textures + preset), "mdl")
+            sh.SetSourceAssetSubIdentifier(os.path.splitext(os.path.basename(preset))[0], "mdl")
+            sh.CreateInput("project_uvw", B).Set(False)
+            for k, v in PRESET_TUNE.get(name, {}).items():
+                sh.CreateInput(k, F).Set(float(v))
+            out = sh.CreateOutput("out", Sdf.ValueTypeNames.Token)
+            for o in (mat.CreateSurfaceOutput("mdl"), mat.CreateDisplacementOutput("mdl"), mat.CreateVolumeOutput("mdl")):
+                o.ConnectToSource(out)
+            self._preview(mat, path, lin, rough, metal, C3, F)
+            ref = MatRef(mat, srgb)
+            self._cache[name] = ref
+            return ref
+        sh.SetSourceAsset(Sdf.AssetPath("OmniPBR.mdl"), "mdl")
+        sh.SetSourceAssetSubIdentifier("OmniPBR", "mdl")
         sh.CreateInput("diffuse_color_constant", C3).Set(Gf.Vec3f(*lin))
         sh.CreateInput("reflection_roughness_constant", F).Set(float(rough))
         sh.CreateInput("metallic_constant", F).Set(float(metal))
@@ -115,17 +170,22 @@ class MaterialLibrary:
         mat.CreateSurfaceOutput("mdl").ConnectToSource(out)
         mat.CreateDisplacementOutput("mdl").ConnectToSource(out)
         mat.CreateVolumeOutput("mdl").ConnectToSource(out)
+        pv = self._preview(mat, path, lin, rough, metal, C3, F)
+        if name == "light_emit":
+            pv.CreateInput("emissiveColor", C3).Set(Gf.Vec3f(*lin))
+        ref = MatRef(mat, srgb)
+        self._cache[name] = ref
+        return ref
+
+    def _preview(self, mat, path, lin, rough, metal, C3, F):
+        """UsdPreviewSurface fallback (Storm, other renderers, quick previews)."""
         pv = UsdShade.Shader.Define(self.stage, path + "/Preview")
         pv.CreateIdAttr("UsdPreviewSurface")
         pv.CreateInput("diffuseColor", C3).Set(Gf.Vec3f(*lin))
         pv.CreateInput("roughness", F).Set(float(rough))
         pv.CreateInput("metallic", F).Set(float(metal))
-        if name == "light_emit":
-            pv.CreateInput("emissiveColor", C3).Set(Gf.Vec3f(*lin))
         mat.CreateSurfaceOutput().ConnectToSource(pv.ConnectableAPI(), "surface")
-        ref = MatRef(mat, srgb)
-        self._cache[name] = ref
-        return ref
+        return pv
 
     def refs(self, names):
         """{name: MatRef} for the generator mesh builder."""

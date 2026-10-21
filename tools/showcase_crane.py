@@ -28,8 +28,8 @@ def main(out):
         WA.build(st, "/World/Building", plant, "H10m", "plain", lib)
         UsdGeom.Xform.Define(st, "/World/Equipment")
         CAT.place(st, "/World/Equipment", "bridge_crane", "BC1", (-1000, 0, 0), 0.0,
-                  {"span": 600, "runway": 600, "height": 450, "capacity": "2000", "hook_height": 150,
-                   "trolley": 0.45}, lib)
+                  {"span": 700, "runway": 600, "height": 480, "capacity": "2000", "hook_height": 140,
+                   "hoists": 2}, lib)
         CAT.place(st, "/World/Equipment", "scissor_unit", "U1", (-1030, 0, 130), 0.0, {}, lib)
         CAT.place(st, "/World/Equipment", "bridge_crane", "BC2", (1000, 0, 0), 0.0,
                   {"span": 800, "runway": 1400, "height": 550, "girders": 2, "bridges": 2,
