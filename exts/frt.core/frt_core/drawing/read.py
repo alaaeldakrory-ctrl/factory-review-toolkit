@@ -7,7 +7,13 @@
 Every decision carries its reason, and anything unsure stays "unknown" for review instead of being guessed.
 """
 import math
+import os
 import re
+
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -155,7 +161,37 @@ def _absorb_nested(objs, classes, skip=("unknown", "ignore", "area", "station_bo
                 break
 
 
-def read(path, profile="base", calibration=None, scale=None, min_confidence=0.3):
+def settings_path(path):
+    return path + ".frt.toml"
+
+
+def load_settings(path):
+    """Per-drawing settings beside the drawing (<drawing>.frt.toml): profile, calibration."""
+    p = settings_path(path)
+    if not os.path.isfile(p):
+        return {}
+    with open(p, "rb") as fh:
+        return tomllib.load(fh).get("read", {})
+
+
+def save_settings(path, **values):
+    from .classify import _toml_value
+    cur = load_settings(path)
+    cur.update({k: v for k, v in values.items() if v is not None})
+    with open(settings_path(path), "w", encoding="utf-8") as fh:
+        fh.write("# how to read this drawing (written by the Factory Review Toolkit)" + chr(10) + "[read]" + chr(10))
+        for k, v in cur.items():
+            fh.write(f"{k} = {_toml_value(v)}" + chr(10))
+    return cur
+
+
+def read(path, profile=None, calibration=None, scale=None, min_confidence=0.3):
+    st = load_settings(path)
+    if calibration is None and "calibration" in st:
+        c = st["calibration"]
+        calibration = (tuple(c["a"]), tuple(c["b"]), c["distance"])
+    scale = scale or st.get("scale")
+    profile = profile or st.get("profile", "base")
     prof = load_profile(profile) if isinstance(profile, str) else profile
     imp = prof.get("import", {})
     kw = {}

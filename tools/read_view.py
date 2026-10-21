@@ -72,6 +72,8 @@ def render(reading, out, crop=None, px_per_m=12.0, show_unknown=True, min_unknow
         a, b = P((o.bbox[0], o.bbox[3])), P((o.bbox[2], o.bbox[1]))
         wdt = 1 if c.type in ("unknown", "area", "column") else 2
         d.rectangle([a, b], outline=col, width=wdt)
+        if c.type == "unknown" and max(o.size) >= 40:
+            d.text((a[0] + 1, a[1] + 1), f"#{o.id}", fill=(200, 60, 60), font=f_small)
         if c.type not in ("column", "unknown"):
             label = c.type.replace("_", " ")
             if c.params:

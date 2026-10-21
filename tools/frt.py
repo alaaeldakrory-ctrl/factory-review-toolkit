@@ -41,6 +41,70 @@ def main(argv):
                   f"name {'inside' if s.label_inside else 'beside'}")
         for u in p.unknown:
             print("  ? unrecognised:", u)
+    elif cmd == "calibrate":
+        from frt_core.drawing.read import save_settings
+        p0, p1, dist = args[1].split(";")
+        cal = {"a": [float(v) for v in p0.split(",")], "b": [float(v) for v in p1.split(",")], "distance": dist}
+        print("saved", save_settings(args[0], calibration=cal, profile=args[2] if len(args) > 2 else None))
+    elif cmd in ("read", "teach"):
+        from frt_core.drawing.read import read, save_settings
+        a = list(args)
+
+        def opt(name):
+            if name in a:
+                i = a.index(name)
+                v = a[i + 1]
+                del a[i:i + 2]
+                return v
+        prof, view, crop = opt("--profile"), opt("--view"), opt("--crop")
+        unknown = "--unknown" in a
+        a = [x for x in a if x != "--unknown"]
+        if prof:
+            save_settings(a[0], profile=prof)
+        r = read(a[0], prof)
+        if cmd == "teach":
+            from frt_core.drawing.classify import teach_symbol
+            oid, typ = int(a[1]), a[2]
+            params = dict(kv.split("=", 1) for kv in a[3:])
+            o = next(o for o in r.objects if o.id == oid)
+            ex = f"{os.path.basename(a[0])} #{oid} at ({o.center[0] / 100:.1f}, {o.center[1] / 100:.1f}) m"
+            e = teach_symbol(r.profile, o, typ, ex, params or None)
+            same = [x.id for x in r.objects if x.id != oid and __import__("frt_core.drawing.classify", fromlist=["x"])._symbol_match(x, e) is not None]
+            print(f"taught: #{oid} is a {typ} ({o.layer}, {max(o.size) / 100:.2f} x {min(o.size) / 100:.2f} m) -> "
+                  f"{r.profile['path']}; {len(same)} more like it in this drawing: {same[:20]}")
+            return 0
+        print(" ; ".join(r.drawing.notes))
+        print("profile:", " > ".join(r.profile["names"]))
+        print("found:", ", ".join(f"{n} {t.replace('_', ' ')}" for t, n in r.counts().items()))
+        for st in r.stations:
+            print(f"  {st.name:10s} tasks: {'; '.join(st.tasks) or '-'}   (area from {st.box_from})")
+        if unknown:
+            unk = sorted(((o, c) for o, c in r.items if c.type == "unknown" and max(o.size) >= 40),
+                         key=lambda oc: -oc[0].size[0] * oc[0].size[1])
+            print(f"unknown objects over 40 cm: {len(unk)}")
+            for o, c in unk[:60]:
+                print(f"  #{o.id:<5d} {o.layer[:24]:24s} {max(o.size) / 100:6.2f} x {min(o.size) / 100:5.2f} m  "
+                      f"{o.n:5d} strokes  at ({o.center[0] / 100:7.1f}, {o.center[1] / 100:7.1f})  {'; '.join(o.texts + o.near_texts)[:40]}")
+        if view:
+            import read_view
+            read_view.render(r, view, tuple(map(float, crop.split(","))) if crop else None, 40)
+            print("->", view)
+    elif cmd in ("confirm", "score"):
+        from frt_core.drawing import answers
+        from frt_core.drawing.read import read
+        if cmd == "confirm":
+            print("answer key ->", answers.save_key(read(args[0])))
+            return 0
+        tot = []
+        for path in args:
+            sc = answers.score(read(path))
+            tot.append(sc["f1"])
+            print(f"{os.path.basename(path)}: F1 {sc['f1']:.3f} over {sc['items']} items; stations {sc['stations']}")
+            for t, v in sorted(sc["types"].items()):
+                if v["missed"] or v["extra"] or v["wrong"]:
+                    print(f"   {t:18s} found {v['found']:3d}  missed {v['missed']:3d}  wrong {v['wrong']:3d}  extra {v['extra']:3d}")
+        if len(tot) > 1:
+            print(f"mean F1 {sum(tot) / len(tot):.3f}")
     elif cmd == "diff":
         from frt_core import drawing, revision
         old, new = [a if a.endswith(".json") else drawing.read_plant(a) for a in args[:2]]

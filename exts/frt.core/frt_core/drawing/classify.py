@@ -58,17 +58,19 @@ def load_profile(name="base"):
     with open(path, "rb") as fh:
         p = tomllib.load(fh)
     rules = list(p.get("rules", []))
+    symbols = list(p.get("symbols", []))
     imp, st = dict(p.get("import", {})), dict(p.get("stations", {}))
     names = [p.get("profile", {}).get("name", os.path.basename(path))]
     for base in p.get("profile", {}).get("extends", []):
         b = load_profile(base)
         rules += b["rules"]
+        symbols += b["symbols"]
         for k, v in b["import"].items():
             imp[k] = sorted(set(imp.get(k, [])) | set(v)) if isinstance(v, list) else imp.get(k, v)
         for k, v in b["stations"].items():
             st.setdefault(k, v)
         names += b["names"]
-    return {"rules": rules, "import": imp, "stations": st, "names": names, "path": path}
+    return {"rules": rules, "symbols": symbols, "import": imp, "stations": st, "names": names, "path": path}
 
 
 def _any(value, patterns):
@@ -148,7 +150,7 @@ def _params(o, r):
 
 
 def classify(o, prof):
-    best = None
+    best = classify_symbols(o, prof) if prof.get("symbols") else None
     for i, r in enumerate(prof["rules"]):
         why = _check(o, r)
         if why is None:
@@ -167,3 +169,87 @@ def classify_all(objs, prof, min_confidence=0.3):
             c = Classified("unknown", c.confidence, f"weak: {c.reason}" if c.reason else "no rule matched")
         out.append(c)
     return out
+
+
+# ------------------------------------------------------------------------------------------ taught symbols
+def fingerprint(o):
+    """Shape signature of an object, independent of where it is and of 90-degree turns: layer, size, stroke count,
+    and how its strokes' lengths are spread (8 bins, relative to its size)."""
+    L, S = max(o.size), min(o.size)
+    lens = [v for v in o.seg_lengths if v > 0] or [L]
+    hist = [0] * 8
+    for v in lens:
+        hist[min(7, int(8 * min(v / max(L, 1e-6), 0.999)))] += 1
+    tot = float(sum(hist)) or 1.0
+    return {"layer": o.layer, "size": [round(L, 1), round(S, 1)], "parts": o.n, "circle": bool(o.circle),
+            "hist": [round(h / tot, 3) for h in hist]}
+
+
+def _symbol_match(o, sym, tol=0.07):
+    fp = fingerprint(o)
+    if sym.get("layer", "*") not in ("*", fp["layer"]):
+        return None
+    (L0, S0), (L, S) = sym["size"], fp["size"]
+    if abs(L - L0) > tol * L0 + 5 or abs(S - S0) > tol * S0 + 5:
+        return None
+    p0 = sym.get("parts", fp["parts"])
+    if abs(fp["parts"] - p0) > 0.3 * p0 + 2:
+        return None
+    d = sum(abs(a - b) for a, b in zip(fp["hist"], sym.get("hist", fp["hist"])))
+    if d > 0.5:
+        return None
+    return 1.0 - d / 2
+
+
+def classify_symbols(o, prof):
+    best = None
+    for s in prof.get("symbols", []):
+        m = _symbol_match(o, s)
+        if m is not None and (best is None or m > best[0]):
+            best = (m, s)
+    if best is None:
+        return None
+    m, s = best
+    return Classified(s["type"], round(0.75 + 0.2 * m, 2), f"taught symbol '{s['type']}' (match {m:.0%}, from {s.get('example', '?')})",
+                      params=dict(s.get("params", {})))
+
+
+def _toml_value(v):
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return repr(v)
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(_toml_value(x) for x in v) + "]"
+    if isinstance(v, dict):
+        return "{ " + ", ".join(f"{k} = {_toml_value(x)}" for k, x in v.items()) + " }"
+    return '"' + str(v).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def writable_profile(prof):
+    """Corrections go into the first profile that is the user's own (not one shipped with the toolkit)."""
+    path = prof["path"]
+    if os.path.normcase(os.path.dirname(path)) == os.path.normcase(PROFILES):
+        raise PermissionError(f"{os.path.basename(path)} ships with the toolkit; teach into your own profile "
+                              f"(make one in {USER_PROFILES} with extends = [\"base\"])")
+    return path
+
+
+def teach_symbol(prof, o, type_, example="", params=None):
+    """Remember this object's shape as `type_`; every object with the same signature is classified as it from now on."""
+    import datetime
+    entry = {"type": type_, **fingerprint(o), "example": example, "taught": datetime.date.today().isoformat()}
+    if params:
+        entry["params"] = params
+    path = writable_profile(prof)
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write("\n[[symbols]]\n" + "".join(f"{k} = {_toml_value(v)}\n" for k, v in entry.items()))
+    return entry
+
+
+def teach_rule(prof, rule, note=""):
+    """Add a rule (dict with type + conditions) to the user's profile."""
+    path = writable_profile(prof)
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(("\n# " + note if note else "") + "\n[[rules]]\n" + "".join(f"{k} = {_toml_value(v)}\n" for k, v in rule.items()))
+    return rule

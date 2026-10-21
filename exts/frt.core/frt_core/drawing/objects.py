@@ -94,7 +94,8 @@ def _bb_gap(a, b):
     return max(dx, dy)
 
 
-def find_objects(dr, gap_cm=3.0, standalone_cm=40.0, text_reach_cm=120.0, ignore_layers=()):
+def find_objects(dr, gap_cm=3.0, standalone_cm=40.0, text_reach_cm=120.0, ignore_layers=(), absorb_cm=800.0,
+                 absorb_parts=50):
     from .interpret import _match
     prims = []          # (layer, bbox, kind, payload)
     for s in dr.segs:
@@ -179,6 +180,24 @@ def find_objects(dr, gap_cm=3.0, standalone_cm=40.0, text_reach_cm=120.0, ignore
                 continue
         keep.append(o)
     objs = keep
+    # a box or circle takes in the few strokes of its own layer drawn inside it (a rack's X, a cart's handle)
+    shells = [o for o in objs if o.kind == "shape" and (o.rect or o.circle) and max(o.size) <= absorb_cm]
+    if shells:
+        gone = set()
+        for g in objs:
+            if g.kind != "group" or g.n > absorb_parts:
+                continue
+            host = None
+            for o in shells:
+                if o.layer == g.layer and o.contains((g.bbox[0], g.bbox[1]), 1) and o.contains((g.bbox[2], g.bbox[3]), 1):
+                    if host is None or o.size[0] * o.size[1] < host.size[0] * host.size[1]:
+                        host = o
+            if host is not None:
+                host.n += g.n
+                host.seg_lengths += g.seg_lengths
+                host.refs = (host.refs + g.refs)[:20]
+                gone.add(id(g))
+        objs = [o for o in objs if id(o) not in gone]
     for k, o in enumerate(objs):
         o.id = k + 1
     _attach_texts(dr, objs, text_reach_cm)

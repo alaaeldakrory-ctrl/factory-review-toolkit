@@ -104,7 +104,12 @@ def load(path, page=0, scale=None, calibration=None, skip_layers=()):
                     near = [min(abs(q.x - x0), abs(q.x - x1), abs(q.y - y0), abs(q.y - y1)) <= tol for q in pts]
                     sides = (any(abs(q.x - x0) <= tol for q in pts), any(abs(q.x - x1) <= tol for q in pts),
                              any(abs(q.y - y0) <= tol for q in pts), any(abs(q.y - y1) <= tol for q in pts))
-                    if all(near) and all(sides):
+                    def along(q0, q1):              # a strip piece: runs along one edge, or is a short cross-piece
+                        if math.dist((q0.x, q0.y), (q1.x, q1.y)) <= 3 * tol:
+                            return True
+                        return any(abs(u - e) <= tol and abs(v - e) <= tol
+                                   for u, v, e in ((q0.x, q1.x, x0), (q0.x, q1.x, x1), (q0.y, q1.y, y0), (q0.y, q1.y, y1)))
+                    if all(near) and all(sides) and all(along(it[1], it[2]) for it in items):
                         q = [P((x0, y0)), P((x1, y0)), P((x1, y1)), P((x0, y1))]
                         dr.polys.append(Poly(q, True, layer, f_col, width or 0.4 * PT_MM, fill, ref))
                         continue
