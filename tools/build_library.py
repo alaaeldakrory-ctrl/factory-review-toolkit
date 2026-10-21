@@ -143,7 +143,7 @@ async def run(log):
     from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport
     ctx = omni.usd.get_context()
     s = carb.settings.get_settings()
-    for k in ("/app/viewport/grid/enabled", "/persistent/app/viewport/grid/enabled"):
+    for k in ("/app/viewport/grid/enabled",):                # session only - never persistent settings
         s.set(k, False)
     vp = get_active_viewport()
     old_res = vp.resolution

@@ -43,3 +43,24 @@ def test_worker_usdskel(stage):
     xf = q.ComputeJointSkelTransforms(Usd.TimeCode.Default())
     hand = xf[NAMES.index("hand_l")].ExtractTranslation()
     assert 60 < hand[1] < 80 and abs(hand[0]) < 35                       # relaxed: hand hangs at the hip
+
+
+def test_solver_and_generators():
+    import numpy as np
+    from frt_core.people import motion_gen as G
+    from frt_core.people.kinematics import fk
+    from frt_core.people.solver import HandTarget, PostureSolver
+    sk = Skeleton.for_worker(WORKERS["W50M"])
+    S = PostureSolver(sk)
+    sol = S.solve([HandTarget("r", (-8.0, 95.0, 42.0), fingers=(0, 0, 1), palm=(0, -1, 0))], look=(-8.0, 95.0, 42.0))
+    assert sol.terms["reach_r"] < 1e-3 and sol.angles["trunk_flexion"] < 20     # bench height: upright
+    low = S.solve([HandTarget("r", (-8.0, 40.0, 42.0), fingers=(0, 0, 1), palm=(0, -1, 0))], look=(-8.0, 40.0, 42.0))
+    assert low.angles["knee_r"] > 45 or low.angles["trunk_flexion"] > 25          # low target: bend or squat
+    fr = G.ratchet(S, bolt=(8.0, 99.0, 48.0), side="r", strokes=1)
+    assert len(fr) > 30 and all("ratchet_38" in f.tools for f in fr)
+    prev = None
+    for f in fr[20:30]:
+        prev = S.solve(f.targets, look=f.look, prev=prev)
+    R, P = fk(sk, prev.pose)
+    grip = np.asarray(f.targets[0].point)
+    assert np.linalg.norm(P["hand_r"] - grip) < 12.0                               # hand on the tool

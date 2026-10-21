@@ -102,6 +102,25 @@ def relaxed(sk):
     return q
 
 
+def pose_arrays(sk, pose):
+    """(translations, rotations) UsdSkel arrays for a pose: a kinematics.Pose (3x3 local rotations + pelvis offset)
+    or a dict joint -> Gf.Quatf; joints left out keep their rest orientation."""
+    from .kinematics import Pose, quat_from_matrix
+    loc = sk.local
+    tr = [Gf.Vec3f(*map(float, loc[n])) for n in NAMES]
+    if isinstance(pose, Pose):
+        i = NAMES.index("pelvis")
+        tr[i] = Gf.Vec3f(*map(float, loc["pelvis"] + pose.pelvis))
+        rot = []
+        for n in NAMES:
+            w, x, y, z = quat_from_matrix(pose.local(n))
+            rot.append(Gf.Quatf(float(w), float(x), float(y), float(z)))
+    else:
+        pose = pose or {}
+        rot = [pose.get(n, Gf.Quatf(1, 0, 0, 0)) for n in NAMES]
+    return Vt.Vec3fArray(tr), Vt.QuatfArray(rot)
+
+
 def write_worker(stage, path, worker, lib, pose=None, sk=None):
     """SkelRoot at path with Skeleton, mannequin body (rigidly bound) and a SkelAnimation holding `pose`
     (joint -> Gf.Quatf local rotation; joints left out keep their rest orientation)."""
@@ -116,9 +135,9 @@ def write_worker(stage, path, worker, lib, pose=None, sk=None):
     skel.CreateRestTransformsAttr(Vt.Matrix4dArray(rest))
     anim = UsdSkel.Animation.Define(stage, f"{path}/Skeleton/Pose")
     anim.CreateJointsAttr(Vt.TokenArray([jpath(n) for n in NAMES]))
-    anim.CreateTranslationsAttr(Vt.Vec3fArray([Gf.Vec3f(*map(float, loc[n])) for n in NAMES]))
-    pose = pose or {}
-    anim.CreateRotationsAttr(Vt.QuatfArray([pose.get(n, Gf.Quatf(1, 0, 0, 0)) for n in NAMES]))
+    tr, rot = pose_arrays(sk, pose)
+    anim.CreateTranslationsAttr(tr)
+    anim.CreateRotationsAttr(rot)
     anim.CreateScalesAttr(Vt.Vec3hArray([Gf.Vec3h(1, 1, 1)] * len(NAMES)))
     UsdSkel.BindingAPI.Apply(skel.GetPrim()).CreateAnimationSourceRel().SetTargets([anim.GetPath()])
     UsdSkel.BindingAPI.Apply(root.GetPrim()).CreateSkeletonRel().SetTargets([skel.GetPath()])
