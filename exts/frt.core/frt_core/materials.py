@@ -36,7 +36,7 @@ def _rgb(hexstr):
 
 # name: (sRGB colour, roughness, metallic, normal map, bump, roughness-map influence)
 LOOKS = {
-    "powder_yellow": (_rgb("#f0ca00"), 0.42, 0.0, "powder_n", 0.5, 0.2),     # RAL 1023 traffic yellow
+    "powder_yellow": (_rgb("#e3a700"), 0.50, 0.0, "powder_n", 0.5, 0.2),     # signal yellow (RAL 1003/1023, as it looks)
     "powder_orange": (_rgb("#e25303"), 0.42, 0.0, "powder_n", 0.5, 0.2),     # RAL 2004 pure orange
     "powder_blue": (_rgb("#0e518d"), 0.40, 0.0, "powder_n", 0.5, 0.2),       # RAL 5010 gentian blue
     "powder_green": (_rgb("#2d572c"), 0.42, 0.0, "powder_n", 0.5, 0.2),      # RAL 6001 emerald green
@@ -44,6 +44,8 @@ LOOKS = {
     "powder_lightgrey": (_rgb("#d7d7d7"), 0.45, 0.0, "powder_n", 0.4, 0.2),  # RAL 7035 light grey
     "powder_grey": (_rgb("#8f9695"), 0.45, 0.0, "powder_n", 0.4, 0.2),       # RAL 7042 traffic grey A
     "powder_dark": (_rgb("#383e42"), 0.45, 0.0, "powder_n", 0.5, 0.2),       # RAL 7016 anthracite
+    "powder_black": (_rgb("#151618"), 0.50, 0.0, "powder_n", 0.5, 0.2),      # RAL 9005 jet black (hazard bands)
+    "powder_anthracite": (_rgb("#3a3f44"), 0.48, 0.0, "powder_n", 0.5, 0.2),  # RAL 7016: motors, gear cases
     "galvanised": ((0.62, 0.63, 0.64), 0.38, 1.0, "steel_n", 0.15, 0.0),
     "stainless": ((0.72, 0.72, 0.73), 0.25, 1.0, "steel_n", 0.1, 0.0),
     "aluminium": ((0.80, 0.81, 0.82), 0.32, 1.0, "steel_n", 0.1, 0.0),
@@ -85,6 +87,8 @@ PRESETS = {
     "powder_grey": "Paint/Painted_Metal_Grey_Glossy_A.mdl",
     "powder_lightgrey": "Paint/Painted_Metal_White_Rough_A.mdl",
     "powder_dark": "Paint/Powdercoat_Black_A.mdl",
+    "powder_black": "Paint/Painted_Metal_Black_Glossy_A.mdl",
+    "powder_anthracite": "Paint/Painted_Metal_Grey_Glossy_A.mdl",
     "galvanised": "Metals/Metal_Steel_Textured_A.mdl",
     "stainless": "Metals/Steel_Stainless_Brushed_A.mdl",
     "aluminium": "Metals/Aluminium_Brushed_A.mdl",
@@ -102,9 +106,13 @@ PRESETS = {
 }
 
 
-# preset tweaks: painted steel is semi-matte powder coat, not a glossy finish
-PAINT_TUNE = {"reflection_roughness_constant": 0.55, "reflection_roughness_texture_influence": 0.35}
-PRESET_TUNE = {name: PAINT_TUNE for name, path in PRESETS.items() if path.startswith("Paint/")}
+# preset tweaks: painted steel is semi-matte powder coat in its real colour. The presets brighten their albedo a
+# lot (albedo_add 0.35-0.65) and tint a near-white base, which reads as plastic; use our colour, nothing added.
+PAINT_TUNE = {"reflection_roughness_constant": 0.55, "reflection_roughness_texture_influence": 0.35,
+              "albedo_add": 0.0, "albedo_brightness": 1.0, "albedo_desaturation": 0.0, "specular_level": 0.45}
+METAL_TUNE = {"albedo_brightness": 0.85}
+PRESET_TUNE = {name: (PAINT_TUNE if path.startswith("Paint/") else METAL_TUNE if path.startswith("Metals/") else {})
+               for name, path in PRESETS.items()}
 
 
 class MaterialLibrary:
@@ -136,6 +144,8 @@ class MaterialLibrary:
             sh.CreateInput("project_uvw", B).Set(False)
             for k, v in PRESET_TUNE.get(name, {}).items():
                 sh.CreateInput(k, F).Set(float(v))
+            if PRESETS[name].startswith("Paint/"):
+                sh.CreateInput("diffuse_tint", C3).Set(Gf.Vec3f(*lin))
             out = sh.CreateOutput("out", Sdf.ValueTypeNames.Token)
             for o in (mat.CreateSurfaceOutput("mdl"), mat.CreateDisplacementOutput("mdl"), mat.CreateVolumeOutput("mdl")):
                 o.ConnectToSource(out)
