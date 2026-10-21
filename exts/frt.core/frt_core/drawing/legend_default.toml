@@ -1,0 +1,60 @@
+# Default drawing legend: how the interpreter recognises things in DXF and PDF drawings. Copy and edit for a plant's
+# own CAD standard (layer names, block names, labels), then pass it to interpret(). Patterns are case-insensitive
+# shell-style wildcards.
+
+[layers]
+walls = ["*WALL*", "A-EXTR*", "*BLDG*"]
+columns = ["*COL*", "S-*COLS*"]
+grid = ["*GRID*"]
+doors = ["*DOOR*", "*DOCK*", "*OPEN*"]
+aisles = ["*AISLE*", "*MARK*", "*TRAFFIC*"]
+walkways = ["*WALK*", "*PED*"]
+equipment = ["E-*", "*EQUIP*", "*MACH*", "*FURN*"]
+
+[blocks]
+columns = ["COL*", "*COLUMN*", "*PILLAR*"]
+
+# door / dock blocks or PDF labels -> building module kind (dock, rollup, door)
+[[doors]]
+kind = "dock"
+match = ["DOCK*", "*LOADING*"]
+[[doors]]
+kind = "rollup"
+match = ["ROLLUP*", "ROLL-UP*", "*OVERHEAD*", "*SECTIONAL*"]
+[[doors]]
+kind = "door"
+match = ["DOOR*", "*PERSONNEL*", "*EXIT*", "*MAN DOOR*"]
+
+# equipment symbols: block-name patterns (DXF) and label words (PDF) -> catalog item
+[[symbols]]
+catalog = "conveyor"
+match = ["CONV*", "*CONVEYOR*"]
+labels = ["CONVEYOR", "CONV"]
+[[symbols]]
+catalog = "lift_table"
+match = ["LIFTTABLE*", "LIFT_TABLE*", "*SCISSOR*"]
+labels = ["LIFT TABLE", "LIFT", "LT"]
+[[symbols]]
+catalog = "industrial_table"
+match = ["TABLE*", "*BENCH*", "*WORKTABLE*"]
+labels = ["TABLE", "BENCH", "WORKBENCH"]
+[[symbols]]
+catalog = "flow_rack"
+match = ["FLOWRACK*", "FLOW_RACK*", "*CARTON*FLOW*"]
+labels = ["FLOW RACK", "FLOW"]
+[[symbols]]
+catalog = "pallet_boxes"
+match = ["PALLET*"]
+labels = ["PALLET"]
+[[symbols]]
+catalog = "crate"
+match = ["CRATE*"]
+labels = ["CRATE"]
+[[symbols]]
+catalog = "forklift"
+match = ["FORKLIFT*", "*FLT*"]
+labels = ["FORKLIFT"]
+
+[ids]
+pattern = "^[A-Z]{1,3}-?\\d{1,3}$"       # equipment tags like T1, LT2, FR-3
+max_distance_cm = 300
