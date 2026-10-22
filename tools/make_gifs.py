@@ -42,7 +42,7 @@ def main():
                 save(fr, os.path.join(out, d + ".gif"), fps)
                 print(d, len(fr))
     if len(seqs) > 1:
-        tw = 240
+        tw = int(opt.get("tile", 240))
         th = int(tw / aspect)
         rows = (len(seqs) + cols - 1) // cols
         n = max(len(f) for f in seqs.values())
