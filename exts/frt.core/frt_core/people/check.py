@@ -20,6 +20,10 @@ LIMITS = {"pelvis": 75, "spine_01": 35, "spine_02": 35, "spine_03": 35, "neck_01
           "clavicle": 35, "upperarm": 175, "lowerarm": 165, "hand": 95, "thumb_01": 80, "thumb": 95,
           "finger": 110, "thigh": 135, "calf": 155, "foot": 65, "ball": 55}
 POP = {"default": 32.0, "finger": 55.0, "hand": 40.0}      # max change per frame at 24 fps (deg)
+# postures that are possible but look (and are) wrong for hand work: arm folded up tight, trunk bent over, head
+# turned or dropped far - the work is too close, too low or behind the worker (solver angles, deg)
+AWKWARD = {"elbow_l": 150.0, "elbow_r": 150.0, "trunk_flexion": 32.0, "trunk_side": 20.0, "trunk_twist": 30.0,
+           "neck_flexion": 50.0, "neck_twist": 60.0}
 
 
 def _family(j):
@@ -57,6 +61,11 @@ def check_frames(sk, frames, sols, name=""):
                 if d > cap:
                     worst_pop = max(worst_pop, d)
                     issues.append((i, "pop", j, round(d, 1), cap))
+        ang = getattr(sol, "angles", None) or {}
+        if f.root is None or getattr(f, "static", True):             # (not while walking)
+            for k, lim in AWKWARD.items():
+                if abs(float(ang.get(k, 0.0))) > lim:
+                    issues.append((i, "awkward", k, round(abs(float(ang[k])), 1), lim))
         R, P = fk(sk, pose)
         for s in ("l", "r"):                                 # elbows / knees never the wrong way
             ua, fa = P[f"lowerarm_{s}"] - P[f"upperarm_{s}"], P[f"hand_{s}"] - P[f"lowerarm_{s}"]

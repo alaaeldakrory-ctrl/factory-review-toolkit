@@ -210,7 +210,7 @@ def hammer(solver, point, normal=(0, 1, 0), side="r", strikes=4, period=0.9, lif
         R = np.eye(3) + math.sin(th) * K + (1 - math.cos(th)) * K @ K
         T = np.eye(4)
         T[:3, :3] = R @ T0[:3, :3]
-        g = g0 + nn * lift_deg * 0.32 - u_dir * lift_deg * 0.10
+        g = g0 + nn * lift_deg * 0.22 - u_dir * lift_deg * 0.02          # the forearm rises, the wrist cocks
         T[:3, 3] = g - T[:3, :3] @ np.asarray(tl.grip.point, float)
         return T
     other = "l" if side == "r" else "r"

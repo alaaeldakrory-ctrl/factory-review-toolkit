@@ -53,6 +53,16 @@ def power(sk, side, point, handle_axis, grip="power:1.5", weight=1.0, lean=None)
     return HandTarget(side, tuple(p), tuple(f), tuple(unit(palm)), grip, weight)
 
 
+def tilt(t, toward, deg):
+    """The same grip with the hand's long axis turned `deg` towards `toward` about the palm normal: a handle held
+    diagonally in the palm (a screwdriver, a file) - the hand then continues the forearm instead of a bent wrist."""
+    f = np.asarray(t.fingers, float)
+    a = math.radians(deg)
+    f2 = unit(f * math.cos(a) + unit(_perp(toward, f)) * math.sin(a))
+    pm = unit(_perp(t.palm, f2))
+    return HandTarget(t.side, t.point, tuple(f2), tuple(pm), t.grip, t.weight)
+
+
 def pinch(sk, side, tip_point, approach=None, palm=None, grip="pinch", weight=1.0):
     """Pinch at tip_point: fingertips arriving along `approach` (default: from the shoulder), palm facing `palm`
     (default down). The target point is the palm centre, set back from the fingertips."""

@@ -400,6 +400,42 @@ class MaterialLibrary:
         mat.CreateSurfaceOutput().ConnectToSource(pv.ConnectableAPI(), "surface")
         return pv
 
+    def textured(self, name, albedo, roughness, metal=0.0):
+        """A material on its own UV-mapped maps (scene-relative paths, e.g. a worker's outfit), UVs as on the mesh."""
+        if name in self._cache:
+            return self._cache[name].material
+        path = f"{self.root}/{name}"
+        mat = UsdShade.Material.Define(self.stage, path)
+        sh = UsdShade.Shader.Define(self.stage, path + "/OmniPBR")
+        C3, F, B, A = Sdf.ValueTypeNames.Color3f, Sdf.ValueTypeNames.Float, Sdf.ValueTypeNames.Bool, Sdf.ValueTypeNames.Asset
+        sh.SetSourceAsset(Sdf.AssetPath("OmniPBR.mdl"), "mdl")
+        sh.SetSourceAssetSubIdentifier("OmniPBR", "mdl")
+        t = sh.CreateInput("diffuse_texture", A)
+        t.Set(Sdf.AssetPath(albedo))
+        t.GetAttr().SetColorSpace("sRGB")
+        r = sh.CreateInput("reflectionroughness_texture", A)
+        r.Set(Sdf.AssetPath(roughness))
+        r.GetAttr().SetColorSpace("raw")
+        sh.CreateInput("reflection_roughness_texture_influence", F).Set(1.0)
+        sh.CreateInput("metallic_constant", F).Set(float(metal))
+        sh.CreateInput("specular_level", F).Set(0.35)
+        sh.CreateInput("project_uvw", B).Set(False)
+        out = sh.CreateOutput("out", Sdf.ValueTypeNames.Token)
+        for o in (mat.CreateSurfaceOutput("mdl"), mat.CreateDisplacementOutput("mdl"), mat.CreateVolumeOutput("mdl")):
+            o.ConnectToSource(out)
+        pv = self._preview(mat, path, (0.5, 0.5, 0.5), 0.7, metal, C3, F)
+        st_ = UsdShade.Shader.Define(self.stage, path + "/st")
+        st_.CreateIdAttr("UsdPrimvarReader_float2")
+        st_.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
+        tx = UsdShade.Shader.Define(self.stage, path + "/albedo_tex")
+        tx.CreateIdAttr("UsdUVTexture")
+        tx.CreateInput("file", A).Set(Sdf.AssetPath(albedo))
+        tx.CreateInput("sourceColorSpace", Sdf.ValueTypeNames.Token).Set("sRGB")
+        tx.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(st_.ConnectableAPI(), "result")
+        pv.CreateInput("diffuseColor", C3).ConnectToSource(tx.ConnectableAPI(), "rgb")
+        self._cache[name] = MatRef(mat, (0.5, 0.5, 0.5))
+        return mat
+
     def refs(self, names):
         """{name: MatRef} for the generator mesh builder."""
         return {n: self.get(n) for n in names}

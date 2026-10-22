@@ -259,10 +259,12 @@ class PostureSolver:
             yw = math.degrees(math.atan2(dloc[0], dloc[2]))
             pt = math.degrees(math.atan2(-dloc[1], math.hypot(dloc[0], dloc[2])))
             ywc, ptc = max(-75.0, min(75.0, yw)), max(-45.0, min(70.0, pt))
+            miss = abs(yw - ywc) + abs(pt - ptc)
+            ywc -= max(-12.0, min(12.0, ywc * 0.25))               # the eyes take part of the gaze: up to 12 deg
+            ptc -= max(-8.0, min(22.0, ptc * 0.4))                 # sideways, 22 deg down (comfortable eye depression)
             pose.rot["neck_01"] = ry(ywc * 0.4) @ rx(ptc * 0.45)
             pose.rot["head"] = ry(ywc * 0.6) @ rx(ptc * 0.55)
-            terms["neck"] = (max(0.0, ptc - 15.0) / 30.0) ** 2 * 0.6 + (ywc / 45.0) ** 2 * 0.3 + \
-                ((abs(yw - ywc) + abs(pt - ptc)) / 10.0) ** 2
+            terms["neck"] = (max(0.0, ptc - 15.0) / 30.0) ** 2 * 0.6 + (ywc / 45.0) ** 2 * 0.3 + (miss / 10.0) ** 2
             angles.update({"neck_flexion": ptc, "neck_twist": ywc})
         # trunk and balance
         terms["trunk"] = ((hinge + flex) / 28.0) ** 2 + (flex / 35.0) ** 2 * 0.5 + (lat / 10.0) ** 2 + (twist / 14.0) ** 2             + (min(0.0, hinge + flex) / 6.0) ** 2                       # leaning back is rare and costly

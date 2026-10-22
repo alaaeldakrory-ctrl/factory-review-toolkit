@@ -85,7 +85,7 @@ def _screwdriver(s, length=24.0):
     # tip at the origin, shaft and handle up +Y
     s.lathe((0, 0, 0), (0, 12.0, 0), [(0, 0.15), (0.03, 0.35), (0.08, 0.35), (1, 0.35)], "chrome", sides=10)
     s.lathe((0, 12.0, 0), (0, length, 0), [(0, 1.0), (0.1, 1.6)] + [v for k in range(6) for v in
-            ((0.18 + k * 0.12, 1.7), (0.24 + k * 0.12, 1.55))] + [(0.95, 1.6), (1, 1.2)], "plastic_red", sides=8)
+            ((0.18 + k * 0.12, 1.7), (0.24 + k * 0.12, 1.55))] + [(0.95, 1.6), (1, 1.2)], "plastic_blue", sides=8)
 
 
 def _connector(s):
@@ -161,7 +161,7 @@ def _impact(s):
 
 def _pliers(s, kind="cutter"):
     # jaws at the origin pointing +X, pivot at x = -3, handles along -X (to x = -18), opening a little
-    mat = {"cutter": "powder_red", "stripper": "plastic_yellow", "crimper": "powder_blue"}[kind]
+    mat = {"cutter": "plastic_blue", "stripper": "plastic_yellow", "crimper": "powder_blue"}[kind]
     s.rbox((-0.8, 0, 0), (3.2, 0.8, 1.8), 0.4, "steel_dark", seg=1)                                       # jaws
     s.lathe((-3.0, -0.6, 0), (-3.0, 0.6, 0), [(0, 0.9), (1, 0.9)], "steel_machined", sides=14)            # pivot
     for sz in (-1, 1):
@@ -183,7 +183,7 @@ def _plug(s):
 def _scanner(s):
     # window at the origin facing +X, handle down
     s.rbox((-4.0, 0, 0), (9.0, 4.0, 4.6), 1.6, "plastic_yellow", seg=2)
-    s.rbox((0.45, 0, 0), (0.2, 3.0, 3.6), 0.3, "lamp_orange", seg=1)
+    s.rbox((0.45, 0, 0), (0.2, 3.0, 3.6), 0.3, "plastic_black", seg=1)
     s.rprism((-6.0, -1.5, 0), (-7.5, -11.0, 0), 2.4, 3.2, 1.1, "plastic_black", up=(1, 0, 0))
     s.rbox((-4.6, -3.4, 0), (1.1, 2.0, 1.0), 0.4, "plastic_black", seg=1)
 
@@ -193,7 +193,7 @@ def _caulk(s):
     s.lathe((0, 0, 0), (-6.0, 0, 0), [(0, 0.15), (0.6, 0.6), (1, 1.2)], "plastic_grey", sides=12)
     s.lathe((-6.0, 0, 0), (-28.0, 0, 0), [(0, 2.4), (1, 2.4)], "plastic_white" if False else "nylon_white", sides=20)
     s.rbox((-17.0, -2.8, 0), (24.0, 0.6, 3.6), 0.2, "steel_dark", seg=1)                                  # cradle
-    s.rprism((-30.0, -1.0, 0), (-31.5, -12.0, 0), 2.2, 3.0, 1.0, "powder_red", up=(1, 0, 0))             # handle
+    s.rprism((-30.0, -1.0, 0), (-31.5, -12.0, 0), 2.2, 3.0, 1.0, "powder_dark", up=(1, 0, 0))             # handle
     s.rprism((-28.0, -2.0, 0), (-27.0, -11.0, 0), 1.2, 2.4, 0.5, "steel_dark", up=(1, 0, 0))             # trigger
     s.cylinder((-29.0, 0, 0), (-40.0, 0, 0), 0.35, "steel_machined", 8)                                  # plunger rod
 

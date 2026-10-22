@@ -28,6 +28,7 @@ Z = np.array([0.0, 0.0, 1.0])
 X = np.array([1.0, 0.0, 0.0])
 TOP = 92.0                      # bench top
 PZ = 42.0                       # panel face (worker side)
+SZ = PZ + 16.0                  # panels worked at arm's length (screwdriver, push buttons): the worker stands back
 
 
 @dataclass
@@ -216,7 +217,7 @@ def j_torque(S, sk):
 
 def j_screwdriver(S, sk):
     R, _ = rest_targets(S)
-    P = np.array([0.0, 100.0, PZ])                               # screw in the panel, driven towards +Z
+    P = np.array([0.0, 100.0, SZ])                               # screw in the panel, driven towards +Z
 
     def T_rot(rot):
         x = K.unit(np.array([math.cos(math.radians(rot)), math.sin(math.radians(rot)), 0.0]))
@@ -224,10 +225,10 @@ def j_screwdriver(S, sk):
 
     def rh(Td):
         T = Td["t"]
-        return K.power(sk, "r", wpt(T, (0.0, 18.0, 0.0)), wdir(T, (0, -1, 0)), grip="power:1.6",
-                       lean=(0.0, -0.35, 1.0))
-    tk = [(0.0, None), (1.0, T_rot(0.0))]
-    t = 1.0
+        g = K.power(sk, "r", wpt(T, (0.0, 18.0, 0.0)), wdir(T, (0, -1, 0)), grip="power:1.6", lean=(0.0, -1.0, 0.0))
+        return K.tilt(g, wdir(T, (0, -1, 0)), 60.0)                # handshake grip, handle diagonal in the palm
+    tk = [(0.0, None), (1.2, T_rot(0.0))]
+    t = 1.2
     for k in range(5):                                            # twist ~100 deg, regrip back
         tk += [(t + 0.5, T_rot(100.0)), (t + 0.75, T_rot(0.0))]
         t += 0.75
@@ -465,7 +466,7 @@ def j_route(S, sk):
 
 # ---------------------------------------------------------------------------------------------- assembly
 def j_hammer(S, sk):
-    return G.hammer(S, (0.0, TOP + 8.0, 44.0), (0, 1, 0), "r", strikes=4)
+    return G.hammer(S, (0.0, TOP + 9.0, 60.0), (0, 1, 0), "r", strikes=4)     # at arm's length: hand ~35 cm out
 
 
 def j_mallet(S, sk):
@@ -554,7 +555,7 @@ def j_caulk(S, sk):
 # ---------------------------------------------------------------------------------------------- operate / inspect
 def j_buttons(S, sk):
     R, _ = rest_targets(S)
-    bs = [np.array([-8.0, 110.0, PZ - 1.2]), np.array([4.0, 110.0, PZ - 1.2]), np.array([16.0, 116.0, PZ - 2.5])]
+    bs = [np.array([-8.0, 112.0, SZ - 1.2]), np.array([4.0, 112.0, SZ - 1.2]), np.array([16.0, 118.0, SZ - 2.5])]
     keys = [(0.0, R["r"])]
     t = 0.4
     for b in bs:
@@ -696,9 +697,9 @@ def _f_bench(extra=None):
     return f
 
 
-def _f_panel(extra=None):
+def _f_panel(extra=None, z=PZ):
     def f(s):
-        panel(s)
+        panel(s, z=z)
         if extra:
             extra(s)
     f.kind = "panel"
@@ -725,7 +726,7 @@ def _wrench_nut(s):
 
 
 def _screw(s):
-    s.rbox((0.0, 100.0, PZ - 0.4), (14.0, 10.0, 0.8), 0.4, "powder_dark", seg=1)
+    s.rbox((0.0, 100.0, SZ - 0.4), (14.0, 10.0, 0.8), 0.4, "powder_dark", seg=1)
 
 
 def _impact_hole(s):
@@ -765,6 +766,11 @@ def _pin_block(s):
     s.rbox((16.0, TOP + 0.6, 36.0), (10.0, 1.2, 7.0), 0.3, "plastic_blue", seg=1)
 
 
+def _anvil(s):
+    block(s, (0.0, TOP + 4.0, 60.0), (12.0, 8.0, 12.0))
+    s.lathe((0.0, TOP + 8.0, 60.0), (0.0, TOP + 9.0, 60.0), [(0, 0.6), (1, 0.6)], "steel_machined", sides=12)
+
+
 def _plate(s):
     s.rbox((-6.0, TOP + 1.0, 44.0), (24.0, 2.0, 18.0), 0.4, "powder_grey", seg=1)
 
@@ -774,16 +780,16 @@ def _seam(s):
 
 
 def _controls(s):
-    s.rbox((4.0, 112.0, PZ - 2.0), (40.0, 20.0, 4.0), 1.0, "abs_lightgrey", seg=2)
+    s.rbox((4.0, 114.0, SZ - 2.0), (40.0, 20.0, 4.0), 1.0, "abs_lightgrey", seg=2)
 
 
 def _wheel(s):
-    s.torus((0.0, 112.0, PZ - 8.0), (0, 0, 1), 13.0, 1.2, "powder_red", seg=32, sides=10)
+    s.torus((0.0, 112.0, PZ - 8.0), (0, 0, 1), 13.0, 1.2, "powder_dark", seg=32, sides=10)
     s.cylinder((0.0, 112.0, PZ - 8.0), (0.0, 112.0, PZ), 1.5, "steel_machined", 12)
     for k in range(3):
         a = 2 * math.pi * k / 3
         s.cylinder((0.0, 112.0, PZ - 8.0), (13.0 * math.cos(a), 112.0 + 13.0 * math.sin(a), PZ - 8.0), 0.6,
-                   "powder_red", 8)
+                   "stainless", 8)
 
 
 def _scan_box(s):
@@ -806,7 +812,7 @@ JOBS = [
     Job("hand_nut", "Hand-start nut", "fastening", "W05F", j_hand_nut, _f_bench(_stud), (-6, 97, 42)),
     Job("ratchet", "Ratchet a bolt", "fastening", "W50M", j_ratchet, _f_bench(_bolts), (-4, 98, 42)),
     Job("torque", "Torque to click", "fastening", "W95M", j_torque, _f_bench(_bolts), (-4, 98, 42)),
-    Job("screwdriver", "Drive a screw", "fastening", "W05F", j_screwdriver, _f_panel(_screw), (0, 100, 38)),
+    Job("screwdriver", "Drive a screw", "fastening", "W05F", j_screwdriver, _f_panel(_screw, z=SZ), (0, 100, 52)),
     Job("impact", "Impact driver", "fastening", "W50M", j_impact, _f_panel(_impact_hole), (-6, 104, 36)),
     Job("hex_key", "Hex key", "fastening", "W95M", j_hex_key, _f_bench(_hexsock), (-4, 95, 42)),
     Job("wrench", "Combination wrench", "fastening", "W05F", j_wrench, _f_bench(_wrench_nut), (-4, 96, 40)),
@@ -818,12 +824,12 @@ JOBS = [
     Job("strip", "Strip a wire", "electrical", "W05F", j_strip, _f_bench(_wire), (-4, 104, 36)),
     Job("crimp", "Crimp a terminal", "electrical", "W50M", j_crimp, _f_bench(_wire), (-4, 104, 34)),
     Job("route", "Route cable in clips", "electrical", "W95M", j_route, _f_panel(_clips), (4, 116, 38)),
-    Job("hammer", "Hammer a pin", "assembly", "W50M", j_hammer, _f_bench(_pin_block), (0, 100, 44)),
+    Job("hammer", "Hammer a pin", "assembly", "W50M", j_hammer, _f_bench(_anvil), (0, 102, 56)),
     Job("mallet", "Seat a cover", "assembly", "W05F", j_mallet, _f_bench(_plate), (-6, 96, 44)),
     Job("insert_pin", "Insert a pin", "assembly", "W95M", j_insert_pin, _f_bench(_pin_block), (2, 98, 40)),
     Job("box", "Move a box", "assembly", "W50M", j_box, _f_bench(), (0, 104, 48)),
     Job("caulk", "Sealant bead", "assembly", "W95M", j_caulk, _f_bench(_seam), (0, 98, 46)),
-    Job("buttons", "Push buttons", "operate", "W05F", j_buttons, _f_panel(_controls), (4, 112, 38)),
+    Job("buttons", "Push buttons", "operate", "W05F", j_buttons, _f_panel(_controls, z=SZ), (4, 114, 52)),
     Job("handwheel", "Turn a handwheel", "operate", "W50M", j_handwheel, _f_panel(_wheel), (0, 112, 32)),
     Job("scan", "Scan a barcode", "operate", "W95M", j_scan, _f_bench(_scan_box), (2, 104, 40)),
     Job("label", "Apply a label", "operate", "W05F", j_label, _f_bench(_label_box), (4, 102, 38)),

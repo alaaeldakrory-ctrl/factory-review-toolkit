@@ -39,6 +39,7 @@ def load(wid):
     d = dict(np.load(p, allow_pickle=False))
     d["joints"] = [("root" if str(j) == "Root" else str(j)) for j in d["joints"]]
     d["parents"] = [("root" if str(j) == "Root" else str(j)) for j in d["parents"]]
+    d["wid"] = wid
     _CACHE[wid] = d
     return d
 
@@ -61,6 +62,10 @@ def skeleton(d):
         heel_z = float(near[:, 2].min()) if len(near) else foot[2] - 6.0
         tips[f"heel_{s}"] = np.array([foot[0], 2.5, heel_z])
     return Skeleton(world, tips)
+
+
+def _wid(d):
+    return str(d.get("wid", "body")).lower()
 
 
 # clothing regions by dominant joint
@@ -117,6 +122,112 @@ def face_regions(d, sk, ppe=("vest", "gloves")):
     return reg
 
 
+# ---------------------------------------------------------------------------------------------- outfit texture
+OUTFIT_VERSION = 1
+REGIONS = ("skin", "hair_dark", "hivis_yellow", "reflective", "fabric_navy", "fabric_dark", "glove", "boot")
+
+
+def classify(P, sk, ppe=("vest", "gloves")):
+    """Garment at rest-pose (T-pose) body points P (n x 3) -> index into REGIONS. Smooth geometric rules, so the
+    garment edges are clean lines whatever the mesh topology: cuffs at the wrists, a sleeveless vest with an armhole
+    through the shoulder joint, two reflective hoops and two bands over the shoulders, V neck, waist, boot tops."""
+    W = sk.world
+    x, y, z = P[:, 0], P[:, 1], P[:, 2]
+    ax = np.abs(x)
+    pel = W["pelvis"][1]
+    wrist_x = abs(W["hand_l"][0]) - 1.0
+    sh_x = abs(W["upperarm_l"][0])
+    neck_y = W["neck_01"][1] - 1.5
+    waist_y = pel + 9.0
+    boot_y = W["foot_l"][1] + 7.0
+    head = W["head"]
+    hl = float(P[:, 1].max()) - head[1]
+    sp = W["spine_02"][1]
+    out = np.full(len(P), REGIONS.index("fabric_dark"))                       # work trousers
+    out[y < boot_y] = REGIONS.index("boot")
+    upper = y > waist_y
+    torso = upper & (ax < sh_x - 1.0 - np.clip((W["upperarm_l"][1] - y) * 0.15, 0, 3))
+    out[upper] = REGIONS.index("fabric_navy")                                  # shirt (sleeves; torso without a vest)
+    if "vest" in ppe:
+        out[torso] = REGIONS.index("hivis_yellow")
+        band = torso & ((np.abs(y - (sp - 5.0)) < 1.6) | (np.abs(y - (sp + 4.0)) < 1.6))
+        brace = torso & (y > sp + 4.0) & (np.abs(ax - 8.5) < 1.5) & (y < neck_y - 1.0)
+        out[band | brace] = REGIONS.index("reflective")
+        vneck = torso & (z > W["spine_03"][2]) & (y > neck_y - 13.0 + ax * 1.1)   # the shirt collar shows
+        out[vneck] = REGIONS.index("fabric_navy")
+    out[(ax > wrist_x) & (y > pel)] = REGIONS.index("glove" if "gloves" in ppe else "skin")
+    above = y > neck_y
+    rel = (y - head[1]) / max(hl, 1e-6)
+    hair = above & ((rel > 0.62) | ((rel > 0.12) & (z < head[2] - 3.0)))
+    out[above] = REGIONS.index("skin")
+    out[hair] = REGIONS.index("hair_dark")
+    return out
+
+
+def _raster(uv, idx, counts, pts, res):
+    """For every texel: the rest-pose body point it shows (barycentric over the UV triangles), and a coverage mask."""
+    Pm = np.zeros((res, res, 3), np.float32)
+    M = np.zeros((res, res), bool)
+    UV = np.column_stack([uv[:, 0] * res - 0.5, (1.0 - uv[:, 1]) * res - 0.5])
+    a = 0
+    for c in counts:
+        for t in range(1, c - 1):
+            k = [a, a + t, a + t + 1]
+            q = UV[k]
+            x0, y0 = np.floor(q.min(0)).astype(int)
+            x1, y1 = np.ceil(q.max(0)).astype(int)
+            x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, res - 1), min(y1, res - 1)
+            if x1 < x0 or y1 < y0:
+                continue
+            v0, v1 = q[1] - q[0], q[2] - q[0]
+            den = v0[0] * v1[1] - v1[0] * v0[1]
+            if abs(den) < 1e-12:
+                continue
+            gx, gy = np.meshgrid(np.arange(x0, x1 + 1), np.arange(y0, y1 + 1))
+            px, py = gx - q[0][0], gy - q[0][1]
+            b1 = (px * v1[1] - v1[0] * py) / den
+            b2 = (v0[0] * py - px * v0[1]) / den
+            b0 = 1.0 - b1 - b2
+            m = (b0 >= -0.02) & (b1 >= -0.02) & (b2 >= -0.02)
+            if not m.any():
+                continue
+            P3 = pts[idx[k]]
+            Pm[gy[m], gx[m]] = b0[m, None] * P3[0] + b1[m, None] * P3[1] + b2[m, None] * P3[2]
+            M[gy[m], gx[m]] = True
+        a += c
+    return Pm, M
+
+
+def outfit_maps(wid, d, sk, ppe=("vest", "gloves"), res=2048):
+    """Albedo + roughness maps of the worker's clothes in the body's UV layout (cached; ./textures/outfit/...)."""
+    from .. import textures as GT
+    from ..materials import LOOKS
+    key = f"{wid.lower()}_{'_'.join(sorted(ppe)) or 'none'}_v{OUTFIT_VERSION}"
+    dd = os.path.join(GT.ROOT, "outfit")
+    out = {"albedo": os.path.join(dd, key + "_albedo.png"), "roughness": os.path.join(dd, key + "_rough.png")}
+    out["rel"] = {k: GT.rel(v) for k, v in out.items()}
+    if os.path.isfile(out["albedo"]) and os.path.isfile(out["roughness"]):
+        return out
+    os.makedirs(dd, exist_ok=True)
+    Pm, M = _raster(d["uv"].astype(np.float64), d["indices"], d["counts"], d["points"].astype(np.float64), res)
+    lab = np.zeros((res, res), int)
+    lab[M] = classify(Pm[M].astype(np.float64), sk, ppe)
+    for _ in range(8):                                        # dilate past the UV island edges (no seams)
+        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            sh = np.roll(np.roll(lab, dy, 0), dx, 1)
+            shm = np.roll(np.roll(M, dy, 0), dx, 1)
+            fill = ~M & shm
+            lab[fill] = sh[fill]
+            M = M | fill
+    col = np.array([LOOKS[r][0] for r in REGIONS], np.float32)              # sRGB
+    rgh = np.array([LOOKS[r][1] for r in REGIONS], np.float32)
+    rng = np.random.default_rng(7)
+    weave = 1.0 + 0.05 * (rng.random((res, res)) - 0.5)                    # fabric / skin grain
+    GT.write_png(out["albedo"], np.clip(col[lab] * weave[..., None], 0.0, 1.0))
+    GT.write_png(out["roughness"], np.clip(rgh[lab] * (2.0 - weave), 0.02, 1.0))
+    return out
+
+
 def vertex_normals(pts, counts, idx):
     n = np.zeros_like(pts, dtype=np.float64)
     a = 0
@@ -168,7 +279,7 @@ def write_body_mesh(stage, path, d, sk, lib, ppe=("vest", "gloves")):
     if len(d["uv"]):
         st = UsdGeom.PrimvarsAPI(m.GetPrim()).CreatePrimvar("st", Sdf.ValueTypeNames.TexCoord2fArray,
                                                               UsdGeom.Tokens.faceVarying)
-        st.Set(Vt.Vec2fArray.FromNumpy((d["uv"] * 2.0).astype(np.float32)))    # fabric / skin grain scale
+        st.Set(Vt.Vec2fArray.FromNumpy(d["uv"].astype(np.float32)))            # the outfit texture's layout
     # skin: map the body's joint names onto the canonical joint order
     J = d["joints"]
     remap = np.array([INDEX.get(n, 0) for n in J], np.int32)
@@ -178,16 +289,8 @@ def write_body_mesh(stage, path, d, sk, lib, ppe=("vest", "gloves")):
     b.CreateJointIndicesPrimvar(False, K).Set(Vt.IntArray.FromNumpy(ji.reshape(-1).astype(np.int32)))
     b.CreateJointWeightsPrimvar(False, K).Set(Vt.FloatArray.FromNumpy(d["joint_weights"].reshape(-1).astype(np.float32)))
     b.CreateGeomBindTransformAttr(Gf.Matrix4d(1.0))
-    regions = face_regions(d, sk, ppe)
-    looks = sorted(set(regions))
-    refs = lib.refs(looks)
-    for look in looks:
-        faces = [i for i, r in enumerate(regions) if r == look]
-        sub = UsdGeom.Subset.Define(stage, f"{path}/{look}")
-        sub.CreateElementTypeAttr("face")
-        sub.CreateIndicesAttr(Vt.IntArray(faces))
-        sub.CreateFamilyNameAttr("materialBind")
-        UsdShade.MaterialBindingAPI.Apply(sub.GetPrim()).Bind(refs[look].material)
-    UsdGeom.Subset.SetFamilyType(m, "materialBind", UsdGeom.Tokens.partition)
+    maps = outfit_maps(_wid(d), d, sk, ppe)
+    name = f"outfit_{_wid(d)}_{'_'.join(sorted(ppe)) or 'none'}"
+    UsdShade.MaterialBindingAPI.Apply(m.GetPrim()).Bind(lib.textured(name, maps["rel"]["albedo"], maps["rel"]["roughness"]))
     m.CreateDisplayColorAttr([Gf.Vec3f(0.6, 0.55, 0.5)])
     return m
