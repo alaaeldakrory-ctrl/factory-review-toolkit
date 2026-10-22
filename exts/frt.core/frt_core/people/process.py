@@ -23,6 +23,7 @@ try:
 except ImportError:
     import tomli as tomllib
 
+from . import motion_carry as C
 from . import motion_gen as G
 from . import motion_more as M
 from .gait import turn_in_place, walk
@@ -78,7 +79,19 @@ def dir_local(spot, d):
     return (float(xz[0]), float(d[1]), float(xz[1]))
 
 
-def generate(cat, S, step, spot, notes):
+def part_spec(step):
+    size = [float(v) for v in step.get("size", (30, 15, 20))]
+    return size, f"box:{size[0]:g}x{size[1]:g}x{size[2]:g}:{step.get('look', 'cardboard')}"
+
+
+def lift_record(spot, pick, place_at, mass, two_hands):
+    """NIOSH inputs in the worker frame: horizontal hand distance from the ankles and hand heights."""
+    a, b = to_local(spot, pick), to_local(spot, place_at)
+    return {"H1": math.hypot(a[0], a[2]), "V1": a[1], "H2": math.hypot(b[0], b[2]), "V2": b[1],
+            "mass_kg": float(mass), "two_hands": two_hands}
+
+
+def generate(cat, S, step, spot, notes, lifts=None):
     """Frames for one step at a worker spot (catalog pattern -> generator)."""
     m = cat.get(step["motion"])
     if m is None:
@@ -90,7 +103,19 @@ def generate(cat, S, step, spot, notes):
     axis = dir_local(spot, step.get("axis", (0, 1, 0)))
     p = dict(m.params)
     p.update({k: v for k, v in step.items() if k in ("strokes", "strikes", "turns", "seconds")})
-    if kind == "cycle" and cyc in ("ratchet", "wrench_swing"):
+    if "size" in step and "pick" in step and "to" not in step:   # handle a real part (it stays where it is put)
+        size, spec = part_spec(step)
+        two = m.hands in ("two", "team")
+        f1, _, _ = C.carry_pick(S, tgt("pick"), size, step.get("part", step["id"]), spec, two, side)
+        f2 = C.carry_place(S, tgt("place"), size, step.get("part", step["id"]), spec, two, side)
+        fr = f1 + f2
+        if lifts is not None and "mass_kg" in step:
+            lifts[step["id"]] = lift_record(spot, step["pick"], step["place"], step["mass_kg"], two)
+    elif kind == "cycle" and cyc == "tie_pull":
+        fr = C.cable_tie(S, tgt(), dir_local(spot, step.get("axis", (1, 0, 0))), side, step.get("part", step["id"]))
+    elif kind == "cycle" and cyc == "squeeze":
+        fr = C.crimp(S, tgt(), side, int(p.get("squeezes", 1)))
+    elif kind == "cycle" and cyc in ("ratchet", "wrench_swing"):
         fr = G.ratchet(S, tgt(), axis, side, strokes=int(p.get("turns", p.get("strokes", 6))))
     elif kind == "cycle" and cyc == "torque_click":
         fr = M.torque(S, tgt(), axis, side)
@@ -129,6 +154,7 @@ class Planner:
         self.sk = {wid: Skeleton.for_worker(b) for wid, b in self.body.items()}
         self.solver = {wid: PostureSolver(self.sk[wid], self.body[wid]) for wid in self.workers}
         self._gen = {}                                    # step id -> frames (generated once)
+        self.lifts = {}                                   # step id -> NIOSH inputs
 
     def spot(self, sid):
         s = self.stations[sid]
@@ -137,7 +163,8 @@ class Planner:
     def _work(self, step):
         if step["id"] not in self._gen:
             notes = []
-            fr = generate(self.cat, self.solver[step["worker"]], step, self.spot(step["station"]), notes)
+            fr = generate(self.cat, self.solver[step["worker"]], step, self.spot(step["station"]), notes,
+                          self.lifts)
             self._gen[step["id"]] = (fr, notes)
         return self._gen[step["id"]]
 
@@ -182,6 +209,10 @@ class Planner:
                 plan.segments[wid].append(Segment(wid, "wait", step["id"], t[wid],
                                                   M.idle((ready - t[wid]) / G.FPS, label=f"{step['id']}:wait"), spot))
                 t[wid] = ready
+            if "to" in step:                                      # pick here, walk carrying, place at `to`
+                t[wid], at[wid] = self._carry(plan, step, t[wid], spot)
+                done[step["id"]] = t[wid]
+                continue
             fr, notes = self._work(step)
             plan.notes += [n for n in notes if n not in plan.notes]
             plan.segments[wid].append(Segment(wid, "work", step["id"], t[wid], fr, spot))
@@ -190,6 +221,39 @@ class Planner:
         plan.step_end = done
         plan.length = max(t.values()) if t else 0
         return plan
+
+    def _carry(self, plan, step, t, spot):
+        wid = step["worker"]
+        S, sk, body = self.solver[wid], self.sk[wid], self.body[wid]
+        m = self.cat.get(step["motion"])
+        two = (m.hands in ("two", "team")) if m else True
+        side = step.get("hand", "r")
+        size, spec = part_spec(step)
+        part = step.get("part", step["id"])
+        dest = self.spot(step["to"])
+        key = step["id"] + "/carry"
+        if key not in self._gen:
+            f1, hold_t, Tc = C.carry_pick(S, to_local(spot, step["pick"]), size, part, spec, two, side)
+            path = self.nav.path(spot[:2], dest[:2]) if self.nav else [spot[:2], dest[:2]]
+            fw = walk(body, sk, path, spot[2], dest[2], carry=hold_t)
+            for f in fw:
+                f.tools[f"part:{part}"] = (spec, Tc)
+            f3 = C.carry_place(S, to_local(dest, step["place"]), size, part, spec, two, side)
+            for fr, lab in ((f1, "pick"), (fw, "carry"), (f3, "place")):
+                for f in fr:
+                    f.label = f"{step['id']}:{lab}"
+            self._gen[key] = (f1, fw, f3)
+            if "mass_kg" in step:
+                cp = C.carry_pose(sk, size, two, side)
+                rec = lift_record(spot, step["pick"], step["pick"], step["mass_kg"], two)
+                rec2 = lift_record(dest, step["place"], step["place"], step["mass_kg"], two)
+                self.lifts[step["id"] + ":pick"] = {**rec, "H2": math.hypot(cp[0], cp[2]), "V2": float(cp[1])}
+                self.lifts[step["id"] + ":place"] = {**rec2, "H1": math.hypot(cp[0], cp[2]), "V1": float(cp[1])}
+        f1, fw, f3 = self._gen[key]
+        for kind, fr, sp in (("work", f1, spot), ("walk", fw, dest), ("work", f3, dest)):
+            plan.segments[wid].append(Segment(wid, kind, step["id"], t, fr, sp))
+            t += len(fr)
+        return t, dest
 
     def roots(self, plan):
         """Per worker, per frame (x, z, yaw, walking?, walk origin, walk destination)."""

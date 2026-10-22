@@ -29,6 +29,23 @@ def rula_frame(a, label="", side="r"):
                                                   "trunk": trunk, "legs": legs}
 
 
+def niosh(H, V1, V2, mass_kg, freq_per_min=1.0, coupling="fair", A=0.0):
+    """Revised NIOSH lifting equation (metric, Waters et al. 1993) at the lift origin: recommended weight limit and
+    lifting index LI = load / RWL (LI > 1 raised risk, > 3 high). Frequency multiplier for <= 1 h, V < 75 cm."""
+    H = max(25.0, H)
+    HM = 0.0 if H > 63 else 25.0 / H
+    VM = max(0.0, 1 - 0.003 * abs(V1 - 75.0)) if V1 <= 175 else 0.0
+    D = abs(V2 - V1)
+    DM = 1.0 if D < 25 else min(1.0, 0.82 + 4.5 / D)
+    AM = max(0.0, 1 - 0.0032 * A)
+    table = {0.2: 1.0, 0.5: 0.97, 1: 0.94, 2: 0.91, 3: 0.88, 4: 0.84, 5: 0.80, 6: 0.75, 8: 0.60, 10: 0.45}
+    FM = table[min(table, key=lambda k: abs(k - freq_per_min))]
+    CM = {"good": 1.0, "fair": 0.95 if V1 < 75 else 1.0, "poor": 0.90}[coupling]
+    rwl = 23.0 * HM * VM * DM * AM * FM * CM
+    return {"RWL": round(rwl, 1), "LI": round(mass_kg / rwl, 2) if rwl > 0 else 99.0,
+            "HM": round(HM, 2), "VM": round(VM, 2), "DM": round(DM, 2)}
+
+
 def evaluate(baked, plan, planner):
     """baked: worker -> bake() report. Returns (findings, summary)."""
     findings, summary = [], {}
@@ -64,7 +81,8 @@ def evaluate(baked, plan, planner):
                 findings.append({"severity": "low", "worker": wid, "step": step,
                                  "what": f"neck bent over 40 deg for {len(neck) / FPS:.1f} s", "why": "work too low "
                                  "for this worker's eye height", "fix": "raise or tilt the work towards the worker"})
-        reach = [i for i, c in enumerate(rep["cost"]) if c > 30]
+        reach = [i for i, (r, lab) in enumerate(zip(rep.get("reach", []), labels))
+                 if r > 0.5 and ":" in lab and not lab.endswith((":walk", ":carry", ":wait", ":give way"))]
         walk_f = sum(1 for lab in labels if lab.endswith(":walk"))
         wait_f = sum(1 for lab in labels if lab.endswith((":wait", ":give way")) or lab == "idle")
         tot = max(1, len(labels))
@@ -84,6 +102,18 @@ def evaluate(baked, plan, planner):
             findings.append({"severity": "high", "worker": wid, "step": labels[reach[0]].split(":")[0],
                              "what": "target out of comfortable reach", "why": "the solver could not reach it without "
                              "large discomfort", "fix": "move the work closer or let the worker step in"})
+    for sid, L in getattr(planner, "lifts", {}).items():          # NIOSH for every lift with a known mass
+        r = niosh(L["H1"], L["V1"], L["V2"], L["mass_kg"])
+        summary.setdefault("_lifts", {})[sid] = {**r, "mass_kg": L["mass_kg"], "H_cm": round(L["H1"]),
+                                                 "V_cm": round(L["V1"])}
+        if r["LI"] > 1.0:
+            low, far = r["VM"] < 0.85, r["HM"] < 0.7
+            why = ", ".join(x for x, c in (("lift starts low", low), ("load held far from the body", far)) if c)
+            findings.append({"severity": "high" if r["LI"] > 2.0 else "medium", "worker": "", "step": sid,
+                             "what": f"lifting index {r['LI']} ({L['mass_kg']:.0f} kg, limit {r['RWL']} kg here)",
+                             "why": "NIOSH: " + (why or "lifting equation"),
+                             "fix": "raise the pick height (pallet on a stand / lift table)" if low else
+                                    "bring the load closer / use a lift assist"})
     for n in plan.notes:
         if n.startswith("traffic:") and "conflict" in n:
             findings.append({"severity": "high", "worker": "", "step": "", "what": n, "why": "paths cross",
@@ -102,7 +132,10 @@ def _fix(parts, a):
     if parts["upper_arm"] >= 3:
         out.append("bring the work closer / lower (shoulder %.0f deg)" % max(a.get("shoulder_r", 0), a.get("shoulder_l", 0)))
     if parts["neck"] >= 3:
-        out.append("tilt or raise the work (neck %.0f deg)" % a.get("neck_flexion", 0))
+        if a.get("neck_flexion", 0) < 0:
+            out.append("lower the work or bring it nearer (head tipped back %.0f deg)" % -a.get("neck_flexion", 0))
+        else:
+            out.append("tilt or raise the work (neck %.0f deg)" % a.get("neck_flexion", 0))
     if parts["legs"] >= 2:
         out.append("avoid squatting: work stand or lift table")
     if parts["wrist"] >= 3:

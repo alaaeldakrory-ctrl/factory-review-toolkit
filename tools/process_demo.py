@@ -36,7 +36,8 @@ def workplace(st, lib):
         s.rbox((bx, 94.0, 38.0), (30.0, 4.0, 20.0), 0.8, "powder_blue", seg=2)
         for dx in (-8.0, 8.0):
             s.bolt((bx + dx, 96.0, 38.0), (0, 1, 0), 1.6, "bolt_zinc")
-    for bx in (-275.0, -235.0):                                    # bins on the parts table
+    s.rbox((248.0, 124.0, 37.0), (70.0, 1.6, 1.6), 0.7, "cable_pvc", seg=1)                 # harness on the panel
+    for bx in (-275.0,):                                           # spare bin on the parts table
         s.rbox((bx, 97.0, -140.0), (30.0, 14.0, 22.0), 1.0, "plastic_blue", seg=2)
     s.rbox((230.0, 60.0, 42.0), (90.0, 120.0, 4.0), 1.0, "powder_lightgrey", seg=2)       # wiring panel on legs
     for lx in (192.0, 268.0):

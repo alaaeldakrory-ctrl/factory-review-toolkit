@@ -82,7 +82,33 @@ def solve_frames(S, frames, stance=None, step=1, log=print, label=""):
     return sols
 
 
-def bake(stage, path, worker, frames, lib, start=0, stance=None, solver=None, log=print, root=None, step=1):
+def part_shapes(spec):
+    """Geometry of a handled part from its spec: "box:WxHxD:look" (centred) or "ring:R:r:look" (cable tie)."""
+    from ..geom import Shapes
+    s = Shapes()
+    kind, *rest = spec.split(":")
+    if kind == "box":
+        w, h, d = (float(v) for v in rest[0].split("x"))
+        s.rbox((0, 0, 0), (w, h, d), min(1.2, min(w, h, d) * 0.12), rest[1] if len(rest) > 1 else "cardboard", seg=2)
+    elif kind == "ring":
+        s.torus((0, 0, 0), (0, 0, 1), float(rest[0]), float(rest[1]), rest[2] if len(rest) > 2 else "plastic_black",
+                seg=20, sides=6)
+    return s
+
+
+def _rootT(r):
+    import math
+    a = math.radians(r[2])
+    T = np.eye(4)
+    T[:3, :3] = np.array([[math.cos(a), 0, math.sin(a)], [0, 1, 0], [-math.sin(a), 0, math.cos(a)]])
+    T[:3, 3] = (r[0], 0.0, r[1])
+    return T
+
+
+def bake(stage, path, worker, frames, lib, start=0, stance=None, solver=None, log=print, root=None, step=1,
+         parts_root="/World/Asset/Parts"):
+    """Tools (keys in TOOLS) live under the worker; parts (names "part:<id>", spec in the key) live in the world:
+    while handled they follow the hands, afterwards they stay where they were put (USD holds the last sample)."""
     """root: the work spot (x, z, yaw) for frames that carry none (frames carry their own while walking)."""
     sk = Skeleton.for_worker(worker)
     S = solver or PostureSolver(sk, worker)
@@ -106,7 +132,30 @@ def bake(stage, path, worker, frames, lib, start=0, stance=None, solver=None, lo
             roy.Set(float(cur[2]), start + i)
             roots.append(cur)
     names = sorted({k for f in frames for k in f.tools})
-    for name in names:
+    for name in [n for n in names if n.startswith("part:")]:
+        pid = name.split(":", 1)[1]
+        spec = next(f.tools[name][0] for f in frames if name in f.tools)
+        pp = f"{parts_root}/{pid}"
+        pxf = UsdGeom.Xform(stage.GetPrimAtPath(pp)) if stage.GetPrimAtPath(pp) else UsdGeom.Xform.Define(stage, pp)
+        ops = pxf.GetOrderedXformOps()
+        op = ops[0] if ops else pxf.AddTransformOp()
+        if not stage.GetPrimAtPath(f"{pp}/Geom"):
+            shp = part_shapes(spec)
+            shp.build(stage, f"{pp}/Geom", lib.refs(list(shp.groups)))
+        vis = pxf.GetVisibilityAttr() if pxf.GetVisibilityAttr().HasAuthoredValue() else pxf.CreateVisibilityAttr()
+        appear = spec.startswith("ring")                           # made during the step: hidden before it
+        first = True
+        for i, f in enumerate(frames):
+            if name not in f.tools:
+                continue
+            if first and appear:
+                vis.Set("invisible", start + i - 1 if start + i > 0 else start + i)
+            first = False
+            r = roots[i] if i < len(roots) else (root or (0.0, 0.0, 0.0))
+            W = _rootT(r) @ f.tools[name][1]
+            op.Set(Gf.Matrix4d(*W.T.flatten().tolist()), start + i)
+            vis.Set("inherited", start + i)
+    for name in [n for n in names if not n.startswith("part:")]:
         key = next(f.tools[name][0] for f in frames if name in f.tools)
         tp = f"{path}/Tools/{name}"
         txf = UsdGeom.Xform.Define(stage, tp)
@@ -128,4 +177,6 @@ def bake(stage, path, worker, frames, lib, start=0, stance=None, solver=None, lo
         stage.SetStartTimeCode(start)
         stage.SetEndTimeCode(end)
     return {"frames": len(frames), "angles": [s.angles for s in sols], "cost": [s.cost for s in sols],
+            "reach": [float(s.terms.get("reach_l", 0.0) + s.terms.get("reach_r", 0.0)) for s in sols],
+            "terms": [{k: float(v) for k, v in s.terms.items()} for s in sols],
             "roots": roots, "labels": [f.label for f in frames]}

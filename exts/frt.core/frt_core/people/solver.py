@@ -148,6 +148,7 @@ class PostureSolver:
         self.leg = {s: (sk.length(f"thigh_{s}", f"calf_{s}"), sk.length(f"calf_{s}", f"foot_{s}")) for s in ("l", "r")}
         self.hand_len = sk.length("hand_l", "middle_01_l") / 0.47 * 1.0 if "middle_01_l" in sk.world else 19.0
         self.worker = worker
+        self._wrap = {}
 
     # ------------------------------------------------------------------ building a pose from the variables
     def build(self, v, targets, look, stance, free_arms="hang", swing=None):
@@ -269,9 +270,37 @@ class PostureSolver:
                        "knee_r": angle(Pall["calf_r"] - Pall["thigh_r"], Pall["foot_r"] - Pall["calf_r"])})
         return pose, terms, angles, (Rall, Pall)
 
+    def wrap(self, s, f, radius):
+        """Joint flexions (deg) that wrap finger f around a cylinder of `radius` cm: each phalanx is a chord of the
+        circle through the finger's mid-thickness, each joint bends by the arc its neighbouring chords subtend."""
+        key = (s, f, round(radius, 2))
+        if key in self._wrap:
+            return self._wrap[key]
+        sk = self.sk
+        pts = [sk.world[f"{f}_0{i}_{s}"] for i in (1, 2, 3)] + [sk.tips[f"{f}_tip_{s}"]]
+        lens = [float(np.linalg.norm(b - a)) for a, b in zip(pts, pts[1:])]
+        R = radius + 0.9                                           # finger half thickness
+        th = [math.degrees(2 * math.asin(min(1.0, L / (2 * R)))) for L in lens]
+        out = (min(95.0, th[0] * 0.5 + 8.0), min(100.0, (th[0] + th[1]) * 0.5), min(85.0, (th[1] + th[2]) * 0.5))
+        self._wrap[key] = out
+        return out
+
     def _grip(self, pose, s, name):
         sx = 1.0 if s == "l" else -1.0
-        (f1, f2, f3), (t1, t2, t3) = GRIPS.get(name, GRIPS["relaxed"])
+        kind, _, rad = str(name).partition(":")
+        if rad and kind in ("power", "hook"):                      # wrap the real handle
+            r = float(rad)
+            for f in ("index", "middle", "ring", "pinky"):
+                curl = self.wrap(s, f, r)
+                for i, a in zip((1, 2, 3), curl):
+                    pose.rot[f"{f}_0{i}_{s}"] = rz(-sx * a)
+            tw = self.wrap(s, "thumb", r)
+            (t1, t2, t3) = (28.0, tw[1] * 0.8, tw[2] * 0.8) if kind == "power" else (0.0, 10.0, 10.0)
+            pose.rot[f"thumb_01_{s}"] = ry(sx * t1 * 0.6) @ rz(-sx * t1 * 0.5)
+            pose.rot[f"thumb_02_{s}"] = rz(-sx * t2)
+            pose.rot[f"thumb_03_{s}"] = rz(-sx * t3)
+            return
+        (f1, f2, f3), (t1, t2, t3) = GRIPS.get(kind, GRIPS["relaxed"])
         for f in ("index", "middle", "ring", "pinky"):
             spread = {"index": 1.0, "middle": 1.05, "ring": 1.1, "pinky": 1.15}[f]
             for i, a in zip((1, 2, 3), (f1, f2, f3)):

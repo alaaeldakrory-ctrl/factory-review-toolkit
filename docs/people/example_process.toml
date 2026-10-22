@@ -38,13 +38,23 @@ id = "panel"            # wiring panel
 spot = [230, -15]
 yaw = 0
 
+[[station]]
+id = "floor_box"          # a 12 kg box delivered on the floor
+spot = [150, -118]
+yaw = 0
+
 [[step]]
-id = "kit_bracket"
+id = "fetch_bin"          # carry the bin of brackets from the parts table to the bench
 worker = "A"
 station = "parts"
-motion = "handle.pick.bin_front"
-pick = [-235, 95, -140]
-place = [-275, 95, -128]
+to = "bench"
+motion = "handle.carry.two_hand"
+part = "bracket_bin"
+size = [30, 14, 22]
+look = "plastic_blue"
+mass_kg = 3
+pick = [-235, 97, -140]
+place = [-82, 99, 30]
 
 [[step]]
 id = "tighten_1"
@@ -53,7 +63,7 @@ station = "bench"
 motion = "fasten.ratchet.tighten"
 target = [-37, 99, 38]
 strokes = 5
-after = ["kit_bracket"]
+after = ["fetch_bin"]
 
 [[step]]
 id = "tighten_2"
@@ -73,12 +83,41 @@ target = [-37, 99, 38]
 after = ["tighten_2"]
 
 [[step]]
+id = "lift_box"           # floor to bench: the lifting equation should flag this
+worker = "B"
+station = "floor_box"
+to = "bench_right"
+motion = "handle.lift.floor"
+part = "harness_box"
+size = [40, 25, 30]
+mass_kg = 12
+pick = [150, 12.5, -84]
+place = [80, 104.5, 30]
+
+[[step]]
 id = "connect_harness"
 worker = "B"
 station = "panel"
 motion = "wire.connect"
 target = [230, 112, 32]
 axis = [0, 0, 1]
+
+[[step]]
+id = "tie_harness"
+worker = "B"
+station = "panel"
+motion = "wire.cable_tie"
+target = [248, 124, 36]
+axis = [1, 0, 0]
+after = ["connect_harness"]
+
+[[step]]
+id = "crimp_ground"
+worker = "B"
+station = "panel"
+motion = "wire.crimp"
+target = [215, 108, 22]
+after = ["tie_harness"]
 
 [[step]]
 id = "screw_cover"
@@ -88,7 +127,7 @@ motion = "fasten.screwdriver.manual"
 target = [212, 100, 33]
 axis = [0, 0, 1]
 turns = 4
-after = ["connect_harness"]
+after = ["crimp_ground"]
 
 [[step]]
 id = "check_bolts"

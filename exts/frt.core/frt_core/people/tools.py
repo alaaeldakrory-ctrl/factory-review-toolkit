@@ -22,6 +22,7 @@ class Grip:
     fingers: tuple
     palm: tuple
     kind: str = "power"
+    radius: float = 0.0              # handle radius (cm) the fingers wrap; 0 = use the preset hand shape
 
 
 @dataclass
@@ -45,7 +46,8 @@ class Tool:
         m = np.array([1.0, 1.0, -1.0]) if side == "l" else np.ones(3)       # grips are written for the right hand
         return HandTarget(side, tuple(R @ (np.asarray(g.point, float) * m) + t),
                           fingers=tuple(R @ (np.asarray(g.fingers, float) * m)),
-                          palm=tuple(R @ (np.asarray(g.palm, float) * m)), grip=g.kind, weight=weight)
+                          palm=tuple(R @ (np.asarray(g.palm, float) * m)), grip=f"{g.kind}:{g.radius}" if g.radius else g.kind,
+                          weight=weight)
 
 
 def _ratchet(s, length=25.0):
@@ -96,18 +98,18 @@ def _connector(s):
 
 TOOLS = {
     "ratchet_38": Tool("ratchet_38", "3/8 in ratchet", _ratchet,
-                       Grip((19.0, 2.6, 0.0), (0.0, 0.0, -1.0), (0.0, -1.0, 0.0), "power"),
+                       Grip((19.0, 2.6, 0.0), (0.0, 0.0, -1.0), (0.0, -1.0, 0.0), "power", 1.25),
                        Grip((0.0, 3.6, 0.0), (1.0, 0.0, 0.0), (0.0, -1.0, 0.0), "flat"),
                        {"socket": (0.0, -4.0, 0.0), "axis": (0.0, -1.0, 0.0)}),
     "torque_wrench": Tool("torque_wrench", "Click torque wrench", _torque_wrench,
-                          Grip((38.0, 2.8, 0.0), (0.0, 0.0, -1.0), (0.0, -1.0, 0.0), "power"),
+                          Grip((38.0, 2.8, 0.0), (0.0, 0.0, -1.0), (0.0, -1.0, 0.0), "power", 1.5),
                           Grip((0.0, 3.6, 0.0), (1.0, 0.0, 0.0), (0.0, -1.0, 0.0), "flat"),
                           {"socket": (0.0, -4.0, 0.0), "axis": (0.0, -1.0, 0.0)}),
     "hammer": Tool("hammer", "Hammer", _hammer,
-                   Grip((6.5, 0.0, 2.6), (0.0, -1.0, 0.0), (0.0, 0.0, -1.0), "power"),
+                   Grip((6.5, 0.0, 2.6), (0.0, -1.0, 0.0), (0.0, 0.0, -1.0), "power", 1.8),
                    None, {"face": (32.0, -6.0, 0.0), "normal": (0.0, -1.0, 0.0)}),
     "screwdriver": Tool("screwdriver", "Screwdriver", _screwdriver,
-                        Grip((0.0, 18.0, 2.4), (0.0, 1.0, 0.0), (0.0, 0.0, -1.0), "power"),
+                        Grip((0.0, 18.0, 2.4), (0.0, 1.0, 0.0), (0.0, 0.0, -1.0), "power", 1.6),
                         None, {"tip": (0.0, 0.0, 0.0), "axis": (0.0, -1.0, 0.0)}),
     "connector": Tool("connector", "Connector half", _connector,
                       Grip((0.0, 0.2, -2.6), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0), "pinch"),
