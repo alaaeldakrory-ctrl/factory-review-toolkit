@@ -3,6 +3,7 @@ frame sequence from given cameras. Stills are path traced, sequences real time.
 
     python tools/kit_render.py JOBNAME scene.usd out_dir shots.json
     shots.json: [{"name": "a.png", "eye": [x,y,z], "at": [x,y,z], "mm": 30, "frame": 0},
+                 {"seq": "track", "eye": [...], "at": [...], "eye_end": [...], "at_end": [...], "frames": [0, 120, 1]},
                  {"name": "hero.png", "camera": "/World/Studio/Hero"},
                  {"seq": "turn", "eye": [...], "at": [...], "mm": 30, "frames": [0, 240, 3]}]
 """
@@ -92,6 +93,11 @@ async def run(log):
                 n = 0
                 for k, f in enumerate(range(a, b + 1, step)):
                     TL.get_timeline_interface().set_current_time(f / 24.0)
+                    if sh.get("eye_end"):                  # tracking shot: eye / target move linearly over the sequence
+                        u = (f - a) / max(b - a, 1)
+                        e = [x0 + (x1 - x0) * u for x0, x1 in zip(sh["eye"], sh["eye_end"])]
+                        t_ = [x0 + (x1 - x0) * u for x0, x1 in zip(sh["at"], sh["at_end"])]
+                        W.look_at(tuple(e), tuple(t_))
                     n += await grab(os.path.join(OUT, sh["seq"], f"f{{k:03d}}.png"), 8)
                 log(f"{{sh['seq']}}: {{n}} frames")
             else:

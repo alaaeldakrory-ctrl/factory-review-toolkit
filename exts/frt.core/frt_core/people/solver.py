@@ -154,6 +154,7 @@ class PostureSolver:
         self.hand_len = sk.length("hand_l", "middle_01_l") / 0.47 * 1.0 if "middle_01_l" in sk.world else 19.0
         self.worker = worker
         self._wrap = {}
+        self._thumb_cache = {}
 
     # ------------------------------------------------------------------ building a pose from the variables
     def build(self, v, targets, look, stance, free_arms="hang", swing=None, base=None, prev_arm=None):
@@ -171,9 +172,9 @@ class PostureSolver:
                 pose.rot[j] = rx(flex * kf) @ rz(-lat * kl) @ ry(twist * kt)
         R, P = fk(sk, pose, ["spine_03", "thigh_l", "thigh_r"])
         terms = {}
-        # legs: knees forward, feet flat on the stance
+        # legs: knees forward, feet flat on the stance (a free stance: the legs of the base pose as they are)
         fwd = unit(R["pelvis"] @ FWD * np.array([1, 0, 1]))
-        for s in ("l", "r"):
+        for s in (() if getattr(stance, "free", False) and base is not None else ("l", "r")):
             ank = np.asarray(getattr(stance, "left" if s == "l" else "right"), float)
             hip = P[f"thigh_{s}"]
             L1, L2 = self.leg[s]
@@ -350,11 +351,11 @@ class PostureSolver:
             r = float(args[0])
             for f in ("index", "middle", "ring", "pinky"):
                 out[f] = self.wrap(s, f, r)
-            tw = self.wrap(s, "thumb", r)
-            out["thumb"] = (34.0, tw[1] * 0.8, tw[2] * 0.7) if kind != "hook" else (4.0, 10.0, 10.0)
             if kind == "trigger":                              # index finger on the trigger, pulled by `pull`
                 pull = float(args[1]) if len(args) > 1 else 0.0
                 out["index"] = (18.0 + 22.0 * pull, 40.0 + 30.0 * pull, 25.0 + 20.0 * pull)
+            out["thumb"] = self.thumb(s, "hook" if kind == "hook" else ("wrap_mid" if kind == "trigger" else "wrap"),
+                                      out, r)
             return out
         P = {"relaxed": ((14, 14, 10), (8, 10, 8)),
              "open": ((5, 5, 3), (2, 4, 4)),
@@ -375,7 +376,100 @@ class PostureSolver:
         if kind in ("pinch", "tripod"):                         # spare fingers tuck in
             for f in ("ring", "pinky") if kind == "tripod" else ("middle", "ring", "pinky"):
                 out[f] = (55.0, 70.0, 45.0)
-        out["thumb"] = th
+        mode = {"pinch": "pinch", "tripod": "tripod", "lateral": "lateral", "power": "wrap", "hook": "hook",
+                "point": "wrap_mid", "relaxed": "relaxed", "open": "open", "flat": "open"}.get(kind, "relaxed")
+        out["thumb"] = self.thumb(s, mode, out, 1.5)
+        return out
+
+    # ------------------------------------------------------------------ thumb
+    def _finger_pts(self, s, f, curl):
+        """Hand-frame (rest hand orientation, origin at the wrist) joint points of a curled finger: base, mid, end, tip."""
+        sk, sx = self.sk, (1.0 if s == "l" else -1.0)
+        h = sk.world[f"hand_{s}"]
+        names = [f"{f}_01_{s}", f"{f}_02_{s}", f"{f}_03_{s}"]
+        rest = [sk.world[n] - h for n in names] + [sk.tips[f"{f}_tip_{s}"] - h]
+        pts = [rest[0]]
+        R = I3
+        for i in range(3):
+            R = R @ rz(-sx * curl[i])
+            pts.append(pts[-1] + R @ (rest[i + 1] - rest[i]))
+        return pts
+
+    def _thumb_axes(self, s):
+        """Anatomical axes from the thumb's own rest geometry: flexion bends the thumb towards the palm centre;
+        opposition swings it across under the palm."""
+        key = ("thax", s)
+        if key in self._thumb_cache:
+            return self._thumb_cache[key]
+        sk = self.sk
+        h = sk.world[f"hand_{s}"]
+        t1, t2, t3 = (sk.world[f"thumb_0{i}_{s}"] - h for i in (1, 2, 3))
+        tip = sk.tips[f"thumb_tip_{s}"] - h
+        palm_c = (sk.world[f"middle_01_{s}"] - h) * 0.6 + np.array([0.0, -2.5, 0.0])   # palm centre, palm side
+        out = []
+        for a_, b_ in ((t2, t3), (t3, tip)):
+            d = unit(b_ - a_)
+            n_in = unit((palm_c - a_) - d * np.dot(palm_c - a_, d))
+            out.append(unit(np.cross(d, n_in)))
+        self._thumb_cache[key] = (t1, t2, t3, tip, out[0], out[1])
+        return self._thumb_cache[key]
+
+    def _thumb_tip(self, s, x):
+        t1, t2, t3, tip, k2, k3 = self._thumb_axes(s)
+        rv = np.radians(np.asarray(x[:3], float))
+        ang = float(np.linalg.norm(rv))
+        R1 = axis_angle(rv / ang, ang) if ang > 1e-9 else I3
+        R2 = R1 @ axis_angle(k2, math.radians(x[3]))
+        R3 = R2 @ axis_angle(k3, math.radians(x[4]))
+        p2 = t1 + R1 @ (t2 - t1)
+        p3 = p2 + R2 @ (t3 - t2)
+        return p3 + R3 @ (tip - t3), (p2, p3)
+
+    def thumb(self, s, mode, fingers, radius=1.5):
+        """Thumb joint values (thumb_01 rotation vector deg x3, thumb_02 / 03 flexion deg) that put the thumb tip
+        where it goes for the grip - solved against the curled fingers, so the thumb wraps, pinches or rests the way
+        a real one does instead of swinging about a fixed axis."""
+        key = (s, mode, tuple(round(v, 1) for f in ("index", "middle") for v in fingers[f]), round(radius, 1))
+        if key in self._thumb_cache:
+            return self._thumb_cache[key]
+        t1, t2, t3, tip0, k2, k3 = self._thumb_axes(s)
+        ix = self._finger_pts(s, "index", fingers["index"])
+        md = self._finger_pts(s, "middle", fingers["middle"])
+        side = np.array([0.0, 0.0, 1.0])                      # thumb side of the hand (both hands: +Z in the rest pose)
+        palm = np.array([0.0, -1.0, 0.0])
+        if mode == "pinch":
+            tgt = ix[3] + side * 0.9 + palm * 0.6                 # pad to pad with the index tip
+        elif mode == "tripod":
+            tgt = (ix[3] + md[3]) / 2 + side * 0.6 + palm * 0.9
+        elif mode == "lateral":
+            tgt = (ix[1] + ix[2]) / 2 + side * 1.4                # key grip: on the side of the index middle phalanx
+        elif mode in ("wrap", "wrap_mid"):
+            # around the handle: the tip over the curled index (power) / middle (pointing, trigger) middle phalanx
+            f = ix if mode == "wrap" else md
+            tgt = (f[1] + f[2]) / 2 + side * 1.2 - palm * 0.6
+        elif mode == "hook":
+            tgt = tip0 + (ix[1] - tip0) * 0.25
+        elif mode == "relaxed":
+            tgt = tip0 + ((ix[1] + ix[2]) / 2 - tip0) * 0.35
+        else:                                                    # open / flat
+            tgt = tip0.copy()
+
+        def cost(x):
+            p, (p2, p3) = self._thumb_tip(s, x)
+            c = float(np.sum((p - tgt) ** 2))
+            c += 0.0004 * float(np.sum(np.asarray(x[:3]) ** 2)) + 0.0002 * (x[3] ** 2 + x[4] ** 2)
+            c += 0.002 * (x[4] - 0.9 * x[3]) ** 2                # the two thumb joints bend together
+            for q in (p2, p3, p):                                # never through the index finger
+                dmin = min(float(np.linalg.norm(q - (ix[i] + ix[i + 1]) / 2)) for i in range(3))
+                c += max(0.0, 1.6 - dmin) ** 2 * 20.0
+            return c
+        lo = np.array([-60.0, -60.0, -60.0, -15.0, -15.0])
+        hi = np.array([60.0, 60.0, 60.0, 80.0, 85.0])
+        x, _ = nelder_mead(cost, np.array([0.0, 0.0, 0.0, 20.0, 18.0]), np.array([15.0, 15.0, 15.0, 15.0, 15.0]),
+                           lo, hi, iters=400)
+        x, _ = nelder_mead(cost, x, np.array([4.0, 4.0, 4.0, 4.0, 4.0]), lo, hi, iters=200)
+        out = tuple(float(v) for v in x)
+        self._thumb_cache[key] = out
         return out
 
     def _grip(self, pose, s, name):
@@ -384,10 +478,13 @@ class PostureSolver:
         for f in ("index", "middle", "ring", "pinky"):
             for i, a in zip((1, 2, 3), A[f]):
                 pose.rot[f"{f}_0{i}_{s}"] = rz(-sx * a)
-        t1, t2, t3 = A["thumb"]
-        pose.rot[f"thumb_01_{s}"] = ry(sx * t1 * 0.6) @ rz(-sx * t1 * 0.5)
-        pose.rot[f"thumb_02_{s}"] = rz(-sx * t2)
-        pose.rot[f"thumb_03_{s}"] = rz(-sx * t3)
+        x = A["thumb"]
+        _, _, _, _, k2, k3 = self._thumb_axes(s)
+        rv = np.radians(np.asarray(x[:3], float))
+        ang = float(np.linalg.norm(rv))
+        pose.rot[f"thumb_01_{s}"] = axis_angle(rv / ang, ang) if ang > 1e-9 else I3
+        pose.rot[f"thumb_02_{s}"] = axis_angle(k2, math.radians(x[3]))
+        pose.rot[f"thumb_03_{s}"] = axis_angle(k3, math.radians(x[4]))
 
     # ------------------------------------------------------------------ solving
     def solve(self, targets, look=None, stance=None, prev=None, smooth=1.0, seeds=None, swing=None, base=None):
@@ -396,7 +493,7 @@ class PostureSolver:
         if isinstance(prev, Solution):
             prev_arm = {s_: (prev.angles.get(f"swivel_{s_}"), prev.angles.get(f"twist_{s_}")) for s_ in ("l", "r")}
         if base is not None:                       # mocap-driven frame: no search, just exact limbs on the base pose
-            v = self.fit_pelvis(base, stance)
+            v = np.zeros(8) if getattr(stance, "free", False) else self.fit_pelvis(base, stance)
             pose, terms, angles, _ = self.build(v, targets, look, stance, swing=swing, base=base, prev_arm=prev_arm)
             return Solution(pose, float(sum(terms.values())), terms, angles, v)
         prev_v = prev.v if isinstance(prev, Solution) else (None if prev is None else np.asarray(prev, float))

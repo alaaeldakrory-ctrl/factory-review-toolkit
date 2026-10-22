@@ -40,7 +40,7 @@ def main(out):
             sk = Skeleton.for_worker(w)
             S = PostureSolver(sk, w)
             z = (i - 1) * 110.0
-            frames = idle(0.5) + walk(w, sk, [(-100.0, z), (420.0, z), (520.0, z - 20.0)], 90.0, 180.0)
+            frames = idle(0.5) + walk(w, sk, [(-100.0, z), (420.0, z), (520.0, z - 20.0)], 90.0, 0.0)
             for f in frames:
                 if f.root is None:
                     f.root = (-100.0, z, 90.0)

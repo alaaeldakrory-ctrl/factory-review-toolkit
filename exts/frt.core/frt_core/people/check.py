@@ -85,7 +85,7 @@ def check_frames(sk, frames, sols, name=""):
                 if e > 4.0:
                     issues.append((i, "contact", t.side, round(e, 1), 4.0))
         st = f.stance
-        if st is not None:
+        if st is not None and not getattr(st, "free", False):
             for s in ("l", "r"):
                 e = float(np.linalg.norm(P[f"foot_{s}"] - np.asarray(getattr(st, "left" if s == "l" else "right"))))
                 worst_foot = max(worst_foot, e)

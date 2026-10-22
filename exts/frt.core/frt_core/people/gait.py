@@ -91,9 +91,155 @@ _HANG = {}
 
 
 def walk(worker, sk, path, yaw_start, yaw_end, carry=None, speed=None):
+    """Frames walking `path`: with the mocap walk available, the captured person's legs, hips, trunk and arms as
+    they are (mocap_walk); otherwise planned footsteps and leg IK (planned_walk)."""
+    from . import locomotion as LO
+    from . import mocap as MC
+    if LO.available() and speed is None:
+        return clip_walk(worker, sk, path, yaw_start, yaw_end, carry)
+    if MC.available("Walking") and speed is None:
+        return mocap_walk(worker, sk, path, yaw_start, yaw_end, carry)
+    return planned_walk(worker, sk, path, yaw_start, yaw_end, carry, speed)
+
+
+def _e3(u):
+    u = min(1.0, max(0.0, u))
+    return u * u * (3 - 2 * u)
+
+
+def clip_walk(worker, sk, path, yaw_start, yaw_end, carry=None):
+    """Walking assembled from motion-capture clips (locomotion.py): turn on the spot towards the path if needed,
+    start walking, the walk cycle, stop (start clip reversed), turn on the spot to the work. The clips are joined
+    where their leg poses match, with short cross-fades; the root follows the path at the captured person's own
+    pace (all distances scaled to this body, then stretched by a few percent to fit the path exactly)."""
+    from . import locomotion as LO
+    from . import mocap as MC
+    D = path_length(path)
+    if D < 5.0:
+        return turn_in_place(worker, sk, path[-1], yaw_start, yaw_end, carry)
+    cy, st = LO.clip("Walking", cyclic=True), LO.clip("Female_Start_Walking")
+    k = float(sk.world["pelvis"][1]) / cy.hip_height
+    drop = MC.ground_drop(sk, MC.cycle("Walking"))
+    P = LO.plan_walk(D, k)
+    sm = _smooth(path, D)
+    h0 = sm(0.0)[1]
+    h0 = yaw_start if h0 is None else h0
+    hD = sm(D)[1]
+    hD = h0 if hD is None else hD
+    segs = []                                          # (kind, n_out, f(local_t) -> (joints, s, yaw_add))
+    r = cy.fps / FPS                                    # clip frames per output frame (clips are 30 fps)
+
+    def turn_seg(a_deg, s_at):
+        tf = LO.turn_frames(sk, a_deg, FPS)
+        return ("turn", len(tf), lambda i: (tf[min(i, len(tf) - 1)][0], s_at, tf[min(i, len(tf) - 1)][1]))
+    da = _wrap(h0 - yaw_start)
+    if abs(da) > 25.0:
+        segs.append(turn_seg(da, 0.0))
+    sc = P["stretch"] * k
+    n_start = int(round(P["start_cut"] / r))
+    segs.append(("start", n_start, lambda i: (st.at(i * r), st.s_at(i * r) * sc, 0.0)))
+    s1 = st.s[P["start_cut"]] * sc
+    per = cy.loop_dist / cy.n * sc                     # distance per cycle frame
+    n_cyc = int(round(P["c_len"] / r))
+    segs.append(("cycle", n_cyc, lambda i: (cy.at(P["c0"] + i * r), s1 + i * r * per, 0.0)))
+    s2 = s1 + P["c_len"] * per
+    n_stop = int(round(0.55 * FPS))                   # step-together: the rear foot comes up beside the front one
+    sj, adv = LO.stop_frames(cy, st, P["stop_at"], P["front"], n_stop)
+    segs.append(("stop", n_stop, lambda i: (sj[min(i, n_stop - 1)], s2 + adv * sc * _e3((i + 1) / n_stop), 0.0)))
+    dz = _wrap(yaw_end - hD)
+    if abs(dz) > 20.0:
+        segs.append(turn_seg(dz, None))
+    frames = []
+    xf = 5                                             # cross-fade frames at each hand-over
+    s_end = None
+    yaw_base = yaw_start if segs[0][0] == "turn" else h0
+    for si, (kind, n, f) in enumerate(segs):
+        for i in range(n):
+            joints, s_, yadd = f(i)
+            if i < xf and si > 0 and segs[si - 1][0] != "turn" and kind not in ("turn", "stop"):
+                pj, _, _ = segs[si - 1][2](segs[si - 1][1] + i)
+                u = (i + 1) / (xf + 1)
+                joints = {q: pj[q] * (1 - u) + joints[q] * u for q in joints}
+            if kind == "turn" and s_ is None:
+                s_ = s_end
+            s_end = s_ if s_ is not None else s_end
+            sr = min(max(s_, 0.0), D)
+            p, h = sm(sr)
+            if kind == "turn":
+                h = (yaw_start if si == 0 else hD) + yadd
+            elif h is None:
+                h = h0
+            pose = MC.retarget(sk, joints)
+            pose.pelvis = (joints["pelvis"] - np.array([0.0, cy.hip_height, 0.0])) * k + np.array([0.0, -drop, 0.0])
+            stc = Stance()
+            stc.free = True
+            frames.append(Frame(list(carry or []), None, {}, root=(float(p[0]), float(p[1]), float(h)), stance=stc,
+                                base=pose))
+    return frames
+
+
+def mocap_walk(worker, sk, path, yaw_start, yaw_end, carry=None):
+    """A real walk: the motion capture played on this body (legs too - nothing re-solved), the root travelling at
+    the capture's own pace scaled to the leg length, so a planted foot stays planted. Starts and stops blend from /
+    to the standing pose over half a step; the heading follows the corner-rounded path."""
+    from . import mocap as MC
+    from .bake import blend
+    cyc = MC.cycle("Walking")
+    k = float(sk.world["pelvis"][1]) / cyc.hip_height
+    v = cyc.speed * k                                        # cm/s
+    period = cyc.n / cyc.fps                                 # s per two steps
+    drop = MC.ground_drop(sk, cyc)
+    D = path_length(path)
+    if D < 5.0:
+        return turn_in_place(worker, sk, path[-1], yaw_start, yaw_end, carry)
+    sm = _smooth(path, D)
+    hang = _hang_pose(sk, worker)
+    t_ramp = 0.35 * period                                   # start / stop: speed ramps over ~2/3 of a step
+    T = D / v + t_ramp                                       # trapezoid: cruise time + one ramp
+    n = max(2, int(round(T * FPS)))
+
+    def s_of(t):
+        if t < t_ramp:
+            return 0.5 * v / t_ramp * t * t
+        if t > T - t_ramp:
+            tr = T - t
+            return D - 0.5 * v / t_ramp * tr * tr
+        return 0.5 * v * t_ramp + v * (t - t_ramp)
+    frames = []
+    extra = int(0.3 * FPS)
+    for i in range(n + extra):
+        t = min(i / FPS, T)
+        s = s_of(t)
+        p, h = sm(min(s, D))
+        h = yaw_start if h is None else h
+        if i < int(0.4 * FPS):
+            h = yaw_start + _wrap(h - yaw_start) * ease(i / (0.4 * FPS))
+        if i >= n - int(0.6 * FPS):
+            u = ease(min(1.0, (i - (n - int(0.6 * FPS))) / (0.6 * FPS + extra)))
+            h = h + _wrap(yaw_end - h) * u
+        # gait phase from the distance covered (feet stay planted at any speed), 0 = right toe-off
+        phase = s / (v * period)
+        w = min(1.0, t / t_ramp) if i < n else 0.0
+        if i < n and t > T - t_ramp:
+            w = min(w, (T - t) / t_ramp)
+        if i >= n:
+            w = 0.0
+        w = ease(w)
+        wp = cyc.pose(sk, phase).copy()
+        wp.pelvis = wp.pelvis + np.array([0.0, -drop, 0.0])
+        base = blend(hang, wp, w) if w < 0.999 else wp
+        st = Stance()
+        st.free = True
+        frames.append(Frame(list(carry or []), None, {}, root=(float(p[0]), float(p[1]), float(h)), stance=st,
+                            base=base))
+    return frames
+
+
+def planned_walk(worker, sk, path, yaw_start, yaw_end, carry=None, speed=None):
     """Frames walking `path` (world XZ points, first = start, last = destination), arriving facing yaw_end.
     `carry`: hand targets kept during the walk (local frame), e.g. holding a tote."""
     v = speed or worker.walk_speed
+    L = 0.41 * worker.stature
     D = path_length(path)
     stance_w = abs(sk.world["foot_l"][0] - sk.world["foot_r"][0]) + 4.0
     ank_y = float(sk.world["foot_l"][1])
@@ -101,7 +247,6 @@ def walk(worker, sk, path, yaw_start, yaw_end, carry=None, speed=None):
     if D < 5.0:
         return turn_in_place(worker, sk, path[-1], yaw_start, yaw_end, carry)
     sm = _smooth(path, D)
-    L = 0.41 * worker.stature
     nst = max(2, int(math.ceil(D / L)))
     L = D / nst
     # time for each arc length: trapezoid speed profile, accelerate / decelerate over one step

@@ -118,6 +118,7 @@ class Cycle:
                     fr[key][ax] -= k * i + c
         self.frames = frames
         self.hip_height = float(np.mean(hips[:, 1]))
+        self.fps = float(clip.fps)
         self.speed = math.hypot(self.travel[0], self.travel[2]) * clip.fps
         # phase 0 = right toe-off: the frame the right foot starts to move forward fastest after standing still
         rz = np.array([fr["foot_r"][2] for fr in frames])
@@ -149,6 +150,17 @@ class Cycle:
         p.pelvis = np.array([off[0], off[1], off[2]])
         self._cache[key] = p
         return p
+
+
+def ground_drop(sk, cyc):
+    """How far the retargeted cycle floats on this body: the planted ankle's lowest height over the cycle minus the
+    standing ankle height (the clip's hips are higher than this body's knees allow) - lower the pelvis by it."""
+    from .kinematics import fk
+    key = ("drop", id(sk))
+    if key not in cyc._cache:
+        low = min(min(fk(sk, cyc.pose(sk, i / cyc.n))[1][f"foot_{s}"][1] for s in ("l", "r")) for i in range(cyc.n))
+        cyc._cache[key] = float(low - sk.world["foot_l"][1])
+    return cyc._cache[key]
 
 
 _CYCLES = {}
