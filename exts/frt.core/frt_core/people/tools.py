@@ -161,7 +161,8 @@ def _impact(s):
 
 def _pliers(s, kind="cutter"):
     # jaws at the origin pointing +X, pivot at x = -3, handles along -X (to x = -18), opening a little
-    mat = {"cutter": "plastic_blue", "stripper": "plastic_yellow", "crimper": "powder_blue"}[kind]
+    mat = {"cutter": "plastic_blue", "stripper": "plastic_yellow", "crimper": "powder_blue",
+           "circlip": "plastic_black"}[kind]
     s.rbox((-0.8, 0, 0), (3.2, 0.8, 1.8), 0.4, "steel_dark", seg=1)                                       # jaws
     s.lathe((-3.0, -0.6, 0), (-3.0, 0.6, 0), [(0, 0.9), (1, 0.9)], "steel_machined", sides=14)            # pivot
     for sz in (-1, 1):
@@ -208,6 +209,32 @@ def _rag(s):
     s.rbox((0, 0, 0), (12.0, 1.4, 10.0), 0.7, "fabric_navy", seg=2)
 
 
+def _grease_gun(s):
+    # coupler tip at the origin pointing -Y (onto the nipple), barrel up +Y, lever pivot at the head, lever along +Y
+    s.lathe((0, 0, 0), (0, 4.0, 0), [(0, 0.5), (0.3, 0.8), (1, 0.8)], "steel_machined", sides=12)       # coupler
+    s.lathe((0, 4.0, 0), (0, 9.0, 0), [(0, 0.5), (1, 0.5)], "chrome", sides=10)                       # pipe
+    s.rbox((0, 10.5, 0), (5.0, 3.0, 4.0), 0.6, "steel_blued", seg=2)                                    # head
+    s.lathe((0, 12.0, 0), (0, 38.0, 0), [(0, 2.6), (0.05, 2.7), (0.95, 2.7), (1, 2.2)], "powder_dark", sides=20)
+
+
+def _flashlight(s):
+    # lens at the origin facing +X, body along -X
+    s.lathe((0, 0, 0), (-4.0, 0, 0), [(0, 1.9), (1, 1.7)], "plastic_black", sides=18)
+    s.rbox((0.05, 0, 0), (0.1, 2.6, 2.6), 0.6, "floor_white", seg=1)
+    s.lathe((-4.0, 0, 0), (-17.0, 0, 0), [(0, 1.4)] + [v for k in range(8) for v in ((0.1 + k * 0.1, 1.5), (0.15 + k * 0.1, 1.4))]
+            + [(1, 1.3)], "steel_blued", sides=16)
+
+
+def _squeegee(s):
+    # blade edge at the origin along Z, handle up +Y
+    s.rbox((0, 0.4, 0), (0.6, 0.8, 10.0), 0.15, "rubber_black", seg=1)
+    s.rbox((0, 2.6, 0), (1.2, 3.6, 10.0), 0.4, "plastic_blue", seg=2)
+
+
+def _torque_long(s):
+    _torque_wrench(s, 72.0)
+
+
 def _pen(s):
     # tip at the origin, body along +Y
     s.lathe((0, 0, 0), (0, 13.5, 0), [(0, 0.05), (0.05, 0.4), (0.9, 0.45), (1, 0.35)], "plastic_blue", sides=10)
@@ -225,5 +252,10 @@ TOOLS.update({
     "caulk_gun": Tool("caulk_gun", "Caulking gun", _caulk, Grip((-30.8, -6.0, 0.0), (1, 0, 0), (0, 0, 1), "power", 1.5)),
     "mallet": Tool("mallet", "Rubber mallet", _mallet, Grip((6.5, 0.0, 2.6), (0, -1, 0), (0, 0, -1), "power", 1.5)),
     "rag": Tool("rag", "Rag", _rag, Grip((0, 1.8, 0), (0, 0, 1), (0, -1, 0), "flat")),
+    "grease_gun": Tool("grease_gun", "Lever grease gun", _grease_gun, None),
+    "flashlight": Tool("flashlight", "Flashlight", _flashlight, None),
+    "squeegee": Tool("squeegee", "Decal squeegee", _squeegee, None),
+    "torque_long": Tool("torque_long", "Long torque wrench", _torque_long, None),
+    "circlip_pliers": Tool("circlip_pliers", "Circlip pliers", lambda s: _pliers(s, "circlip"), None),
     "pen": Tool("pen", "Pen", _pen, Grip((0, 3.0, 0), (0, 1, 0), (1, 0, 0), "tripod")),
 })

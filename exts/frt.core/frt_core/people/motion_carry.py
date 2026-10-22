@@ -30,7 +30,7 @@ def box_hands(p, size, two_hands=True, side="r"):
 
 def carry_pose(sk, size, two_hands=True, side="r"):
     """Where a carried part sits in the worker frame: close in front, hands near elbow height."""
-    elbow = float(sk.world["lowerarm_l"][1])
+    elbow = float(sk.world["upperarm_l"][1]) - sk.length("upperarm_l", "lowerarm_l")   # standing elbow height
     w, h, d = size
     if two_hands:
         return np.array([0.0, elbow - 6.0 - h * 0.1, 18.0 + d / 2])

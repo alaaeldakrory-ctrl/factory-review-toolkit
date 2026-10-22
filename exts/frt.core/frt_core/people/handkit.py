@@ -118,7 +118,43 @@ def _interp(keys, t, kind):
     return keys[-1][1]
 
 
-def keyed(duration, hands=None, tools=None, parts=None, look=None, label="work"):
+def kneel_stance(sk, knee_down="r", forward=34.0, width=None):
+    """One knee on the floor (toes tucked), the other foot planted in front: the pelvis about a thigh length above
+    the floor. knee_down: which knee is on the floor."""
+    from .solver import Stance
+    ank = float(sk.world["foot_l"][1])
+    hw = abs(sk.world["thigh_l"][0] - sk.world["thigh_r"][0]) / 2 + (width or 3.0)
+    thigh = sk.length("thigh_l", "calf_l")
+    shin = sk.length("calf_l", "foot_l")
+    pel = float(sk.world["pelvis"][1])
+    hip_y = thigh * 0.93 + 6.0                                  # knee pad on the floor, thigh near vertical
+    st = Stance()
+    up = knee_down == "l"
+    front, back = ("r", "l") if up else ("l", "r")
+    fx = hw if front == "l" else -hw
+    bx = hw if back == "l" else -hw
+    setattr(st, "left" if front == "l" else "right", (fx, ank, forward))
+    setattr(st, "left" if back == "l" else "right", (bx, 11.0, -shin * 0.92))
+    setattr(st, f"lift_{back}", -58.0)                         # toes tucked under, heel up
+    st.drop = pel - hip_y
+    st.hinge = (-2.0, 25.0)
+    return st
+
+
+def squat_stance(sk, depth=0.55, width=None, heels_up=12.0):
+    """Feet a little wider than the hips, the pelvis lowered by `depth` x the leg length (heels slightly up)."""
+    from .solver import Stance
+    ank = float(sk.world["foot_l"][1])
+    hw = abs(sk.world["thigh_l"][0] - sk.world["thigh_r"][0]) / 2 + (width or 8.0)
+    leg = sk.length("thigh_l", "calf_l") + sk.length("calf_l", "foot_l")
+    st = Stance(left=(hw, ank + 1.0, 4.0), right=(-hw, ank + 1.0, 4.0), yaw=0.0)
+    st.yaw_l, st.yaw_r = -12.0, 12.0                           # toes turned out a little
+    st.lift_l = st.lift_r = -heels_up
+    st.drop = leg * depth
+    return st
+
+
+def keyed(duration, hands=None, tools=None, parts=None, look=None, label="work", stance=None):
     """Frames from keyframe tracks.
 
     tools: {name: (tool key, [(t, 4x4 tool transform in the worker frame)])}
@@ -146,7 +182,7 @@ def keyed(duration, hands=None, tools=None, parts=None, look=None, label="work")
             lk = _interp([(a, np.asarray(b, float)) for a, b in look], t, "v")
         else:
             lk = look
-        frames.append(Frame(tg, None if lk is None else tuple(lk), tl, label=label))
+        frames.append(Frame(tg, None if lk is None else tuple(lk), tl, stance=stance, label=label))
     return frames
 
 

@@ -40,6 +40,8 @@ class Job:
     build: callable             # (S, sk) -> frames
     fixture: callable           # (Shapes) -> None
     focus: tuple                # camera target (worker frame)
+    partner: tuple = None       # (worker id, (x, z, yaw) in the station, build(S, sk, place) -> frames)
+    camera: tuple = None        # optional close-up (eye offset from the focus)
 
     def frames(self, S):
         return self.build(S, S.sk)
@@ -110,7 +112,7 @@ def held(hand_fn, T_ref, key="t"):
     return f
 
 
-def carried(sk, hand_fn, T_ref, key="t"):
+def carried(sk, hand_fn, T_ref, key="t", at=None):
     """Tool pose at the hip that puts the holding hand (rigid grip as at T_ref) hanging naturally: fingers down, palm
     towards the thigh, by the hip. The hand then turns the shortest way between hanging and working."""
     h = hand_fn({key: T_ref})
@@ -123,19 +125,20 @@ def carried(sk, hand_fn, T_ref, key="t"):
     p_h = K.unit(np.array([-sx, 0.0, 0.0]) - f_h * np.dot((-sx, 0.0, 0.0), f_h))
     Fh = np.column_stack([f_h, p_h, np.cross(f_h, p_h)])
     Rm = Fh @ Fw.T
-    q_h = np.array([sx * (abs(sk.world["upperarm_l"][0]) + 3.0), sk.world["pelvis"][1] - 12.0, 8.0])
+    q_h = np.array([sx * (abs(sk.world["upperarm_l"][0]) + 3.0), sk.world["pelvis"][1] - 12.0, 8.0]) if at is None \
+        else np.asarray(at, float)
     T0 = np.eye(4)
     T0[:3, :3] = Rm @ T_ref[:3, :3]
     T0[:3, 3] = q_h - Rm @ (np.asarray(h.point) - T_ref[:3, 3])
     return T0
 
 
-def tool_track(sk, hand_fn, tk, key="t", reach=1.0):
+def tool_track(sk, hand_fn, tk, key="t", reach=1.0, at=None):
     """Tool keys [(0, None), (t1, T_first), ..., (tn, T_last), (tn + reach, None)]: the None ends become carry
     poses at the hip; returns (tool keys, hand keys) with the hand rigid on the tool while carrying it."""
     t1, Tf = tk[1]
     tn, Tl = tk[-2]
-    tk = [(tk[0][0], carried(sk, hand_fn, Tf, key))] + tk[1:-1] + [(tk[-1][0], carried(sk, hand_fn, Tl, key))]
+    tk = [(tk[0][0], carried(sk, hand_fn, Tf, key, at))] + tk[1:-1] + [(tk[-1][0], carried(sk, hand_fn, Tl, key, at))]
     e = 1e-3
     hk = [(0.0, held(hand_fn, Tf, key)), (t1 - e, held(hand_fn, Tf, key)), (t1, hand_fn),
           (tn, hand_fn), (tn + e, held(hand_fn, Tl, key))]
@@ -863,4 +866,7 @@ JOBS = [
     Job("wipe", "Wipe down", "operate", "W50M", j_wipe, _f_bench(), (-4, 94, 50)),
     Job("checklist", "Sign the checklist", "operate", "W95M", j_checklist, _f_bench(_clipboard), (0, 96, 44)),
 ]
+from .jobs_awp import JOBS_AWP  # noqa: E402  (aerial work platform assembly: hydraulics, overhead, heavy, QC)
+
+JOBS = JOBS + JOBS_AWP
 BY_ID = {j.id: j for j in JOBS}

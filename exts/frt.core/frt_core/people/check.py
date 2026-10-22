@@ -24,6 +24,7 @@ POP = {"default": 32.0, "finger": 55.0, "hand": 40.0}      # max change per fram
 # turned or dropped far - the work is too close, too low or behind the worker (solver angles, deg)
 AWKWARD = {"elbow_l": 150.0, "elbow_r": 150.0, "trunk_flexion": 32.0, "trunk_side": 20.0, "trunk_twist": 30.0,
            "neck_flexion": 50.0, "neck_twist": 60.0}
+AWKWARD_LOW_TRUNK = 50.0
 
 
 def _family(j):
@@ -62,11 +63,14 @@ def check_frames(sk, frames, sols, name=""):
                     worst_pop = max(worst_pop, d)
                     issues.append((i, "pop", j, round(d, 1), cap))
         ang = getattr(sol, "angles", None) or {}
+        R, P = fk(sk, pose)
         if f.root is None or getattr(f, "static", True):             # (not while walking)
+            low = any(t.weight >= 0.5 and t.point[1] < P["pelvis"][1] + 5.0 for t in f.targets)
             for k, lim in AWKWARD.items():
+                if k == "trunk_flexion" and low:
+                    lim = AWKWARD_LOW_TRUNK                          # hands below the hips: bending is the task
                 if abs(float(ang.get(k, 0.0))) > lim:
                     issues.append((i, "awkward", k, round(abs(float(ang[k])), 1), lim))
-        R, P = fk(sk, pose)
         for s in ("l", "r"):                                 # elbows / knees never the wrong way
             ua, fa = P[f"lowerarm_{s}"] - P[f"upperarm_{s}"], P[f"hand_{s}"] - P[f"lowerarm_{s}"]
             th, ca = P[f"calf_{s}"] - P[f"thigh_{s}"], P[f"foot_{s}"] - P[f"calf_{s}"]

@@ -34,10 +34,26 @@ def run(jid):
         import traceback
         return {"job": jid, "error": f"{e}\n{traceback.format_exc()[-1500:]}"}
     rep = check_frames(sk, frames, sols, jid)
+    data = {"frames": frames, "sols": sols, "worker": job.worker}
+    issues = list(rep["issues"])
+    if job.partner:                                   # a second worker in the station: solved and checked the same way
+        wid2, place, build2 = job.partner
+        w2 = WORKERS[wid2]
+        sk2 = Skeleton.for_worker(w2)
+        S2 = PostureSolver(sk2, w2)
+        f2 = build2(S2, sk2, place)
+        s2 = solve_frames(S2, f2, step=1, log=lambda *a: None)
+        rep2 = check_frames(sk2, f2, s2, jid + "/partner")
+        data["partner"] = {"frames": f2, "sols": s2, "worker": wid2, "place": place}
+        issues += [(i, k, "partner:" + j, a, b) for i, k, j, a, b in rep2["issues"]]
+        for k_ in ("worst_pop", "worst_limit_over", "worst_contact_cm"):
+            rep[k_] = max(rep[k_], rep2[k_])
+        for k_, v_ in rep2["counts"].items():
+            rep["counts"][k_] = rep["counts"].get(k_, 0) + v_
     with open(os.path.join(OUT, "cache", jid + ".pkl"), "wb") as f:
-        pickle.dump({"frames": frames, "sols": sols, "worker": job.worker}, f)
+        pickle.dump(data, f)
     agg = {}
-    for it in rep["issues"]:
+    for it in issues:
         agg.setdefault(f"{it[1]}:{it[2]}", []).append(it[3])
     return {"job": jid, "worker": job.worker, "frames": rep["frames"], "seconds": round(time.time() - t0, 1),
             "worst_pop": rep["worst_pop"], "worst_limit_over": rep["worst_limit_over"],

@@ -83,12 +83,21 @@ def solve_frames(S, frames, stance=None, step=1, log=print, label=""):
     return sols
 
 
+PART_BUILDERS = {}          # kind -> builder(Shapes, args) for composite parts (registered by job libraries)
+
+
 def part_shapes(spec):
-    """Geometry of a handled part from its spec: "box:WxHxD:look" (centred) or "ring:R:r:look" (cable tie)."""
+    """Geometry of a handled part from its spec: "box:WxHxD:look" (centred), "ring:R:r:look" (cable tie),
+    "cyl:R:L:look" (along +X from the origin), or a registered composite kind (PART_BUILDERS)."""
     from ..geom import Shapes
     s = Shapes()
     kind, *rest = spec.split(":")
-    if kind == "box":
+    if kind in PART_BUILDERS:
+        PART_BUILDERS[kind](s, rest)
+    elif kind == "cyl":
+        s.cylinder((0, 0, 0), (float(rest[1]), 0, 0), float(rest[0]), rest[2] if len(rest) > 2 else "steel_machined",
+                   sides=20)
+    elif kind == "box":
         w, h, d = (float(v) for v in rest[0].split("x"))
         s.rbox((0, 0, 0), (w, h, d), min(1.2, min(w, h, d) * 0.12), rest[1] if len(rest) > 1 else "cardboard", seg=2)
     elif kind == "ring":

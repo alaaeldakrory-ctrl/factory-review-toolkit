@@ -59,6 +59,8 @@ class Stance:
     yaw_r: float = None
     lift_l: float = 0.0                           # swing foot: toe-up pitch (deg) while it is in the air
     lift_r: float = 0.0
+    drop: float = None                            # posture: pelvis this far below standing (kneel / squat), cm
+    hinge: tuple = None                           # posture: (min, max) hip hinge allowed, deg
 
     def foot_yaw(self, s):
         v = self.yaw_l if s == "l" else self.yaw_r
@@ -524,10 +526,18 @@ class PostureSolver:
             return c
         starts = [prev_v] if prev_v is not None else (seeds or [np.zeros(8), np.array([0, 25, 0, 0, 15, 5, 0, 0.0]),
                                                                   np.array([0, 4, 3, 0, 35, 15, 0, 0.0])])
+        lo, hi = LO.copy(), HI.copy()
+        if getattr(stance, "drop", None) is not None:              # kneeling / squatting: the pelvis height is given
+            lo[1], hi[1] = stance.drop - 3.0, stance.drop + 3.0
+            if prev_v is not None:                                  # and an upright fresh start: no inherited lean
+                starts = list(starts) + [np.array([0.0, stance.drop, 0.0, 0.0, 5.0, 3.0, 0.0, 0.0])]
+            starts = [np.clip(np.asarray(x0, float), lo, hi) for x0 in starts]
+        if getattr(stance, "hinge", None) is not None:
+            lo[4], hi[4] = stance.hinge
         best = None
         for x0 in starts:
-            x, fx = nelder_mead(f, np.asarray(x0, float), SCALE, LO, HI, iters=220 if prev_v is None else 90)
-            x, fx = nelder_mead(f, x, SCALE * 0.3, LO, HI, iters=80)              # polish
+            x, fx = nelder_mead(f, np.asarray(x0, float), SCALE, lo, hi, iters=220 if prev_v is None else 90)
+            x, fx = nelder_mead(f, x, SCALE * 0.3, lo, hi, iters=80)              # polish
             if best is None or fx < best[1]:
                 best = (x, fx)
         x, fx = best

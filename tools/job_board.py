@@ -27,7 +27,7 @@ from frt_core.studio import dress   # noqa: E402
 from frt_core.usdio import safe_stage   # noqa: E402
 
 OUT = os.path.join(HERE, "..", "out", "people", "jobs")
-DX, DZ = 260.0, 320.0                       # station spacing
+DX, DZ = 330.0, 380.0                       # station spacing
 
 
 def station(i, cols):
@@ -38,6 +38,8 @@ def close_up(job, x, z):
     """Camera for the hands: panel jobs from the right side past the panel edge, bench jobs from across the bench."""
     fx, fy, fz = job.focus
     at = [x + fx, fy - 4.0, z + fz]
+    if job.camera:                                 # the job's own close-up: eye offset from the focus
+        return [at[0] + job.camera[0], at[1] + job.camera[1], at[2] + job.camera[2]], at
     if getattr(job.fixture, "kind", "") == "panel":
         eye = [at[0] - 150.0, at[1] + 30.0, at[2] - 30.0]
         at = [at[0] + 8.0, at[1] + 8.0, at[2] - 14.0]
@@ -49,7 +51,7 @@ def close_up(job, x, z):
 
 def main():
     only = next((a.split("=")[1].split(",") for a in sys.argv[1:] if a.startswith("--only=")), None)
-    cols = int(next((a.split("=")[1] for a in sys.argv[1:] if a.startswith("--cols=")), 6))
+    cols = int(next((a.split("=")[1] for a in sys.argv[1:] if a.startswith("--cols=")), 10))
     jobs = [j for j in JOBS if not only or j.id in only]
     out = os.path.join(OUT, "board.usd")
     shots, length = [], 0
@@ -88,6 +90,13 @@ def main():
                 if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
                     for tc in op.GetTimeSamples():
                         op.Set(Gf.Vec3d(0.0, 0.0, 0.0), tc)
+            if c.get("partner"):                          # the second worker, placed in the station frame
+                pc = c["partner"]
+                w2 = WORKERS[pc["worker"]]
+                px, pz, pyaw = pc["place"]
+                UsdGeom.Xform.Define(st, f"{base}/{w2.id}_2")
+                bake(st, f"{base}/{w2.id}_2", w2, pc["frames"], lib, sols=pc["sols"], root=(px, pz, pyaw),
+                     parts_root="/World/Asset/Parts", log=lambda *a: None)
             n = len(c["frames"])
             length = max(length, n)
             eye, at = close_up(job, x, z)
