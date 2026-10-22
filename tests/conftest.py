@@ -1,4 +1,6 @@
 import os
+os.environ.setdefault("FRT_NO_BODIES", "1")                     # tests never depend on local body exports
+import os
 import sys
 
 import pytest

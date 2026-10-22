@@ -127,3 +127,103 @@ def place(origin, x_axis, y_axis):
     T = np.eye(4)
     T[:3, 0], T[:3, 1], T[:3, 2], T[:3, 3] = x, y, np.cross(x, y), origin
     return T
+
+
+# ---------------------------------------------------------------------------------------------- more hand tools
+# Frames: the tool's working point at the origin. Grips in TOOLS are kept for the older generators; the hand-job
+# library (jobs.py) places hands with the rules in handkit.py.
+def _wrench(s, length=18.0):
+    # open end at the origin (jaws open towards -X), shaft along +X, ring end at +length
+    for sy in (-1, 1):
+        s.rbox((-0.6, 0.0, sy * 1.15), (2.6, 0.6, 0.7), 0.2, "chrome", seg=1)                    # jaws
+    s.rbox((1.0, 0.0, 0.0), (2.2, 0.6, 3.0), 0.5, "chrome", seg=1)
+    s.rprism((1.5, 0, 0), (length - 1.8, 0, 0), 1.3, 0.55, 0.25, "chrome", up=(0, 0, 1))
+    s.lathe((length, -0.35, 0), (length, 0.35, 0), [(0, 1.6), (1, 1.6)], "chrome", sides=20)
+    s.lathe((length, -0.36, 0), (length, 0.36, 0), [(0, 0.85), (1, 0.85)], "hole", sides=12)
+
+
+def _hex_key(s):
+    # short arm in the socket along -Y from the origin, long arm along +X at the top
+    s.sweep([(0, -2.8, 0), (0, 0.0, 0), (0.6, 0.6, 0), (9.0, 0.6, 0)], 0.32, "steel_blued", sides=6)
+
+
+def _impact(s):
+    # bit tip at the origin, body behind it along -X, pistol handle down from x = -11
+    s.lathe((0, 0, 0), (-3.5, 0, 0), [(0, 0.15), (0.2, 0.35), (1, 0.35)], "chrome", sides=6)               # bit
+    s.lathe((-3.5, 0, 0), (-7.5, 0, 0), [(0, 1.1), (0.4, 1.6), (1, 1.9)], "steel_machined", sides=16)       # chuck
+    s.lathe((-7.5, 0, 0), (-17.0, 0, 0), [(0, 2.6), (0.5, 2.9), (0.9, 2.8), (1, 2.2)], "plastic_yellow", sides=20)
+    s.lathe((-14.0, 0, 0), (-17.2, 0, 0), [(0, 2.9), (1, 2.5)], "plastic_black", sides=20)                  # motor cap
+    s.rprism((-12.0, -1.0, 0), (-13.5, -13.0, 0), 2.6, 3.4, 1.2, "grip_rubber", up=(1, 0, 0))             # handle
+    s.rbox((-10.6, -3.2, 0), (1.2, 2.2, 1.0), 0.4, "plastic_black", seg=1)                                # trigger
+    s.rbox((-13.8, -15.0, 0), (8.5, 4.0, 6.0), 1.0, "plastic_black", seg=2)                               # battery
+    s.rbox((-13.8, -12.8, 0), (8.7, 0.6, 6.2), 0.2, "plastic_yellow", seg=1)
+
+
+def _pliers(s, kind="cutter"):
+    # jaws at the origin pointing +X, pivot at x = -3, handles along -X (to x = -18), opening a little
+    mat = {"cutter": "powder_red", "stripper": "plastic_yellow", "crimper": "powder_blue"}[kind]
+    s.rbox((-0.8, 0, 0), (3.2, 0.8, 1.8), 0.4, "steel_dark", seg=1)                                       # jaws
+    s.lathe((-3.0, -0.6, 0), (-3.0, 0.6, 0), [(0, 0.9), (1, 0.9)], "steel_machined", sides=14)            # pivot
+    for sz in (-1, 1):
+        s.sweep([(-3.0, 0, sz * 0.4), (-8.0, 0, sz * 1.1), (-17.5, 0, sz * 1.6)], 0.55, "steel_dark", sides=8)
+        s.sweep([(-7.5, 0, sz * 1.05), (-17.8, 0, sz * 1.65)], 0.85, mat, sides=10)                     # grips
+    if kind == "crimper":
+        s.rbox((-1.2, 0, 0), (2.4, 1.4, 2.4), 0.3, "steel_dark", seg=1)
+
+
+def _plug(s):
+    # mains plug: pins along +Z from the face at z = 0, body behind, cable out the back
+    for sx in (-0.95, 0.95):
+        s.lathe((sx, 0, 0), (sx, 0, 1.9), [(0, 0.24), (1, 0.24)], "steel_machined", sides=10)
+    s.rbox((0, 0, -1.8), (4.2, 3.8, 3.6), 1.0, "plastic_black", seg=2)
+    s.lathe((0, 0, -3.6), (0, 0, -6.0), [(0, 0.9), (1, 0.55)], "rubber_black", sides=12)
+    s.sweep([(0, 0, -6.0), (0, -1.5, -11.0), (0, -6.0, -16.0)], 0.4, "cable_pvc", sides=8)
+
+
+def _scanner(s):
+    # window at the origin facing +X, handle down
+    s.rbox((-4.0, 0, 0), (9.0, 4.0, 4.6), 1.6, "plastic_yellow", seg=2)
+    s.rbox((0.45, 0, 0), (0.2, 3.0, 3.6), 0.3, "lamp_orange", seg=1)
+    s.rprism((-6.0, -1.5, 0), (-7.5, -11.0, 0), 2.4, 3.2, 1.1, "plastic_black", up=(1, 0, 0))
+    s.rbox((-4.6, -3.4, 0), (1.1, 2.0, 1.0), 0.4, "plastic_black", seg=1)
+
+
+def _caulk(s):
+    # nozzle tip at the origin pointing +X, tube along -X, handle under the rear
+    s.lathe((0, 0, 0), (-6.0, 0, 0), [(0, 0.15), (0.6, 0.6), (1, 1.2)], "plastic_grey", sides=12)
+    s.lathe((-6.0, 0, 0), (-28.0, 0, 0), [(0, 2.4), (1, 2.4)], "plastic_white" if False else "nylon_white", sides=20)
+    s.rbox((-17.0, -2.8, 0), (24.0, 0.6, 3.6), 0.2, "steel_dark", seg=1)                                  # cradle
+    s.rprism((-30.0, -1.0, 0), (-31.5, -12.0, 0), 2.2, 3.0, 1.0, "powder_red", up=(1, 0, 0))             # handle
+    s.rprism((-28.0, -2.0, 0), (-27.0, -11.0, 0), 1.2, 2.4, 0.5, "steel_dark", up=(1, 0, 0))             # trigger
+    s.cylinder((-29.0, 0, 0), (-40.0, 0, 0), 0.35, "steel_machined", 8)                                  # plunger rod
+
+
+def _mallet(s, length=30.0):
+    _hammer_like = TOOLS.get("hammer")
+    s.lathe((0, 0, 0), (length - 2.0, 0, 0), [(0, 1.5), (0.5, 1.35), (1, 1.4)], "wood_top", sides=14)
+    s.lathe((length, -5.5, 0), (length, 5.5, 0), [(0, 3.2), (0.08, 3.6), (0.92, 3.6), (1, 3.2)], "rubber_black", sides=22)
+
+
+def _rag(s):
+    s.rbox((0, 0, 0), (12.0, 1.4, 10.0), 0.7, "fabric_navy", seg=2)
+
+
+def _pen(s):
+    # tip at the origin, body along +Y
+    s.lathe((0, 0, 0), (0, 13.5, 0), [(0, 0.05), (0.05, 0.4), (0.9, 0.45), (1, 0.35)], "plastic_blue", sides=10)
+
+
+TOOLS.update({
+    "wrench_comb": Tool("wrench_comb", "Combination wrench", _wrench, Grip((14.0, 0.0, 0.0), (0, 0, -1), (0, -1, 0), "power", 0.9)),
+    "hex_key": Tool("hex_key", "Hex key", _hex_key, Grip((6.0, 0.6, 0.0), (0, 0, -1), (0, -1, 0), "power", 0.6)),
+    "impact_driver": Tool("impact_driver", "Impact driver", _impact, Grip((-12.6, -7.0, 0.0), (1, 0, 0), (0, 0, 1), "power", 1.7)),
+    "flush_cutter": Tool("flush_cutter", "Side cutters", lambda s: _pliers(s, "cutter"), Grip((-13.0, 0, 0), (-1, 0, 0), (0, -1, 0), "power", 1.6)),
+    "wire_stripper": Tool("wire_stripper", "Wire stripper", lambda s: _pliers(s, "stripper"), Grip((-13.0, 0, 0), (-1, 0, 0), (0, -1, 0), "power", 1.6)),
+    "crimper": Tool("crimper", "Crimping pliers", lambda s: _pliers(s, "crimper"), Grip((-13.0, 0, 0), (-1, 0, 0), (0, -1, 0), "power", 1.6)),
+    "plug": Tool("plug", "Mains plug", _plug, Grip((0.0, 2.6, -2.0), (0, 0, 1), (0, -1, 0), "pinch")),
+    "scanner": Tool("scanner", "Barcode scanner", _scanner, Grip((-6.8, -6.0, 0.0), (1, 0, 0), (0, 0, 1), "power", 1.5)),
+    "caulk_gun": Tool("caulk_gun", "Caulking gun", _caulk, Grip((-30.8, -6.0, 0.0), (1, 0, 0), (0, 0, 1), "power", 1.5)),
+    "mallet": Tool("mallet", "Rubber mallet", _mallet, Grip((6.5, 0.0, 2.6), (0, -1, 0), (0, 0, -1), "power", 1.5)),
+    "rag": Tool("rag", "Rag", _rag, Grip((0, 1.8, 0), (0, 0, 1), (0, -1, 0), "flat")),
+    "pen": Tool("pen", "Pen", _pen, Grip((0, 3.0, 0), (0, 1, 0), (1, 0, 0), "tripod")),
+})

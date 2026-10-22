@@ -62,7 +62,8 @@ def solve_frames(S, frames, stance=None, step=1, log=print, label=""):
             continue
         if i not in keyset and prev is not None and i < len(frames) - 1:
             continue
-        sols[i] = S.solve(f.targets, look=f.look, stance=f.stance or stance, prev=prev, smooth=1.0, swing=f.swing)
+        sols[i] = S.solve(f.targets, look=f.look, stance=f.stance or stance, prev=prev, smooth=1.0, swing=f.swing,
+                          base=f.base)
         prev = sols[i]
     # fill the frames between solved ones
     last = None
@@ -106,13 +107,14 @@ def _rootT(r):
 
 
 def bake(stage, path, worker, frames, lib, start=0, stance=None, solver=None, log=print, root=None, step=1,
-         parts_root="/World/Asset/Parts"):
+         parts_root="/World/Asset/Parts", sols=None):
     """Tools (keys in TOOLS) live under the worker; parts (names "part:<id>", spec in the key) live in the world:
     while handled they follow the hands, afterwards they stay where they were put (USD holds the last sample)."""
     """root: the work spot (x, z, yaw) for frames that carry none (frames carry their own while walking)."""
     sk = Skeleton.for_worker(worker)
     S = solver or PostureSolver(sk, worker)
-    sols = solve_frames(S, frames, stance, step, log, f"{worker.id}: ")
+    if sols is None:
+        sols = solve_frames(S, frames, stance, step, log, f"{worker.id}: ")
     write_worker(stage, f"{path}/Body", worker, lib, pose=sols[0].pose if sols else None, sk=sk)
     anim = UsdSkel.Animation(stage.GetPrimAtPath(f"{path}/Body/Skeleton/Pose"))
     tr_a, rot_a = anim.GetTranslationsAttr(), anim.GetRotationsAttr()

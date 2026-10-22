@@ -67,6 +67,29 @@ def _smooth(path, D):
     return f
 
 
+def _mocap_base(sk, phase, w, hang):
+    """Walking base pose from the mocap cycle at gait phase, faded in from the standing pose by w (0..1)."""
+    from . import mocap as MC
+    from .bake import blend
+    if not MC.available("Walking"):
+        return None
+    walkp = MC.cycle("Walking").pose(sk, phase)
+    if w >= 0.999:
+        return walkp
+    return blend(hang, walkp, w)
+
+
+def _hang_pose(sk, worker):
+    from .solver import PostureSolver
+    key = id(sk)
+    if key not in _HANG:
+        _HANG[key] = PostureSolver(sk, worker).solve([], look=None).pose
+    return _HANG[key]
+
+
+_HANG = {}
+
+
 def walk(worker, sk, path, yaw_start, yaw_end, carry=None, speed=None):
     """Frames walking `path` (world XZ points, first = start, last = destination), arriving facing yaw_end.
     `carry`: hand targets kept during the walk (local frame), e.g. holding a tote."""
@@ -114,16 +137,19 @@ def walk(worker, sk, path, yaw_start, yaw_end, carry=None, speed=None):
         """(world xz, yaw, height, pitch) of a foot when the root is at arc length s."""
         seq = plants[side]
         for (s0, p0, h0), (s1, p1, h1) in zip(seq, seq[1:]):
-            a, b = max(s0, s1 - 0.9 * L), s1 - 0.1 * L          # the other foot is planted outside this window
-            if s1 > D:                                           # closing step: after arrival
-                a, b = D - 0.05, D + 0.5 * L
+            # a foot lifts just after the other one lands and lands when the body is half a step behind it, so the
+            # body is always between the feet (double support ~10 % of the step)
+            a, b = max(0.0, s1 - 1.4 * L), s1 - 0.5 * L
+            if s1 > D:                                           # closing step beside the last one, as the body arrives
+                a, b = D - 0.45 * L, D
             if s < a:
                 return p0, h0, 0.0, 0.0
             if s <= b:
                 u = (s - a) / max(b - a, 1e-6)
                 e = ease(u)
-                return (p0 + (p1 - p0) * e, h0 + _wrap(h1 - h0) * e, 7.0 * math.sin(math.pi * u),
-                        18.0 * math.sin(math.pi * u) * (1 - u))
+                # toe-off (heel up, toe down) -> level -> heel strike (toe up)
+                pitch = -28.0 * math.exp(-((u - 0.04) / 0.12) ** 2) + 14.0 * math.exp(-((u - 0.96) / 0.08) ** 2)
+                return (p0 + (p1 - p0) * e, h0 + _wrap(h1 - h0) * e, 6.0 * math.sin(math.pi * u) ** 0.8, pitch)
         s1, p1, h1 = seq[-1]
         return p1, h1, 0.0, 0.0
     extra = int(0.45 * FPS)                                      # the closing step after the root stops
@@ -158,7 +184,11 @@ def walk(worker, sk, path, yaw_start, yaw_end, carry=None, speed=None):
         if carry:
             for t_ in carry:
                 swing.pop(t_.side, None)
-        frames.append(Frame(list(carry or []), None, {}, root=root, stance=st, swing=swing))
+        w = min(1.0, (s_of(min(t, T)) if i < n else D) / max(acc_d, 1e-6), 1.0) if i < n else max(0.0, 1 - (i - n + 1) / extra)
+        if i < n and t > T - t_acc:
+            w = min(w, (T - t) / t_acc * 0.7 + 0.3)
+        base = _mocap_base(sk, s / (2 * L) - 0.05, w, _hang_pose(sk, worker))
+        frames.append(Frame(list(carry or []), None, {}, root=root, stance=st, swing=swing, base=base))
     return frames
 
 

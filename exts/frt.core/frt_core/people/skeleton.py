@@ -53,7 +53,18 @@ class Skeleton:
         return float(np.linalg.norm(self.world[b] - self.world[a]))
 
     @classmethod
-    def for_worker(cls, worker):
+    def for_worker(cls, worker, prefer_body=True):
+        """The worker's skeleton: from their realistic body (MPFB export) when there is one, else built from the
+        anthropometric dimensions."""
+        if prefer_body:
+            from . import body as B
+            d = B.load(worker.id)
+            if d is not None:
+                return B.skeleton(d)
+        return cls.anthropometric(worker)
+
+    @classmethod
+    def anthropometric(cls, worker):
         d = worker.dims
         P = {}
         hip_y = d["hip_height"] - 1.5                      # hip joint centres ~ at the greater trochanter

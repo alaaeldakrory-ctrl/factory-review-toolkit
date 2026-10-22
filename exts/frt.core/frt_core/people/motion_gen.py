@@ -26,11 +26,13 @@ class Frame:
     swing: dict = None                            # free-arm swing (cm forward per side) while walking
     static: bool = False                          # same as the previous frame (waiting): reuse its solution
     label: str = ""                               # step / phase name (timeline, findings)
+    base: object = None                           # full-body base pose (mocap) the solver works on top of
 
 
 def ease(u):
+    """Minimum-jerk profile (Flash & Hogan): the bell-shaped speed of real human reaching movements."""
     u = min(1.0, max(0.0, u))
-    return u * u * (3 - 2 * u)
+    return u * u * u * (10 - 15 * u + 6 * u * u)
 
 
 def ease_in(u):                                   # accelerating (a strike)
@@ -74,16 +76,43 @@ def lerp_T(A, B, u):
     return M
 
 
-def lerp_target(a, b, u, grip=None):
-    def v(x, y):
-        r = np.asarray(x, float) * (1 - u) + np.asarray(y, float) * u
-        return tuple(r)
+CLOSING = ("power", "pinch", "tripod", "lateral", "hook", "trigger", "point")
 
-    def n(x, y):
-        r = np.asarray(x, float) * (1 - u) + np.asarray(y, float) * u
-        return tuple(r / (np.linalg.norm(r) or 1.0))
-    return HandTarget(a.side, v(a.point, b.point), n(a.fingers, b.fingers), n(a.palm, b.palm),
-                      grip or (a.grip if u < 0.5 else b.grip), a.weight * (1 - u) + b.weight * u)
+
+def grip_blend(ga, gb, u):
+    """Hand shape between two grips. Reaching for something to hold, the hand opens on the way (pre-shaping) and
+    closes on contact - as people do."""
+    if ga == gb:
+        return ga
+    if str(gb).split(":")[0] in CLOSING and not (isinstance(gb, tuple)) and str(ga).split(":")[0] not in CLOSING:
+        if u < 0.7:
+            return ("blend", ga, "open", ease(u / 0.7))
+        return ("blend", "open", gb, ease((u - 0.7) / 0.3))
+    if str(ga).split(":")[0] in CLOSING and not isinstance(ga, tuple) and str(gb).split(":")[0] not in CLOSING:
+        if u < 0.4:                                             # letting go: open first, then relax
+            return ("blend", ga, "open", ease(u / 0.4))
+        return ("blend", "open", gb, ease((u - 0.4) / 0.6))
+    return ("blend", ga, gb, u)
+
+
+def _hand_frame(t):
+    f = np.asarray(t.fingers, float)
+    f = f / (np.linalg.norm(f) or 1.0)
+    p = np.asarray(t.palm, float)
+    p = p - f * np.dot(p, f)
+    p = p / (np.linalg.norm(p) or 1.0)
+    return np.column_stack([f, p, np.cross(f, p)])
+
+
+def lerp_target(a, b, u, grip=None):
+    """Hand target between two others: position linear, orientation by a true rotation interpolation (slerp of
+    the hand frame - never through a degenerate in-between that would flip the hand), hand shape blended."""
+    from .bake import _R, _q, _slerp
+    Fa, Fb = _hand_frame(a), _hand_frame(b)
+    Fu = _R(_slerp(_q(Fa), _q(Fb), u))
+    pt = np.asarray(a.point, float) * (1 - u) + np.asarray(b.point, float) * u
+    return HandTarget(a.side, tuple(pt), tuple(Fu[:, 0]), tuple(Fu[:, 1]),
+                      grip or grip_blend(a.grip, b.grip, u), a.weight * (1 - u) + b.weight * u)
 
 
 def rest_targets(solver):

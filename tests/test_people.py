@@ -90,3 +90,26 @@ def test_process_planner_and_rules():
     ok, _ = RU.rula_frame({"shoulder_r": 15, "elbow_r": 80, "wrist_r": 2, "neck_flexion": 5, "trunk_flexion": 2,
                            "knee_l": 5, "knee_r": 5})
     assert ok <= 2
+
+
+def test_hand_jobs_library_and_checks():
+    import numpy as np
+    from frt_core.people import handkit as K
+    from frt_core.people.check import check_frames
+    from frt_core.people.jobs import BY_ID, JOBS
+    from frt_core.people.bake import solve_frames
+    from frt_core.people.solver import PostureSolver
+    assert len(JOBS) >= 20 and len({j.id for j in JOBS}) == len(JOBS)
+    sk = Skeleton.for_worker(WORKERS["W50M"])
+    # power grip: palm faces across the handle, thumb towards the handle's thumb end
+    t = K.power(sk, "r", (0.0, 100.0, 40.0), (0.0, 1.0, 0.0))
+    th = np.cross(t.fingers, t.palm)
+    assert np.dot(th, (0.0, 1.0, 0.0)) > 0.9
+    S = PostureSolver(sk, WORKERS["W50M"])
+    for g in ("relaxed", "power:1.5", "pinch", "point", "trigger:1.7:0.5", ("blend", "open", "power:1.5", 0.5)):
+        assert S.finger_angles("r", g)
+    # a short slice of a job solves and passes the motion checks
+    frames = BY_ID["unplug"].frames(S)[:6]
+    sols = solve_frames(S, frames, log=lambda *a: None)
+    rep = check_frames(sk, frames, sols, "unplug")
+    assert rep["worst_limit_over"] == 0.0 and rep["worst_pop"] == 0.0

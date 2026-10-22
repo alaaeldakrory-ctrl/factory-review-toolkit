@@ -121,7 +121,7 @@ def pose_arrays(sk, pose):
     return Vt.Vec3fArray(tr), Vt.QuatfArray(rot)
 
 
-def write_worker(stage, path, worker, lib, pose=None, sk=None):
+def write_worker(stage, path, worker, lib, pose=None, sk=None, mannequin=False):
     """SkelRoot at path with Skeleton, mannequin body (rigidly bound) and a SkelAnimation holding `pose`
     (joint -> Gf.Quatf local rotation; joints left out keep their rest orientation)."""
     sk = sk or Skeleton.for_worker(worker)
@@ -141,6 +141,14 @@ def write_worker(stage, path, worker, lib, pose=None, sk=None):
     anim.CreateScalesAttr(Vt.Vec3hArray([Gf.Vec3h(1, 1, 1)] * len(NAMES)))
     UsdSkel.BindingAPI.Apply(skel.GetPrim()).CreateAnimationSourceRel().SetTargets([anim.GetPath()])
     UsdSkel.BindingAPI.Apply(root.GetPrim()).CreateSkeletonRel().SetTargets([skel.GetPath()])
+    from . import body as B
+    d = B.load(worker.id) if mannequin is not True else None
+    if d is not None:                                            # realistic skinned body
+        B.write_body_mesh(stage, f"{path}/Mesh", d, sk, lib, worker.ppe)
+        prim = root.GetPrim()
+        prim.CreateAttribute("frt:worker", Sdf.ValueTypeNames.String).Set(worker.id)
+        prim.CreateAttribute("frt:stature", Sdf.ValueTypeNames.Float).Set(float(worker.stature))
+        return root, sk
     UsdGeom.Scope.Define(stage, f"{path}/Body")
     for j, shp in body_parts(sk, worker).items():
         meshes = shp.build(stage, f"{path}/Body/{j}", lib.refs(list(shp.groups)))

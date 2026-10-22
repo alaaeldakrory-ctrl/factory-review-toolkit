@@ -105,6 +105,11 @@ def _outside(p, hull):
     return worst
 
 
+def _quat(R):
+    from .kinematics import quat_from_matrix
+    return quat_from_matrix(R)
+
+
 def nelder_mead(f, x0, step, lo, hi, iters=160, tol=1e-4):
     n = len(x0)
     xs = [np.clip(x0, lo, hi)]
@@ -151,13 +156,19 @@ class PostureSolver:
         self._wrap = {}
 
     # ------------------------------------------------------------------ building a pose from the variables
-    def build(self, v, targets, look, stance, free_arms="hang", swing=None):
+    def build(self, v, targets, look, stance, free_arms="hang", swing=None, base=None, prev_arm=None):
+        """base: a full-body Pose (mocap) for the trunk, head and free arms - only the legs (feet on the stance) and
+        the hands that have targets are solved on top of it."""
         dx, drop, dz, yaw, hinge, flex, lat, twist = v
         sk = self.sk
-        pose = Pose(pelvis=np.array([dx, -drop, dz]))
-        pose.rot["pelvis"] = ry(yaw) @ rx(hinge)
-        for j, kf, kl, kt in SPINE:
-            pose.rot[j] = rx(flex * kf) @ rz(-lat * kl) @ ry(twist * kt)
+        if base is not None:
+            pose = base.copy()
+            pose.pelvis = base.pelvis + np.array([dx, -drop, dz])
+        else:
+            pose = Pose(pelvis=np.array([dx, -drop, dz]))
+            pose.rot["pelvis"] = ry(yaw) @ rx(hinge)
+            for j, kf, kl, kt in SPINE:
+                pose.rot[j] = rx(flex * kf) @ rz(-lat * kl) @ ry(twist * kt)
         R, P = fk(sk, pose, ["spine_03", "thigh_l", "thigh_r"])
         terms = {}
         # legs: knees forward, feet flat on the stance
@@ -191,12 +202,16 @@ class PostureSolver:
         for s, sx in (("l", 1.0), ("r", -1.0)):
             t = tg.get(s)
             S0 = P[f"upperarm_{s}"]
+            if t is None and base is not None:                                   # mocap arm swing as it is
+                self._grip(pose, s, "relaxed")
+                continue
             if t is None:
                 grip_pt = S0 + DOWN * (sum(self.L[s]) + self.hand_len * 0.45) * 0.97 + R["spine_03"] @ FWD * 4.0
                 if swing and s in swing:                                         # walking arm swing
                     grip_pt = grip_pt + R["pelvis"] @ FWD * swing[s] + UP * abs(swing[s]) * 0.18
-                fingers, palm, gname = DOWN + R["spine_03"] @ FWD * 0.1, np.array([-sx, 0, 0.0]), "relaxed"
-                wgt = 0.0
+                fingers = unit(DOWN + R["spine_03"] @ FWD * 0.1)
+                palm = R["spine_03"] @ np.array([-sx, 0, 0.0])                   # palm towards the thigh
+                gname, wgt = "relaxed", 0.0
             else:
                 grip_pt = np.asarray(t.point, float)
                 gname, wgt = t.grip, t.weight
@@ -219,27 +234,23 @@ class PostureSolver:
             a = (L1 * L1 - L2 * L2 + dd * dd) / (2 * dd)
             h = math.sqrt(max(L1 * L1 - a * a, 0.0))
             trunk = R2["spine_03"]
-            pole = trunk @ unit(np.array([sx * 0.35, -1.0, -0.25]))              # elbow down, a little out and back
-            pole = unit(pole - u * np.dot(pole, u))
-            elbow = S + u * a + pole * h
-            ue, fe = unit(elbow - S), unit(S + u * dd - elbow)
-            bend = fe - ue * np.dot(fe, ue)
-            Ru = frame_rot(np.array([sx, 0, 0]), FWD, ue, bend if np.linalg.norm(bend) > 1e-6 else trunk @ FWD)
-            n = np.cross(ue, fe)
-            Rf = axis_angle(n, math.radians(angle(ue, fe))) @ Ru if np.linalg.norm(n) > 1e-9 else Ru
             Rh = frame_rot(np.array([sx, 0, 0]), DOWN, fingers, palm)
+            pa = (prev_arm or {}).get(s)
+            Ru, Rf, wsw, tau, elbow, sw = self._arm(s, sx, S, u, a, h, dd, trunk, Rh, True, pa)
+            angles[f"swivel_{s}"], angles[f"twist_{s}"] = sw, tau
+            ue, fe = unit(elbow - S), unit(S + u * dd - elbow)
             Rcl = R2[f"clavicle_{s}"]
             pose.rot[f"upperarm_{s}"] = Rcl.T @ Ru
             pose.rot[f"lowerarm_{s}"] = Ru.T @ Rf
             pose.rot[f"hand_{s}"] = Rf.T @ Rh
             elev = angle(ue, trunk @ DOWN)
             eflex = angle(ue, fe)
-            wdev = angle(fe, fingers)
+            wdev = wsw
             angles.update({f"shoulder_{s}": elev, f"elbow_{s}": eflex, f"wrist_{s}": wdev})
             if t is not None:
                 terms[f"shoulder_{s}"] = (max(0.0, elev - 20.0) / 45.0) ** 2 * wgt
                 terms[f"elbow_{s}"] = ((eflex - 80.0) / 55.0) ** 2 * 0.3 * wgt
-                terms[f"wrist_{s}"] = (wdev / 30.0) ** 2 * 0.6 * wgt
+                terms[f"wrist_{s}"] = (wdev / 30.0) ** 2 * 0.6 * wgt + (max(0.0, abs(tau) - 70.0) / 20.0) ** 2 * wgt
             self._grip(pose, s, gname)
         # head and neck: look at the work
         if look is not None:
@@ -285,37 +296,111 @@ class PostureSolver:
         self._wrap[key] = out
         return out
 
+    def _arm(self, s, sx, S, u, a, h, dd, trunk, Rh, has_target, prev=None):
+        """Elbow swivel + forearm twist: try elbow positions around the shoulder-wrist line (low and slightly out
+        is preferred), give the forearm up to +-85 deg of the hand's roll (pronation / supination), leave the rest
+        to the wrist; keep the swivel that bends the wrist least."""
+        base_pole = trunk @ unit(np.array([sx * 0.35, -1.0, -0.25]))
+        base_pole = unit(base_pole - u * np.dot(base_pole, u))
+        xa = np.array([sx, 0.0, 0.0])
+        best = None
+        cands = (-75.0, -50.0, -30.0, -15.0, 0.0, 15.0, 30.0, 50.0, 75.0)
+        if prev is not None and prev[0] is not None:            # search near the last frame's elbow (coherent)
+            p0 = prev[0]
+            cands = tuple(sorted({max(-90.0, min(90.0, p0 + d)) for d in (-12.0, -6.0, -3.0, 0.0, 3.0, 6.0, 12.0)}))
+        for sw in cands:
+            pole = axis_angle(u, math.radians(sw * sx)) @ base_pole
+            elbow = S + u * a + pole * h
+            ue, fe = unit(elbow - S), unit(S + u * dd - elbow)
+            bend = fe - ue * np.dot(fe, ue)
+            Ru = frame_rot(xa, FWD, ue, bend if np.linalg.norm(bend) > 1e-6 else trunk @ FWD)
+            n = np.cross(ue, fe)
+            Rf0 = axis_angle(n, math.radians(angle(ue, fe))) @ Ru if np.linalg.norm(n) > 1e-9 else Ru
+            Q = Rf0.T @ Rh                                     # hand relative to the untwisted forearm
+            w_, x_, y_, z_ = _quat(Q)
+            tau = math.degrees(2.0 * math.atan2(x_ * sx, w_)) if abs(w_) + abs(x_) > 1e-9 else 0.0
+            tau = (tau + 180.0) % 360.0 - 180.0
+            if prev is not None and prev[1] is not None:       # the twist continues, it never wraps around
+                tau = min((tau - 360.0, tau, tau + 360.0), key=lambda x: abs(x - prev[1]))
+            tc = max(-85.0, min(85.0, tau))
+            Rf = Rf0 @ axis_angle(xa, math.radians(tc))
+            wsw = angle(Rf @ xa, Rh @ xa)                       # wrist bend left after the forearm twist
+            roll = abs(tau - tc)                                # roll the forearm could not take
+            elbow_up = max(0.0, float(np.dot(ue, trunk @ UP)) + 0.3)
+            score = (wsw / 30.0) ** 2 + (roll / 20.0) ** 2 + (sw / 60.0) ** 2 * 0.3 + elbow_up ** 2 * 2.0
+            if prev is not None and prev[0] is not None:
+                score += ((sw - prev[0]) / 10.0) ** 2 + ((tc - (prev[1] or 0.0)) / 25.0) ** 2
+            if best is None or score < best[0]:
+                best = (score, Ru, Rf, wsw + roll, tc, elbow, sw)
+        return best[1], best[2], best[3], best[4], best[5], best[6]
+
+    def finger_angles(self, s, name):
+        """Hand shape -> {finger: (flex1, flex2, flex3)} (deg; thumb: (opposition, flex2, flex3)).
+        name: a preset ("relaxed", "open", "flat", "point", "pinch", "tripod", "lateral"), a wrap "power:<r>" /
+        "hook:<r>" around a handle of radius r cm, "trigger:<r>:<pull 0-1>" (index on a trigger), or a blend
+        ("blend", a, b, u) - so hand shapes change smoothly from frame to frame."""
+        if isinstance(name, tuple) and name and name[0] == "blend":
+            A, Bn, u = self.finger_angles(s, name[1]), self.finger_angles(s, name[2]), float(name[3])
+            return {k: tuple(x * (1 - u) + y * u for x, y in zip(A[k], Bn[k])) for k in A}
+        kind, *args = str(name).split(":")
+        out = {}
+        if kind in ("power", "hook", "trigger") and args:
+            r = float(args[0])
+            for f in ("index", "middle", "ring", "pinky"):
+                out[f] = self.wrap(s, f, r)
+            tw = self.wrap(s, "thumb", r)
+            out["thumb"] = (34.0, tw[1] * 0.8, tw[2] * 0.7) if kind != "hook" else (4.0, 10.0, 10.0)
+            if kind == "trigger":                              # index finger on the trigger, pulled by `pull`
+                pull = float(args[1]) if len(args) > 1 else 0.0
+                out["index"] = (18.0 + 22.0 * pull, 40.0 + 30.0 * pull, 25.0 + 20.0 * pull)
+            return out
+        P = {"relaxed": ((14, 14, 10), (8, 10, 8)),
+             "open": ((5, 5, 3), (2, 4, 4)),
+             "flat": ((2, 0, 0), (-5, 0, 0)),
+             "power": ((62, 72, 48), (34, 30, 25)),
+             "hook": ((35, 80, 60), (4, 10, 10)),
+             "pinch": ((38, 42, 28), (40, 32, 26)),
+             "point": ((0, 0, 0), (25, 20, 10)),
+             "tripod": ((40, 40, 25), (42, 28, 22)),
+             "lateral": ((68, 80, 50), (12, 18, 22))}
+        (f1, f2, f3), th = P.get(kind, P["relaxed"])
+        spread = {"index": 1.0, "middle": 1.05, "ring": 1.1, "pinky": 1.15}
+        for f in ("index", "middle", "ring", "pinky"):
+            out[f] = (f1 * spread[f], f2 * spread[f], f3 * spread[f])
+        if kind == "point":                                     # index straight, the others tucked
+            for f in ("middle", "ring", "pinky"):
+                out[f] = (70.0, 85.0, 55.0)
+        if kind in ("pinch", "tripod"):                         # spare fingers tuck in
+            for f in ("ring", "pinky") if kind == "tripod" else ("middle", "ring", "pinky"):
+                out[f] = (55.0, 70.0, 45.0)
+        out["thumb"] = th
+        return out
+
     def _grip(self, pose, s, name):
         sx = 1.0 if s == "l" else -1.0
-        kind, _, rad = str(name).partition(":")
-        if rad and kind in ("power", "hook"):                      # wrap the real handle
-            r = float(rad)
-            for f in ("index", "middle", "ring", "pinky"):
-                curl = self.wrap(s, f, r)
-                for i, a in zip((1, 2, 3), curl):
-                    pose.rot[f"{f}_0{i}_{s}"] = rz(-sx * a)
-            tw = self.wrap(s, "thumb", r)
-            (t1, t2, t3) = (28.0, tw[1] * 0.8, tw[2] * 0.8) if kind == "power" else (0.0, 10.0, 10.0)
-            pose.rot[f"thumb_01_{s}"] = ry(sx * t1 * 0.6) @ rz(-sx * t1 * 0.5)
-            pose.rot[f"thumb_02_{s}"] = rz(-sx * t2)
-            pose.rot[f"thumb_03_{s}"] = rz(-sx * t3)
-            return
-        (f1, f2, f3), (t1, t2, t3) = GRIPS.get(kind, GRIPS["relaxed"])
+        A = self.finger_angles(s, name)
         for f in ("index", "middle", "ring", "pinky"):
-            spread = {"index": 1.0, "middle": 1.05, "ring": 1.1, "pinky": 1.15}[f]
-            for i, a in zip((1, 2, 3), (f1, f2, f3)):
-                pose.rot[f"{f}_0{i}_{s}"] = rz(-sx * a * spread)
+            for i, a in zip((1, 2, 3), A[f]):
+                pose.rot[f"{f}_0{i}_{s}"] = rz(-sx * a)
+        t1, t2, t3 = A["thumb"]
         pose.rot[f"thumb_01_{s}"] = ry(sx * t1 * 0.6) @ rz(-sx * t1 * 0.5)
         pose.rot[f"thumb_02_{s}"] = rz(-sx * t2)
         pose.rot[f"thumb_03_{s}"] = rz(-sx * t3)
 
     # ------------------------------------------------------------------ solving
-    def solve(self, targets, look=None, stance=None, prev=None, smooth=1.0, seeds=None, swing=None):
+    def solve(self, targets, look=None, stance=None, prev=None, smooth=1.0, seeds=None, swing=None, base=None):
         stance = stance or self.default_stance()
+        prev_arm = None
+        if isinstance(prev, Solution):
+            prev_arm = {s_: (prev.angles.get(f"swivel_{s_}"), prev.angles.get(f"twist_{s_}")) for s_ in ("l", "r")}
+        if base is not None:                       # mocap-driven frame: no search, just exact limbs on the base pose
+            v = self.fit_pelvis(base, stance)
+            pose, terms, angles, _ = self.build(v, targets, look, stance, swing=swing, base=base, prev_arm=prev_arm)
+            return Solution(pose, float(sum(terms.values())), terms, angles, v)
         prev_v = prev.v if isinstance(prev, Solution) else (None if prev is None else np.asarray(prev, float))
 
         def f(v):
-            _, terms, _, _ = self.build(v, targets, look, stance, swing=swing)
+            _, terms, _, _ = self.build(v, targets, look, stance, swing=swing, prev_arm=prev_arm)
             c = sum(terms.values())
             if prev_v is not None:
                 c += smooth * float(np.sum(((v - prev_v) / SCALE) ** 2)) * 0.5
@@ -329,8 +414,35 @@ class PostureSolver:
             if best is None or fx < best[1]:
                 best = (x, fx)
         x, fx = best
-        pose, terms, angles, _ = self.build(x, targets, look, stance, swing=swing)
+        pose, terms, angles, _ = self.build(x, targets, look, stance, swing=swing, prev_arm=prev_arm)
         return Solution(pose, fx, terms, angles, x)
+
+    def fit_pelvis(self, base, stance, knee=0.975):
+        """Pelvis drop / fore-aft shift so both feet reach their stance points with the knees just unlocked:
+        the pelvis is lowest in double support and rides over the planted foot - as in real walking."""
+        sk = self.sk
+        v = np.zeros(8)
+        for _ in range(3):
+            pose = base.copy()
+            pose.pelvis = base.pelvis + np.array([v[0], -v[1], v[2]])
+            R, P = fk(sk, pose, ["thigh_l", "thigh_r"])
+            need_drop, dz = 0.0, []
+            for s in ("l", "r"):
+                ank = np.asarray(getattr(stance, "left" if s == "l" else "right"), float)
+                hip = P[f"thigh_{s}"]
+                Lmax = sum(self.leg[s]) * knee
+                horiz = math.hypot(ank[0] - hip[0], ank[2] - hip[2])
+                if horiz >= Lmax:
+                    dz.append((ank[2] - hip[2]) - math.copysign(Lmax * 0.95, ank[2] - hip[2]))
+                    horiz = Lmax * 0.95
+                y_ok = ank[1] + math.sqrt(Lmax * Lmax - horiz * horiz)
+                need_drop = max(need_drop, hip[1] - y_ok)
+            v[1] += max(0.0, need_drop)
+            if dz:
+                v[2] += float(np.mean(dz)) * 0.8
+            if need_drop <= 0.05 and not dz:
+                break
+        return v
 
     def default_stance(self, width=None, yaw=0.0):
         sk = self.sk
