@@ -173,7 +173,8 @@ def clip_walk(worker, sk, path, yaw_start, yaw_end, carry=None):
             pose.pelvis = (joints["pelvis"] - np.array([0.0, cy.hip_height, 0.0])) * k + np.array([0.0, -drop, 0.0])
             stc = Stance()
             stc.free = True
-            frames.append(Frame(list(carry or []), None, {}, root=(float(p[0]), float(p[1]), float(h)), stance=stc,
+            ahead = (0.0, float(sk.world["head"][1]) - 30.0, 350.0)   # eyes on the way ahead, ~5 deg down
+            frames.append(Frame(list(carry or []), ahead, {}, root=(float(p[0]), float(p[1]), float(h)), stance=stc,
                                 base=pose))
     return frames
 

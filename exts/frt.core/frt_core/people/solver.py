@@ -25,7 +25,7 @@ DOWN = -UP
 FWD = np.array([0.0, 0.0, 1.0])
 SPINE = (("spine_01", 0.30, 0.34, 0.30), ("spine_02", 0.35, 0.33, 0.30), ("spine_03", 0.35, 0.33, 0.40))
 VARS = ("dx", "drop", "dz", "yaw", "hinge", "flex", "lat", "twist")
-LO = np.array([-15.0, -2.0, -25.0, -45.0, -10.0, -3.0, -25.0, -40.0])        # no back arching to cheat flexion
+LO = np.array([-15.0, -2.0, -25.0, -45.0, -2.0, -3.0, -25.0, -40.0])         # no back arching / pelvis tilted back
 HI = np.array([15.0, 70.0, 25.0, 45.0, 75.0, 50.0, 25.0, 40.0])
 SCALE = np.array([4.0, 8.0, 5.0, 10.0, 8.0, 8.0, 6.0, 8.0])        # simplex size and smoothness scale per variable
 
@@ -219,10 +219,19 @@ class PostureSolver:
                 fingers = unit(t.fingers) if t.fingers is not None else unit(grip_pt - S0)
                 palm = unit(t.palm) if t.palm is not None else unit(sx * np.cross(fingers, UP)) if abs(fingers[1]) < 0.95 \
                     else np.array([-sx, 0.0, 0.0])
-            # clavicle: shrug a little for high targets
+            # clavicle (scapula): elevates for high targets, protracts as the hand reaches forward / across the body -
+            # a long reach comes from the shoulder girdle too, not only the arm
             rise = float(grip_pt[1] - S0[1])
             cl = min(18.0, max(0.0, rise - 5.0) * 0.35) if t is not None else 0.0
-            pose.rot[f"clavicle_{s}"] = rz(sx * cl)
+            prot = 0.0
+            if t is not None:
+                vt = R["spine_03"].T @ (grip_pt - S0)
+                arm_len = sum(self.L[s]) + self.hand_len * 0.45
+                frac = float(np.linalg.norm(vt)) / arm_len
+                fwd_k = max(0.0, float(vt[2]) / (float(np.linalg.norm(vt)) + 1e-9)) + max(0.0, -sx * float(vt[0])) / arm_len
+                prot = min(22.0, max(0.0, (frac - 0.45) / 0.45) * 20.0 * min(1.0, fwd_k))
+            pose.rot[f"clavicle_{s}"] = ry(-sx * prot) @ rz(sx * cl)
+            angles[f"clavicle_{s}"] = prot
             R2, P2 = fk(sk, pose, [f"upperarm_{s}"])
             S = P2[f"upperarm_{s}"]
             palm = unit(palm - fingers * np.dot(palm, fingers))
@@ -268,7 +277,16 @@ class PostureSolver:
             terms["neck"] = (max(0.0, ptc - 15.0) / 30.0) ** 2 * 0.6 + (ywc / 45.0) ** 2 * 0.3 + (miss / 10.0) ** 2
             angles.update({"neck_flexion": ptc, "neck_twist": ywc})
         # trunk and balance
-        terms["trunk"] = ((hinge + flex) / 28.0) ** 2 + (flex / 35.0) ** 2 * 0.5 + (lat / 10.0) ** 2 + (twist / 14.0) ** 2             + (min(0.0, hinge + flex) / 6.0) ** 2                       # leaning back is rare and costly
+        lean = 0.0
+        for t in targets:
+            if t.weight >= 0.5:
+                sh = self.sk.world[f"upperarm_{t.side}"]
+                v_ = np.asarray(t.point, float) - sh
+                frac = float(np.linalg.norm(v_)) / (sum(self.L[t.side]) + self.hand_len * 0.45)
+                if v_[2] > 0 and v_[1] < 5.0:                       # forward and not above the shoulder
+                    lean = max(lean, min(1.0, max(0.0, (frac - 0.55) / 0.4)) * 14.0)
+        hinge_eff = hinge + flex - lean
+        terms["trunk"] = (hinge_eff / 28.0) ** 2 + (min(0.0, hinge) / 2.0) ** 2 + (flex / 35.0) ** 2 * 0.5 + (lat / 10.0) ** 2 + (twist / 14.0) ** 2             + (min(0.0, hinge + flex) / 6.0) ** 2                       # leaning back is rare and costly
         terms["pelvis"] = (dx / 8.0) ** 2 * 0.3 + (dz / 10.0) ** 2 * 0.3 + (yaw / 25.0) ** 2 * 0.4
         Rall, Pall = fk(sk, pose)
         c = com(Pall)
@@ -545,6 +563,6 @@ class PostureSolver:
 
     def default_stance(self, width=None, yaw=0.0):
         sk = self.sk
-        w = width if width is not None else abs(sk.world["foot_l"][0] - sk.world["foot_r"][0]) + 6.0
+        w = width if width is not None else abs(sk.world["thigh_l"][0] - sk.world["thigh_r"][0]) + 4.0   # ~ hip width
         y = sk.world["foot_l"][1]
         return Stance(left=(w / 2, y, 0.0), right=(-w / 2, y, 0.0), yaw=yaw)

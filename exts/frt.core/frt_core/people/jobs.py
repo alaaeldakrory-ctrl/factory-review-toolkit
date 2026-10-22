@@ -227,13 +227,31 @@ def j_screwdriver(S, sk):
         T = Td["t"]
         g = K.power(sk, "r", wpt(T, (0.0, 18.0, 0.0)), wdir(T, (0, -1, 0)), grip="power:1.6", lean=(0.0, -1.0, 0.0))
         return K.tilt(g, wdir(T, (0, -1, 0)), 60.0)                # handshake grip, handle diagonal in the palm
+    # drive strokes: the hand rolls the tool 60 deg (forearm supination), loosens, rolls back over the handle and
+    # grips again - the screw only ever turns forward
     tk = [(0.0, None), (1.2, T_rot(0.0))]
-    t = 1.2
-    for k in range(5):                                            # twist ~100 deg, regrip back
-        tk += [(t + 0.5, T_rot(100.0)), (t + 0.75, T_rot(0.0))]
+    t, ang = 1.2, 0.0
+    for k in range(5):
+        ang += 60.0
+        tk += [(t + 0.5, T_rot(ang)), (t + 0.75, T_rot(ang))]
         t += 0.75
     tk, hk = tool_track(sk, rh, tk + [(t + 1.0, None)])
-    return K.keyed(t + 1.1, hands={"r": hk, "l": [(0.0, R["l"])]},
+    h0 = rh({"t": T_rot(0.0)})
+
+    def roll(a, grip):
+        r_ = rot_target(h0, Z, a, P)
+        return HandTarget(r_.side, r_.point, r_.fingers, r_.palm, grip, r_.weight)
+    mid, tt = [(1.2, h0)], 1.2
+    for k in range(5):
+        last = k == 4
+        mid += [(tt + 0.08, roll(0.0, "power:1.6")), (tt + 0.5, roll(60.0, "power:1.6")),
+                (tt + 0.58, roll(60.0, "power:2.3" if not last else "power:1.6")),
+                (tt + 0.75, roll(0.0, "power:2.3" if not last else "power:1.6"))]
+        tt += 0.75
+    hk = hk[:2] + mid + hk[-1:]
+    guide = K.pinch(sk, "l", P - Z * 3.5 + X * 0.6, approach=(-0.8, -0.25, 0.55), palm=(-0.3, -1.0, 0.0),
+                    grip="tripod", weight=0.7)              # the off hand guides the shaft near the tip
+    return K.keyed(t + 1.1, hands={"r": hk, "l": [(0.0, R["l"]), (1.3, guide), (t, guide), (t + 1.0, R["l"])]},
                    tools={"t": ("screwdriver", tk)}, look=tuple(P), label="screwdriver")
 
 
@@ -254,11 +272,15 @@ def j_impact(S, sk):
     tk = [(0.0, T0), (1.1, T_at(-3.0)), (1.5, T_at(0.0))]
     t = 1.5
     for k in range(10):                                           # driving: vibration while the trigger is held
-        tk += [(t + 0.09, T_at(0.15 * k / 10, 0.12)), (t + 0.18, T_at(0.15 * k / 10, -0.12))]
+        tk += [(t + 0.09, T_at(0.15 * k / 10)), (t + 0.18, T_at(0.15 * (k + 0.5) / 10))]
         t += 0.18
     tk += [(t + 0.4, T_at(-3.0)), (t + 1.4, T0)]
     hand = [(0.0, rh_pull(0.0)), (1.5, rh_pull(0.0)), (1.65, rh_pull(1.0)), (t, rh_pull(1.0)), (t + 0.2, rh_pull(0.0))]
-    return K.keyed(t + 1.5, hands={"r": hand, "l": [(0.0, R["l"])]},
+    def br(Td):                                    # the off hand on top of the drill body, pushing it into the work
+        T = Td["t"]
+        return K.brace(sk, "l", wpt(T, (-11.5, 2.9, 0.0)), normal=wdir(T, Y), toward=wdir(T, X), weight=0.7,
+                       grip="relaxed")
+    return K.keyed(t + 1.5, hands={"r": hand, "l": [(0.0, R["l"]), (1.0, br), (t + 0.3, br), (t + 1.4, R["l"])]},
                    tools={"t": ("impact_driver", tk)}, look=tuple(P), label="impact driver")
 
 
@@ -324,7 +346,9 @@ def _connector_frames(S, sk, P, unplug=False):
             g = ("blend", "pinch", "lateral", press)
             return K.pinch(sk, "r", wpt(T, (0.0, 1.2, -1.2)), approach=(0.0, -0.25, 1.0), palm=(0, -1, 0), grip=g)
         return f
-    br = R["l"]
+    def br(Td):                                    # the off hand holds the wire bundle behind the connector
+        T = Td["t"]
+        return K.power(sk, "l", wpt(T, (0.3, -1.4, -11.0)), wdir(T, (0.0, 0.25, 0.97)), grip="power:0.7", weight=0.8)
     T0 = K.T_at(np.array([-24.0, 90.0, 16.0]), X, Y)
     if not unplug:
         tk = [(0.0, T0), (1.0, T_at(5.0)), (1.4, T_at(1.5)), (1.8, T_at(-0.2)), (1.9, T_at(0.0)), (2.3, T_at(0.0)),
@@ -366,8 +390,11 @@ def j_plug(S, sk):
     tk = [(0.0, T0), (1.0, T_at(6.0)), (1.5, T_at(1.9)), (1.8, T_at(0.6, 0.06)), (2.0, T_at(0.2, -0.06)),
           (2.2, T_at(0.0)), (3.4, T_at(0.0))]
     hand = [(0.0, rh), (2.3, rh), (2.8, R["r"]), (3.4, R["r"])]
-    return K.keyed(3.5, hands={"r": hand, "l": [(0.0, R["l"])]}, tools={"t": ("plug", tk)}, look=tuple(P),
-                   label="plug")
+    def br(Td):                                    # the off hand feeds the cable behind the plug
+        T = Td["t"]
+        return K.power(sk, "l", wpt(T, (0.0, -2.0, -12.0)), wdir(T, (0.0, 0.3, 0.95)), grip="power:0.6", weight=0.8)
+    return K.keyed(3.5, hands={"r": hand, "l": [(0.0, R["l"]), (0.9, br), (2.3, br), (3.2, R["l"])]},
+                   tools={"t": ("plug", tk)}, look=tuple(P), label="plug")
 
 
 def _harness_hold(sk, P):
@@ -645,8 +672,8 @@ def j_wipe(S, sk):
 
     def rag(Td):
         return None
-    keys = [(0.0, R["r"]), (0.9, at(12, -6))]
-    pts = [(-14, -6), (-14, 4), (12, 4), (12, 12), (-14, 12), (-14, -6), (12, -6)]
+    keys = [(0.0, R["r"]), (0.9, at(16, -6))]
+    pts = [(-20, -6), (-20, 4), (16, 4), (16, 12), (-20, 12), (-20, -6), (16, -6)]
     t = 0.9
     for x, z in pts:
         t += 0.45

@@ -91,7 +91,7 @@ def main():
             n = len(c["frames"])
             length = max(length, n)
             eye, at = close_up(job, x, z)
-            shots.append({"seq": f"{i + 1:02d}_{job.id}", "eye": eye, "at": at, "mm": 30, "frames": [0, n - 1, 2]})
+            shots.append({"seq": f"{i + 1:02d}_{job.id}", "eye": eye, "at": at, "mm": 30, "frames": [0, n - 1, 1]})
             print(f"{i + 1:02d} {job.id:12s} {w.id} {n} fr")
         dress(st, lib, st.GetPrimAtPath("/World/Asset"))
     rows = (len(jobs) + cols - 1) // cols
