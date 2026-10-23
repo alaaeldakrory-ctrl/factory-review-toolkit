@@ -9,6 +9,7 @@ from omni.kit.menu.utils import MenuItemDescription
 from frt_core import usdio
 
 from .review_window import TITLE as REVIEW_TITLE, DrawingReviewWindow
+from .task_window import TITLE as TASK_TITLE, TaskWindow
 from .window import TITLE, ReviewWindow
 
 
@@ -16,11 +17,16 @@ class FrtSceneExtension(omni.ext.IExt):
     def on_startup(self, ext_id):
         self._window = None
         self._review = None
+        self._task = None
         self._menu = [MenuItemDescription(name="Factory Review", onclick_fn=self.show),
-                      MenuItemDescription(name="Drawing Review", onclick_fn=self.show_review)]
+                      MenuItemDescription(name="Drawing Review", onclick_fn=self.show_review),
+                      MenuItemDescription(name="Task Builder", onclick_fn=self.show_task)]
         mu.add_menu_items(self._menu, "Window")
         ui.Workspace.set_show_window_fn(TITLE, lambda visible: self.show() if visible else None)
         ui.Workspace.set_show_window_fn(REVIEW_TITLE, lambda visible: self.show_review() if visible else None)
+        ui.Workspace.set_show_window_fn(TASK_TITLE, lambda visible: self.show_task() if visible else None)
+        global _EXT
+        _EXT = self
         # leave a <scene>.open marker beside the open scene so command-line builds don't swap it under us
         self._marked = None
         self._stage_sub = omni.usd.get_context().get_stage_event_stream().create_subscription_to_pop(
@@ -58,15 +64,36 @@ class FrtSceneExtension(omni.ext.IExt):
         self._review.window.visible = True
         self._review.window.focus()
 
+    def show_task(self, *_):
+        if self._task is None:
+            self._task = TaskWindow()
+        self._task.window.visible = True
+        self._task.window.focus()
+        return self._task
+
     def on_shutdown(self):
+        global _EXT
+        _EXT = None
         self._stage_sub = None
         self._unmark()
         mu.remove_menu_items(self._menu, "Window")
         ui.Workspace.set_show_window_fn(TITLE, None)
         ui.Workspace.set_show_window_fn(REVIEW_TITLE, None)
+        ui.Workspace.set_show_window_fn(TASK_TITLE, None)
+        if self._task:
+            self._task.window.destroy()
+            self._task = None
         if self._review:
             self._review.destroy()
             self._review = None
         if self._window:
             self._window.destroy()               # or a hot reload leaves a dead copy of the window behind
             self._window = None
+
+
+_EXT = None
+
+
+def show_task():
+    """Open Window > Task Builder from a script: frt_scene.extension.show_task() -> the TaskWindow."""
+    return _EXT.show_task() if _EXT else None

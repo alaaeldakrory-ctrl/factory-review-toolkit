@@ -107,6 +107,28 @@ def _e3(u):
     return u * u * (3 - 2 * u)
 
 
+_CLAV = {}
+
+
+def clavicle_cal(sk, cy):
+    """Collarbones of the walk clip relative to its own neutral (the cycle mean), for skeletons whose collarbone
+    rest shape differs a lot from the captured person's (real character rigs: up to 40 deg otherwise). Skeletons
+    close to the capture (the frt bodies) get none, so their walks stay exactly as captured."""
+    from . import mocap as MC
+    key = (id(sk), id(cy))
+    if key not in _CLAV:
+        mean = {q: np.mean([cy.local[i][q] for i in range(cy.n)], axis=0) for q in cy.local[0]}
+        pose, Rw = MC.retarget(sk, mean, world=True)
+        cal = {}
+        for s in ("l", "r"):
+            j = f"clavicle_{s}"
+            ang = math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(pose.local(j)) - 1.0) / 2.0))))
+            if ang > 12.0:
+                cal[j] = Rw["spine_03"].T @ Rw[j]           # R @ cal.T: the neutral collarbone follows the chest
+        _CLAV[key] = cal
+    return _CLAV[key]
+
+
 def clip_walk(worker, sk, path, yaw_start, yaw_end, carry=None):
     """Walking assembled from motion-capture clips (locomotion.py): turn on the spot towards the path if needed,
     start walking, the walk cycle, stop (start clip reversed), turn on the spot to the work. The clips are joined
@@ -169,7 +191,7 @@ def clip_walk(worker, sk, path, yaw_start, yaw_end, carry=None):
                 h = (yaw_start if si == 0 else hD) + yadd
             elif h is None:
                 h = h0
-            pose = MC.retarget(sk, joints)
+            pose = MC.retarget(sk, joints, clavicle_cal(sk, cy))
             pose.pelvis = (joints["pelvis"] - np.array([0.0, cy.hip_height, 0.0])) * k + np.array([0.0, -drop, 0.0])
             stc = Stance()
             stc.free = True

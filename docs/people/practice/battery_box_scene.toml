@@ -1,0 +1,136 @@
+# Practice scene: a parts shelf, a cover cart, a work table with a battery box, and a wall cabinet.
+# This file is the SCENE: the physical assets and their tags (named points). It has no steps.
+# Your task file points at it with scene = "battery_box_scene.toml" and adds the steps.
+#
+# Units: cm, Y up. Positions are world positions; tag points are in the asset's own frame (relative to `at`).
+# Spots are where a worker stands to work an asset: at = [x, z], yaw in degrees (0 = facing +Z).
+
+[[spot]]
+id = "shelf"
+at = [-220, 38]
+yaw = 0
+
+[[spot]]
+id = "cover_cart"
+at = [-110, 38]
+yaw = 0
+
+[[spot]]
+id = "table"
+at = [0, 42]
+yaw = 0
+
+[[spot]]
+id = "door_side"
+at = [76, 30]
+yaw = 55
+
+[[spot]]
+id = "cabinet"
+at = [134, 28]
+yaw = 0
+
+# ---------------------------------------------------------------- furniture
+[[asset]]
+id = "shelf"
+kind = "shelf"
+at = [-220, 0, 85]
+size = [110, 90, 40]
+
+[[asset]]
+id = "table"
+kind = "table"
+at = [0, 0, 100]
+size = [170, 76, 70]
+spot = "table"
+[asset.points]
+tray_place = [-30, 76, -26]       # where the kitting tray goes (on the table top, front right)
+cover_place = [0, 100, -11]       # cover seat: on top of the battery box (back half)
+
+[[asset]]
+id = "cover_cart"
+kind = "cart"
+at = [-110, 0, 82]
+size = [60, 84, 44]
+
+# ---------------------------------------------------------------- bins (they hold parts)
+[[asset]]
+id = "screw_bin"
+kind = "bin"
+at = [-250, 90, 82]               # bottom centre, on the shelf
+size = [20, 11, 26]
+holds = "screw"
+count = 6
+fill = 45
+spot = "shelf"
+[asset.points]
+grab = [0, 2.2, 2.5]              # where the fingers go in
+
+[[asset]]
+id = "nut_bin"
+kind = "bin"
+at = [-190, 90, 82]
+size = [20, 11, 26]
+holds = "nut"
+count = 4
+fill = 40
+spot = "shelf"
+[asset.points]
+grab = [0, 2.0, 2.5]
+
+# ---------------------------------------------------------------- movable parts
+[[asset]]
+id = "tray"
+kind = "tray"
+at = [-220, 94, 70]               # on the shelf front, between the bins
+size = [26, 6, 16]
+spot = "shelf"
+[asset.points]                     # compartment slots (tray frame, the floor of the tray)
+screws = [[-9, -2.6, -4], [-5, -2.6, -4], [-9, -2.6, 3], [-5, -2.6, 3]]
+nuts = [[5, -2.6, -3], [9, -2.6, -3], [5, -2.6, 4], [9, -2.6, 4]]
+
+[[asset]]
+id = "cover"
+kind = "plate"
+at = [-110, 84.6, 80]             # lying on the cover cart
+size = [36, 1.2, 12]
+spot = "cover_cart"
+[asset.points]                     # its 4 screw holes (cover frame, top face)
+holes = [[-14, 0.6, -3.5], [14, 0.6, -3.5], [-14, 0.6, 3.5], [14, 0.6, 3.5]]
+
+[[asset]]
+id = "screwdriver"
+kind = "tool"
+tool = "screwdriver"
+at = [-66, 77.6, 90]              # tip; lying on the table (right side), handle pointing left
+x_axis = [0, 0, -1]
+y_axis = [1, 0, 0]
+spot = "table"
+
+[[asset]]
+id = "ratchet"
+kind = "tool"
+tool = "ratchet_38"
+at = [-30, 77.2, 112]             # socket; lying flat on the table, handle towards the worker
+x_axis = [0.2, 0, -1]
+y_axis = [0, 1, 0]
+spot = "table"
+
+# ---------------------------------------------------------------- the work
+[[asset]]
+id = "battery_box"
+kind = "box"
+at = [0, 76, 83]                  # bottom centre on the table
+size = [40, 24, 26]
+spot = "table"
+[asset.points]
+studs = [[-10, 24, -8], [10, 24, -8]]     # terminal studs (top of the box, front)
+corner = [17, 24, -10]                    # front-left corner: where the free hand rests
+
+[[asset]]
+id = "cabinet"
+kind = "cabinet"
+at = [110, 95, 80]                # hinge corner: left edge, bottom of the box, front face
+size = [45, 70, 30]
+spot = "cabinet"
+door = { width = 45, height = 70, open_deg = 90, push_spot = "door_side" }

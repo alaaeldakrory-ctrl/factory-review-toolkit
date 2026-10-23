@@ -1,0 +1,67 @@
+# Reference solution for the practice scene (Claude's version - try your own first).
+[task]
+name = "Battery box: terminals, cover, cabinet door"
+scene = "battery_box_scene.toml"
+worker = "C:/Nvidia_Assets/Characters_NVD/Assets/Characters/Reallusion/ActorCore/Uniform_M_0001/uniform_m_0001.usd"
+start = [-300, -60, 60]
+
+[[step]]
+do = "transfer"
+what = "screw"
+count = 4
+from = "screw_bin"
+to = "tray.screws"
+
+[[step]]
+do = "transfer"
+what = "nut"
+count = 2
+from = "nut_bin"
+to = "tray.nuts"
+
+[[step]]
+do = "carry"
+what = "tray"
+to = "table.tray_place"
+
+[[step]]
+do = "hand_start"
+what = "nut"
+on = "battery_box.studs"
+brace = "battery_box.corner"
+
+[[step]]
+do = "fasten"
+tool = "ratchet"
+on = "battery_box.studs"
+brace = "battery_box.corner"
+
+[[step]]
+do = "carry"
+what = "cover"
+to = "table.cover_place"
+
+[[step]]
+do = "hand_start"
+what = "screw"
+on = "cover.holes"
+brace = "battery_box.corner"
+
+[[step]]
+do = "fasten"
+tool = "screwdriver"
+on = "cover.holes"
+brace = "battery_box.corner"
+
+[[step]]
+do = "push_door"
+door = "cabinet"
+
+[[step]]
+do = "latch"
+door = "cabinet"
+
+[[step]]
+do = "inspect"
+on = "cover.holes"
+seconds = 1.5

@@ -1,0 +1,6 @@
+# Your practice task. Open Window > Task Builder in Kit and add the steps there (or type them here).
+[task]
+name = "My battery box task"
+scene = "battery_box_scene.toml"
+worker = "C:/Nvidia_Assets/Characters_NVD/Assets/Characters/Reallusion/ActorCore/Uniform_M_0001/uniform_m_0001.usd"
+start = [-300, -60, 60]

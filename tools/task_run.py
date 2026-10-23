@@ -1,0 +1,174 @@
+"""Run a task file: compile the steps, solve every frame, check, score (RULA) and bake one scene.
+
+    python tools/task_run.py docs/people/practice/reference_task.toml [--out=out/people/task/<name>] [--workers=11]
+    -> <out>/task.usda (scene + worker + parts), result.json (per step: frames, checks, RULA), log
+
+The Kit window (Task Builder) runs this in the background and opens the result.
+"""
+import json
+import multiprocessing as mp
+import os
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, ".."))
+sys.path.insert(0, os.path.join(ROOT, "exts", "frt.core"))
+os.environ.setdefault("PXR_USDC_EMIT_DEPRECATION_WARNINGS", "0")
+
+_T = None
+
+
+def _init(path):
+    global _T
+    from frt_core.people.tasks import Task
+    _T = Task.load(path).compile(log=lambda *a: None)
+
+
+def _solve(rng):
+    from frt_core.people.bake import solve_frames
+    a, b = rng
+    return a, solve_frames(_T.S, _T.frames[a:b + 1], log=lambda *a: None)
+
+
+def chunks(steps, n_frames, size=160):
+    """Solve ranges: whole steps, long steps split (each piece warm-starts from rest, joins are re-solved below)."""
+    out = []
+    bounds = [s["start"] for s in steps] + [n_frames]
+    for a, b in zip(bounds, bounds[1:]):
+        while b - a > size * 1.5:
+            out.append((a, a + size - 1))
+            a += size
+        out.append((a, b - 1))
+    return out
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    opt = {a.split("=")[0][2:]: a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--") and "=" in a}
+    path = os.path.abspath(args[0] if args else os.path.join(ROOT, "docs", "people", "practice", "reference_task.toml"))
+    name = os.path.splitext(os.path.basename(path))[0]
+    out = os.path.abspath(opt.get("out", os.path.join(ROOT, "out", "people", "task", name)))
+    os.makedirs(out, exist_ok=True)
+    status = os.path.join(out, "status.json")
+
+    def say(msg, **kw):
+        print(msg, flush=True)
+        with open(status + ".tmp", "w") as f:
+            json.dump({"msg": msg, "t": time.time(), **kw}, f)
+        os.replace(status + ".tmp", status)                         # the window never reads half a file
+    t0 = time.time()
+    from frt_core.people.tasks import Task
+    scene_only = "--scene-only" in sys.argv
+    try:
+        T = Task.load(path)
+        if scene_only:                                               # just the scene and the worker at the start
+            T.data["step"] = []
+        T.compile(log=print)
+        if scene_only:
+            from frt_core.people.bake import solve_frames
+            sols = solve_frames(T.S, T.frames, log=lambda *a: None)
+            usd = os.path.join(out, "scene.usda")
+            bake_scene(T, sols, usd)
+            say("scene ready - add steps, then Solve", progress=1.0, done=True, usd=usd)
+            return
+    except Exception as e:                                           # authoring errors go back to the window
+        import traceback
+        say(f"task error: {e}", error=str(e), trace=traceback.format_exc()[-2000:], done=True)
+        sys.exit(1)
+    n = len(T.frames)
+    say(f"compiled {len(T.steps)} steps, {n} frames ({n / 24:.1f} s); solving", progress=0.05)
+    rngs = chunks(T.steps, n)
+    sols = [None] * n
+    with mp.Pool(int(opt.get("workers", min(11, os.cpu_count() or 4))), initializer=_init, initargs=(path,)) as pool:
+        done = 0
+        for a, s in pool.imap_unordered(_solve, rngs):
+            sols[a:a + len(s)] = s
+            done += len(s)
+            say(f"solving {done}/{n} frames", progress=0.05 + 0.75 * done / n)
+    # re-solve the joins between pieces warm-started from the frame before (no jumps where pieces meet)
+    from frt_core.people.bake import solve_frames
+    for a, _ in rngs[1:]:
+        lo, hi = max(0, a - 1), min(n, a + 10)
+        fix = solve_frames(T.S, T.frames[lo + 1:hi], log=lambda *a: None, prev=sols[lo])
+        sols[lo + 1:hi] = fix
+    sols = T.smooth_solutions(sols)
+    say("checking", progress=0.82)
+    from frt_core.people.check import check_frames
+    rep = check_frames(T.sk, T.frames, sols, name)
+    say("baking the scene", progress=0.86)
+    usd = os.path.join(out, "task.usda")
+    bake_scene(T, sols, usd)
+    say("scoring (RULA)", progress=0.93)
+    scores = score(usd)
+    steps = []
+    for s in T.steps:
+        a, b = s["start"], s["end"]
+        iss = [i for i in rep["issues"] if a <= i[0] <= b]
+        cnt = {}
+        for i in iss:
+            cnt[i[1]] = cnt.get(i[1], 0) + 1
+        sc = [scores[i] for i in range(a, b + 1) if i < len(scores) and scores[i] is not None]
+        steps.append({**s, "seconds": round((b - a + 1) / 24.0, 1), "checks": cnt,
+                      "rula_max": max(sc) if sc else None, "rula_mean": round(sum(sc) / len(sc), 2) if sc else None,
+                      "issues": [list(i) for i in iss[:12]]})
+    res = {"task": T.name, "file": path, "usd": usd, "frames": n, "fps": 24, "steps": steps,
+           "counts": rep["counts"], "notes": T.notes, "solve_s": round(time.time() - t0, 1)}
+    json.dump(res, open(os.path.join(out, "result.json"), "w"), indent=1)
+    say(f"done in {time.time() - t0:.0f} s: {rep['counts'] or 'clean'}", progress=1.0, done=True, usd=usd)
+
+
+def bake_scene(T, sols, usd):
+    from pxr import Gf, UsdGeom, UsdLux
+
+    from frt_core import units as U
+    from frt_core.materials import MaterialLibrary
+    from frt_core.people.bake import bake
+    from frt_core.studio import dress
+    from frt_core.usdio import safe_stage
+    with safe_stage(usd) as st:
+        U.setup_stage(st, fps=24.0)
+        st.SetDefaultPrim(UsdGeom.Xform.Define(st, "/World").GetPrim())
+        st.SetStartTimeCode(0)
+        st.SetEndTimeCode(len(T.frames) - 1)
+        lib = MaterialLibrary(st, "/World/Looks")
+        UsdGeom.Xform.Define(st, "/World/Asset")
+        T.build_static(st, "/World/Asset/Scene", lib)
+        UsdGeom.Xform.Define(st, "/World/Asset/Parts")
+        bake(st, "/World/Asset/Worker", T.w, T.frames, lib, sols=sols, parts_root="/World/Asset/Parts",
+             log=lambda *a: None, character=T.character)
+        # parts nobody touched still need to be in the scene where they lie
+        from frt_core.people.bake import part_shapes
+        for pid, p in T.parts.items():
+            pp = f"/World/Asset/Parts/{pid}"
+            if st.GetPrimAtPath(pp):
+                continue
+            xf = UsdGeom.Xform.Define(st, pp)
+            xf.AddTransformOp().Set(Gf.Matrix4d(*p["W"].T.flatten().tolist()))
+            shp = part_shapes(p["spec"])
+            shp.build(st, f"{pp}/Geom", lib.refs(list(shp.groups)))
+        dress(st, lib, st.GetPrimAtPath("/World/Asset"))
+        st.GetRootLayer().customLayerData = {"frt_task": T.name}
+
+
+def score(usd):
+    """RULA per frame for the worker, with the independent scan (the same one Ergo Scan uses)."""
+    try:
+        from pxr import Usd
+
+        from frt_core.people import ergo_scan as E
+        rep = E.scan(Usd.Stage.Open(usd), step=1, log=lambda *a: None)
+        op = rep["operators"][0]
+        rows = op["rows"] if "rows" in op else op.get("frames", [])
+        out = {}
+        for r in rows:
+            out[int(round(r["frame"]))] = r["score"]
+        n = max(out) + 1 if out else 0
+        return [out.get(i) for i in range(n)]
+    except Exception as e:
+        print("scoring failed:", e)
+        return []
+
+
+if __name__ == "__main__":
+    main()
