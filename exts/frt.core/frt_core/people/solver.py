@@ -177,6 +177,7 @@ class PostureSolver:
         self._wrap = {}
         self._thumb_cache = {}
         self.keep_out = []          # [(joint names, max z in the worker frame)]: fixture faces the body stays behind
+        self.base_correct = False   # base (generated / mocap) pose: allow small pelvis / trunk corrections on top
 
     # ------------------------------------------------------------------ building a pose from the variables
     def build(self, v, targets, look, stance, free_arms="hang", swing=None, base=None, prev_arm=None):
@@ -187,6 +188,10 @@ class PostureSolver:
         if base is not None:
             pose = base.copy()
             pose.pelvis = base.pelvis + np.array([dx, -drop, dz])
+            if self.base_correct:                      # corrections on top of the base trunk
+                pose.rot["pelvis"] = ry(yaw) @ rx(hinge) @ base.local("pelvis")
+                for j, kf, kl, kt in SPINE:
+                    pose.rot[j] = rx(flex * kf) @ rz(-lat * kl) @ ry(twist * kt) @ base.local(j)
         else:
             pose = Pose(pelvis=np.array([dx, -drop, dz]))
             pose.rot["pelvis"] = ry(yaw) @ rx(hinge)
@@ -536,6 +541,22 @@ class PostureSolver:
             prev_arm = {s_: (prev.angles.get(f"swivel_{s_}"), prev.angles.get(f"twist_{s_}")) for s_ in ("l", "r")}
         if base is not None:                       # mocap-driven frame: no search, just exact limbs on the base pose
             v = np.zeros(8) if getattr(stance, "free", False) else self.fit_pelvis(base, stance)
+            if self.base_correct:                  # generated base: small corrections (keep-outs, reach, feet)
+                prev_v = prev.v if isinstance(prev, Solution) else None
+                v0 = v.copy()
+                lo_c = np.array([-12.0, -6.0, -15.0, -20.0, -15.0, -12.0, -12.0, -20.0])
+                hi_c = np.array([12.0, 25.0, 15.0, 20.0, 20.0, 15.0, 12.0, 20.0])
+
+                def fb(x):
+                    _, tm, _, _ = self.build(x, targets, look, stance, swing=swing, base=base, prev_arm=prev_arm)
+                    tm.pop("trunk", None)              # the base trunk is the natural one: penalise change, not lean
+                    c = sum(tm.values()) + float(np.sum(((x - v0) / SCALE) ** 2)) * 0.15
+                    if prev_v is not None:
+                        c += float(np.sum(((x - prev_v) / SCALE) ** 2)) * 0.5
+                    return c
+                x0 = prev_v if prev_v is not None else v0
+                v, _ = nelder_mead(fb, np.clip(x0, v0 + lo_c, v0 + hi_c), SCALE * 0.5, v0 + lo_c, v0 + hi_c,
+                                   iters=90 if prev_v is not None else 200)
             pose, terms, angles, _ = self.build(v, targets, look, stance, swing=swing, base=base, prev_arm=prev_arm)
             return Solution(pose, float(sum(terms.values())), terms, angles, v)
         prev_v = prev.v if isinstance(prev, Solution) else (None if prev is None else np.asarray(prev, float))
