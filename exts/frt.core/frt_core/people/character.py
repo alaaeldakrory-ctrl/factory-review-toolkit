@@ -211,10 +211,17 @@ class Character:
         tw_h = _twist_angle(Rc[f"lowerarm_{s}"].T @ Rc[f"hand_{s}"], a)
         return a, tw_fa, tw_fa + tw_h
 
-    def pose_world(self, pose):
-        """Character joint name -> 4x4 world (skeleton space) for one solved canonical pose."""
+    def pose_world(self, pose, root=None):
+        """Character joint name -> 4x4 world (skeleton space) for one solved canonical pose. root: (x, z, yaw) of the
+        pose's frame inside the character's frt frame (a re-rooted read-back), None = at the origin."""
         from .kinematics import fk
         Rc, Pc = fk(self.skeleton, pose)
+        if root is not None:
+            a = math.radians(root[2])
+            Ry = np.array([[math.cos(a), 0, math.sin(a)], [0, 1, 0], [-math.sin(a), 0, math.cos(a)]])
+            o = np.array([root[0], 0.0, root[1]])
+            Rc = {k: Ry @ v for k, v in Rc.items()}
+            Pc = {k: Ry @ v + o for k, v in Pc.items()}
         Bi, B3 = self.Binv, self.B[:3, :3]
         drive = getattr(self, "_drive", None)
         if drive is None:
@@ -246,10 +253,10 @@ class Character:
             W[n] = T
         return W
 
-    def local_arrays(self, pose):
-        """UsdSkel (translations, rotations, scales) for one pose, in the skeleton's joint order."""
+    def local_arrays(self, pose, root=None):
+        """UsdSkel (translations, rotations) for one pose, in the skeleton's joint order."""
         from pxr import Gf, Vt
-        W = self.pose_world(pose)
+        W = self.pose_world(pose, root)
         tr, rot = [], []
         for j in self.joints:
             n = _name(j)
@@ -286,6 +293,52 @@ class Character:
         prim.CreateAttribute("frt:character", Sdf.ValueTypeNames.String).Set(self.asset)
         prim.CreateAttribute("frt:stature", Sdf.ValueTypeNames.Float).Set(float(self.worker.stature))
         return anim
+
+
+    # -------------------------------------------------------------------------------------------- read-back
+    def read(self, stage, skel_prim, times):
+        """The character's existing animation, read back in the canonical joints: per time code a dict
+        {"R": canonical joint -> world rotation delta (identity = T-pose), "P": canonical joint -> position} in the
+        character's frt frame (B applied to skeleton space). The exact inverse of write()."""
+        from pxr import Usd, UsdSkel
+        root = skel_prim
+        while root and not root.IsA(UsdSkel.Root):
+            root = root.GetParent()
+        cache = UsdSkel.Cache()
+        cache.Populate(UsdSkel.Root(root), Usd.TraverseInstanceProxies())
+        q = cache.GetSkelQuery(UsdSkel.Skeleton(skel_prim))
+        order = [_name(j) for j in q.GetJointOrder()]
+        idx = {c: order.index(n) for c, n in CC_MAP.items() if n in order}
+        B3 = self.B[:3, :3]
+        out = []
+        for t in times:
+            S = q.ComputeJointSkelTransforms(Usd.TimeCode(float(t)))
+            R, P = {}, {}
+            for c, i in idx.items():
+                n = CC_MAP[c]
+                M = S[i]
+                Rs = _m3(M)
+                R[c] = B3 @ Rs @ self.bind[n][:3, :3].T @ B3.T
+                P[c] = B3 @ np.array(M.ExtractTranslation(), float) + self.B[:3, 3]
+            out.append({"R": R, "P": P})
+        return out
+
+    def to_pose(self, rec, root):
+        """A read-back record as a canonical Pose relative to a root (x, z, yaw) in the character's frt frame."""
+        from .kinematics import Pose
+        a = math.radians(root[2])
+        Ry = np.array([[math.cos(a), 0, math.sin(a)], [0, 1, 0], [-math.sin(a), 0, math.cos(a)]])
+        o = np.array([root[0], 0.0, root[1]])
+        Rl = {c: Ry.T @ r for c, r in rec["R"].items()}
+        pose = Pose()
+        for c in NAMES:
+            if c == "root" or c not in Rl:
+                continue
+            par = PARENT[c]
+            Rp = Rl.get(par, np.eye(3)) if par != "root" else np.eye(3)
+            pose.rot[c] = Rp.T @ Rl[c]
+        pose.pelvis = Ry.T @ (rec["P"]["pelvis"] - o) - self.skeleton.world["pelvis"]
+        return pose
 
 
 _CACHE = {}

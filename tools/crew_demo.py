@@ -18,7 +18,8 @@ os.environ.setdefault("PXR_USDC_EMIT_DEPRECATION_WARNINGS", "0")
 
 CC = os.environ.get("FRT_CHARACTERS", r"C:/Nvidia_Assets/Characters_NVD/Assets/Characters/Reallusion")
 CHARACTERS = [CC + "/ActorCore/Uniform_M_0001/uniform_m_0001.usd", CC + "/ActorCore/Uniform_F_0001/uniform_f_0001.usd",
-              CC + "/Worker/Worker.usd", CC + "/Debra/Debra.usd", CC + "/ActorCore/Party_M_0001/party-m-0001.usd",
+              CC + "/Worker/Worker.usd", CC + "/ActorCore/Uniform_M_0001/uniform_m_0001.usd",
+              CC + "/ActorCore/Party_M_0001/party-m-0001.usd",
               CC + "/ActorCore/Business_F_0002/business-f-0002.usd"]
 JOBS = ["ratchet", "connector", "hammer", "box", "overhead", "kneel_drive", "lug_torque", "battery", "inspect",
         "guide_hoist", "control_box", "scan", "torque", "cable_tie", "wheel", "two_wrench", "decal", "grease",
@@ -97,9 +98,13 @@ def main():
             s.build(st, f"{base}/Sign", lib.refs(list(s.groups)))
             length = max(length, end + 1)
             fx, fy, fz = res.job.focus
-            # from the front-left, over the work, at the face and hands
-            shots.append({"seq": f"{i + 1:02d}_{r['job']}", "eye": [x + fx - 140.0, 165.0, z + fz + 200.0],
-                          "at": [x + fx * 0.5, max(80.0, fy) + 5.0, z + fz * 0.4], "mm": 30, "frames": [0, end, 1]})
+            # front-right over a bench; behind-right for a panel (it would hide the worker)
+            kind = getattr(res.job.fixture, "kind", "")
+            sx, sz = res.spot
+            wx, wz = x + sx, z + sz
+            eye = [wx - 150.0, 165.0, wz + (-130.0 if kind == "panel" else 190.0)]
+            shots.append({"seq": f"{i + 1:02d}_{r['job']}", "eye": eye, "at": [wx + fx * 0.4, max(70.0, fy), wz + fz * 0.5],
+                          "mm": 32, "frames": [0, end, 1], "kind": kind})
             print(f"baked {i + 1:02d} {r['job']} on {ch.id}")
         dress(st, lib, st.GetPrimAtPath("/World/Asset"))
     rws = (n + cols - 1) // cols
