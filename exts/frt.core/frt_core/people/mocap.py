@@ -46,8 +46,27 @@ def _hinge(R_parent, rest_dir, new_dir):
     return Rm @ R_parent
 
 
-def retarget(sk, M):
-    """Canonical local rotations from Mixamo world joint positions M (dict canonical name -> xyz, cm)."""
+def _axis_rot(axis, rad):
+    a = unit(axis)
+    K = np.array([[0, -a[2], a[1]], [a[2], 0, -a[0]], [-a[1], a[0], 0]])
+    return I3 + math.sin(rad) * K + (1 - math.cos(rad)) * K @ K
+
+
+def _twist_about(Q, axis):
+    """Twist angle (rad) of rotation Q about `axis` (swing-twist decomposition), within +-pi."""
+    w = math.sqrt(max(0.0, 1.0 + Q[0, 0] + Q[1, 1] + Q[2, 2])) / 2.0
+    if w < 1e-6:
+        return 0.0
+    v = np.array([Q[2, 1] - Q[1, 2], Q[0, 2] - Q[2, 0], Q[1, 0] - Q[0, 1]]) / (4.0 * w)
+    a = unit(axis)
+    return 2.0 * math.atan2(float(np.dot(v, a)), w)
+
+
+def retarget(sk, M, cal=None, world=False):
+    """Canonical local rotations from world joint positions M (dict canonical name -> xyz, cm).
+    cal: {joint: world rotation of that joint in the source's neutral stance} - removes the constant offset where
+    the source skeleton's rest shape differs from ours (collarbones, spine curve); world=True also returns the world
+    rotations (for computing cal)."""
     W = sk.world
     R = {}
     hip_left = unit(M["thigh_l"] - M["thigh_r"])
@@ -65,19 +84,42 @@ def retarget(sk, M):
     fwd = unit(np.cross(hip_left, UP))
     for s, sx in (("l", 1.0), ("r", -1.0)):
         R[f"clavicle_{s}"] = frame_rot(rest(f"clavicle_{s}", f"upperarm_{s}"), UP,
-                                       M[f"upperarm_{s}"] - M[f"clavicle_{s}"], UP)
+                                       M[f"upperarm_{s}"] - M[f"clavicle_{s}"], R["spine_03"] @ UP)   # roll with the chest
         ua = M[f"lowerarm_{s}"] - M[f"upperarm_{s}"]
         fa = M[f"hand_{s}"] - M[f"lowerarm_{s}"]
+        # roll reference: the elbow's bend plane; with the arm straight, the thumb side (never along the bone)
         bend = fa - unit(ua) * np.dot(fa, unit(ua))
-        ref = bend if np.linalg.norm(bend) > 0.08 * np.linalg.norm(fa) else R["spine_03"] @ FWD
+        thumb = M[f"index_{s}"] - M[f"pinky_{s}"] if f"index_{s}" in M else R["spine_03"] @ FWD
+        thumb = thumb - unit(ua) * np.dot(thumb, unit(ua))
+        k = min(1.0, float(np.linalg.norm(bend)) / (0.25 * float(np.linalg.norm(fa)) + 1e-9))
+        ref = unit(bend) * k + unit(thumb) * (1.0 - k) if np.linalg.norm(thumb) > 1e-6 else bend
         R[f"upperarm_{s}"] = frame_rot(rest(f"upperarm_{s}", f"lowerarm_{s}"), FWD, ua, ref)
         R[f"lowerarm_{s}"] = _hinge(R[f"upperarm_{s}"], rest(f"lowerarm_{s}", f"hand_{s}"), fa)
         R[f"hand_{s}"] = frame_rot(rest(f"hand_{s}", f"middle_01_{s}"), FWD, M[f"middle_{s}"] - M[f"hand_{s}"],
                                    M[f"index_{s}"] - M[f"pinky_{s}"])
+        # roll reference: the knee points away from the shin (bend plane); straight leg: the pelvis' forward,
+        # made perpendicular to the thigh (never along it, even crouched with the thigh pointing forward)
         th = M[f"calf_{s}"] - M[f"thigh_{s}"]
-        R[f"thigh_{s}"] = frame_rot(rest(f"thigh_{s}", f"calf_{s}"), FWD, th, fwd)
+        sh_ = M[f"foot_{s}"] - M[f"calf_{s}"]
+        kb = -(sh_ - unit(th) * np.dot(sh_, unit(th)))
+        pf = R["pelvis"] @ FWD
+        pf = pf - unit(th) * np.dot(pf, unit(th))
+        k = min(1.0, float(np.linalg.norm(kb)) / (0.25 * float(np.linalg.norm(sh_)) + 1e-9))
+        ref = unit(kb) * k + unit(pf) * (1.0 - k) if np.linalg.norm(pf) > 1e-6 else kb
+        R[f"thigh_{s}"] = frame_rot(rest(f"thigh_{s}", f"calf_{s}"), FWD, th, ref)
         R[f"calf_{s}"] = _hinge(R[f"thigh_{s}"], rest(f"calf_{s}", f"foot_{s}"), M[f"foot_{s}"] - M[f"calf_{s}"])
-        R[f"foot_{s}"] = frame_rot(rest(f"foot_{s}", f"ball_{s}"), LEFT, M[f"ball_{s}"] - M[f"foot_{s}"], hip_left)
+        R[f"foot_{s}"] = frame_rot(rest(f"foot_{s}", f"ball_{s}"), LEFT, M[f"ball_{s}"] - M[f"foot_{s}"],
+                                   R[f"calf_{s}"] @ LEFT)                  # roll with the shin
+    if cal:
+        for j, C in cal.items():
+            if j in R:
+                R[j] = R[j] @ C.T
+    for s in ("l", "r"):                                  # forearm twist: out of the wrist, into the forearm
+        if f"hand_{s}" in R and f"lowerarm_{s}" in R:
+            ax = R[f"lowerarm_{s}"] @ unit(rest(f"lowerarm_{s}", f"hand_{s}"))
+            Q = R[f"hand_{s}"] @ R[f"lowerarm_{s}"].T          # hand relative to the forearm, in the world
+            tw = _twist_about(Q, ax)
+            R[f"lowerarm_{s}"] = _axis_rot(ax, tw) @ R[f"lowerarm_{s}"]
     from .skeleton import PARENT
     out = Pose()
     for j, Rw in R.items():
@@ -86,7 +128,7 @@ def retarget(sk, M):
             p = PARENT[p]
         Rp = R[p] if p is not None else I3
         out.rot[j] = Rp.T @ Rw
-    return out
+    return (out, R) if world else out
 
 
 class Cycle:

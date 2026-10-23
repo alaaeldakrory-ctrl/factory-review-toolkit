@@ -113,14 +113,22 @@ def _quat(R):
 
 
 def keep_out_cost(P, rules):
-    """Penalty for body joints in front of a fixture face: rules = [(joint names, max z)] (worker frame, cm)."""
+    """Penalty for body joints in front of a fixture face: rules = [(joint names, max z)] or
+    [(joint names, plane point, plane normal)] (the normal points into the fixture; worker frame, cm)."""
     c = 0.0
-    for joints, zmax in rules:
-        for q in joints:
-            over = float(P[q][2]) - zmax
+    for r in rules:
+        for q in r[0]:
+            over = keep_out_over(P[q], r)
             if over > 0.0:
                 c += (over / 2.0) ** 2 * 3.0
     return c
+
+
+def keep_out_over(p, rule):
+    """How far point p is past a keep-out rule (cm; negative = clear)."""
+    if len(rule) == 3:
+        return float(np.dot(np.asarray(p, float) - np.asarray(rule[1], float), np.asarray(rule[2], float)))
+    return float(p[2]) - rule[1]
 
 
 def nelder_mead(f, x0, step, lo, hi, iters=160, tol=1e-4):

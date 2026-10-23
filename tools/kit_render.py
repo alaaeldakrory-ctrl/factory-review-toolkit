@@ -42,7 +42,8 @@ async def run(log):
     from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport
     ctx = omni.usd.get_context()
     s = carb.settings.get_settings()
-    for k in ("/app/viewport/grid/enabled",):                # session only - never persistent settings
+    for k in ("/app/viewport/grid/enabled",                  # session only - never persistent settings
+              "/app/renderer/skipWhileMinimized"):          # keep rendering when the window is minimized
         s.set(k, False)
     vp = None
     for _ in range(600):                                   # Kit may still be starting: wait for a live viewport

@@ -955,8 +955,9 @@ _RAIL = ((J.HIPS, 47.5 - 10.0),)
 _CONSOLE = ((J.HIPS, 26.0 - 10.0),)
 JOBS_AWP = [
     Job("fitting_start", "Start a hose fitting", "hydraulics", "W50M", j_fitting_start, fx(b_manifold_front),
-        (-4, TOP + 6, 34)),
-    Job("two_wrench", "Two-wrench fitting", "hydraulics", "W95M", j_two_wrench, fx(b_two_wrench), (-4, TOP + 18, 36)),
+        (-4, TOP + 6, 30), camera=(-120.0, 40.0, -30.0)),
+    Job("two_wrench", "Two-wrench fitting", "hydraulics", "W95M", j_two_wrench, fx(b_two_wrench), (-4, TOP + 18, 32),
+        camera=(-125.0, 35.0, -35.0)),
     Job("hose_clip", "Clip a hose to the rail", "hydraulics", "W05F", j_hose_clip, fx(b_hose_rail, kind="rail"), (-6, 99, 44),
         keep_out=_RAIL),
     Job("coupler", "Quick coupler", "hydraulics", "W50M", j_coupler, fx(b_coupler, kind="panel"), (-4, 105, 32)),

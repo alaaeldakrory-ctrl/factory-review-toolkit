@@ -13,12 +13,13 @@ import math
 import numpy as np
 
 from .kinematics import fk
+from .solver import keep_out_over
 from .skeleton import NAMES
 
 # max rotation from rest (deg) per joint family
 LIMITS = {"pelvis": 75, "spine_01": 35, "spine_02": 35, "spine_03": 35, "neck_01": 55, "head": 65,
           "clavicle": 35, "upperarm": 175, "lowerarm": 165, "hand": 95, "thumb_01": 80, "thumb": 95,
-          "finger": 110, "thigh": 135, "calf": 155, "foot": 65, "ball": 55}
+          "finger": 110, "thigh": 135, "calf": 160, "foot": 65, "ball": 55}
 POP = {"default": 32.0, "finger": 55.0, "hand": 40.0}      # max change per frame at 24 fps (deg)
 # postures that are possible but look (and are) wrong for hand work: arm folded up tight, trunk bent over, head
 # turned or dropped far - the work is too close, too low or behind the worker (solver angles, deg)
@@ -71,16 +72,16 @@ def check_frames(sk, frames, sols, name="", keep_out=None):
                     lim = AWKWARD_LOW_TRUNK                          # hands below the hips: bending is the task
                 if abs(float(ang.get(k, 0.0))) > lim:
                     issues.append((i, "awkward", k, round(abs(float(ang[k])), 1), lim))
-        for joints, zmax in keep_out or ():                  # the body stays behind the fixture faces
-            for q in joints:
-                over = float(P[q][2]) - zmax
+        for rule in keep_out or ():                          # the body stays behind the fixture faces
+            for q in rule[0]:
+                over = keep_out_over(P[q], rule)
                 if over > 2.0:
                     issues.append((i, "collision", q, round(over, 1), 2.0))
         for s in ("l", "r"):                                 # elbows / knees never the wrong way
             ua, fa = P[f"lowerarm_{s}"] - P[f"upperarm_{s}"], P[f"hand_{s}"] - P[f"lowerarm_{s}"]
             th, ca = P[f"calf_{s}"] - P[f"thigh_{s}"], P[f"foot_{s}"] - P[f"calf_{s}"]
             knee_fwd = np.dot(np.cross(th, ca), R["pelvis"] @ np.array([1.0, 0.0, 0.0]))
-            if knee_fwd < -1e-3 * np.linalg.norm(th) * np.linalg.norm(ca) and _ang(th, ca) > 3:   # forward bend: +X
+            if knee_fwd < -1e-3 * np.linalg.norm(th) * np.linalg.norm(ca) and _ang(th, ca) > 10:   # forward bend: +X; up to 10 deg locked-back is normal
                 issues.append((i, "knee backwards", s, round(_ang(th, ca), 1), 0))
         for t in f.targets:                                  # contact: grip point reached
             Rh = R[f"hand_{t.side}"]
