@@ -150,6 +150,12 @@ The catalog motion ids are in `exts/frt.core/frt_core/people/data/motions.toml`.
 generators (ratchet, torque, screwdriver, hammer, connector, cable tie, crimp, pick / place, carry, lift). For the
 best hand detail at a station, use the 50 jobs above: walk with a process, then play the job at that station.
 
+## 4b. Ergonomic assessment of an existing scene
+
+To score operators that are already animated in a scene, use `tools/ergo_scan.py`. It works with any rig, any
+number of operators, and writes the report, dashboards and viewport markers. The step-by-step brief is in
+`docs/people/ERGO_AGENT_BRIEF.md`.
+
 ## 5. Rules for agents
 
 - Do not edit `solver.py`, `check.py`, `jobs*.py` or `handkit.py` to make one scene pass. Those are shared and
@@ -173,4 +179,5 @@ best hand detail at a station, use the 50 jobs above: walk with a process, then 
 | Job recipes | `exts/frt.core/frt_core/people/jobs.py`, `jobs_awp.py` |
 | Solver and checks | `people/solver.py`, `people/check.py`, `people/placement.py` |
 | Stress test (how robust is a recipe) | `tools/stress_test.py --only=<job>` |
+| Ergonomic scan + dashboards of any scene | `tools/ergo_scan.py`, `people/ergo_scan.py`, `people/ergo_dash.py`, `docs/people/ERGO_AGENT_BRIEF.md` |
 | Scene builder from drawings (non-people) | `README.md` |
