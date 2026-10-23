@@ -22,4 +22,5 @@ name = "frt_core"
 requirements = ["pyparsing>=3.0", "fonttools>=4.40", "ezdxf==1.4.5", "pymupdf>=1.24,<2"]
 modules = ["pyparsing", "fontTools", "ezdxf", "fitz"]
 extra_args = ["--no-deps"]
+archiveDirs = ["../../wheels"]       # offline bundle: wheels next to exts/ are tried first (air-gapped PCs)
 use_online_index = true

@@ -154,7 +154,7 @@ def run(task):
             frames, sols, rep, spot, raw = solve_placed(S, frames, rules)
         counts = dict(rep["counts"])
         from frt_core.people.placement import diagnose
-        findings = diagnose(S, frames, rep) if counts else []
+        findings = diagnose(S, frames, rep, sols) if counts else []
         top = {}
         for it in rep["issues"]:
             top.setdefault(f"{it[1]}:{it[2]}", []).append(it[3])

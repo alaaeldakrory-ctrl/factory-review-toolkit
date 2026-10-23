@@ -132,10 +132,13 @@ def solve_placed(S, frames, keep_out=(), log=None):
     return best[1], best[2], best[3], best[4], raw
 
 
-def diagnose(S, frames, rep):
+def diagnose(S, frames, rep, sols=None):
     """Why a job still fails after stepping, in workplace terms: for the flagged frames, where the working hand's
     target is relative to this body (above the shoulder, beyond comfortable reach, below the knee, behind the body).
-    Returns a list of findings like {"kind": "too high", "cm": 18, "side": "r", "frames": 24}."""
+    Returns a list of findings like {"kind": "too high", "cm": 18, "side": "r", "frames": 24}.
+    With `sols`, reach is measured from the shoulder where it actually is in each solved frame (kneeling,
+    crouching, leaning), not from the standing shoulder."""
+    from .kinematics import fk
     sk = S.sk
     flagged = sorted({i for i, *_ in rep["issues"]})
     if not flagged:
@@ -147,7 +150,11 @@ def diagnose(S, frames, rep):
         for t in frames[i].targets:
             if t.weight < 0.5:
                 continue
-            sh = np.asarray(sk.world[f"upperarm_{t.side}"], float)
+            if sols is not None and sols[i] is not None:
+                _, P_ = fk(sk, sols[i].pose)
+                sh = np.asarray(P_[f"upperarm_{t.side}"], float)
+            else:
+                sh = np.asarray(sk.world[f"upperarm_{t.side}"], float)
             p = np.asarray(t.point, float)
             d = p - sh
             kinds = []

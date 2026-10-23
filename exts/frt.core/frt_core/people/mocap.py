@@ -18,7 +18,8 @@ import numpy as np
 
 from .kinematics import I3, Pose, frame_rot, unit
 
-MIXAMO_DIR = os.environ.get("FRT_MIXAMO", r"C:/OmniverseData/mixamo/fbx")
+_BUNDLED = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "data", "mixamo"))
+MIXAMO_DIR = os.environ.get("FRT_MIXAMO") or (_BUNDLED if os.path.isdir(_BUNDLED) else r"C:/OmniverseData/mixamo/fbx")
 UP = np.array([0.0, 1.0, 0.0])
 FWD = np.array([0.0, 0.0, 1.0])
 LEFT = np.array([1.0, 0.0, 0.0])

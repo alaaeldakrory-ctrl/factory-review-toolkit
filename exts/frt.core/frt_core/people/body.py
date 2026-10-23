@@ -6,7 +6,8 @@ palms down). Here the canonical Skeleton is built from those joint positions (so
 true proportions) and the mesh is written as a UsdSkel skinned mesh. Work clothes are painted by body region from
 the skin weights: hi-vis vest with reflective bands, shirt sleeves, work trousers, gloves, safety boots, skin, hair.
 
-Bodies are looked up in FRT_BODIES, ~/.frt/bodies, then C:/OmniverseData/mpfb_bodies.
+Bodies are looked up in FRT_BODIES, <repo>/data/bodies (the offline bundle), ~/.frt/bodies, then
+C:/OmniverseData/mpfb_bodies.
 """
 import os
 
@@ -15,7 +16,9 @@ from pxr import Gf, Sdf, UsdGeom, UsdShade, UsdSkel, Vt
 
 from .skeleton import INDEX, NAMES, PARENT, Skeleton
 
-DIRS = [os.environ.get("FRT_BODIES", ""), os.path.join(os.path.expanduser("~"), ".frt", "bodies"),
+_REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+DIRS = [os.environ.get("FRT_BODIES", ""), os.path.join(_REPO, "data", "bodies"),
+        os.path.join(os.path.expanduser("~"), ".frt", "bodies"),
         r"C:/OmniverseData/mpfb_bodies"]
 _CACHE = {}
 
