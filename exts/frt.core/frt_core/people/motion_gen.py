@@ -27,6 +27,7 @@ class Frame:
     static: bool = False                          # same as the previous frame (waiting): reuse its solution
     label: str = ""                               # step / phase name (timeline, findings)
     base: object = None                           # full-body base pose (mocap) the solver works on top of
+    world: object = None                          # 4x4: this frame's worker frame -> the scene collision field
 
 
 def ease(u):

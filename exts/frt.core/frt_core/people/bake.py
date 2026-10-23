@@ -49,10 +49,10 @@ def blend(p0, p1, u):
     return out
 
 
-def solve_frames(S, frames, stance=None, step=1, log=print, label=""):
+def solve_frames(S, frames, stance=None, step=1, log=print, label="", prev=None):
+    """prev: the solution just before these frames (continuing a longer stretch)."""
     t0 = time.time()
     sols = [None] * len(frames)
-    prev = None
     key = [i for i, f in enumerate(frames) if not f.static and (i % step == 0 or i == len(frames) - 1
                                                                  or frames[i].root is not None and step > 1 and i % step == 0)]
     keyset = set(key)
@@ -63,7 +63,7 @@ def solve_frames(S, frames, stance=None, step=1, log=print, label=""):
         if i not in keyset and prev is not None and i < len(frames) - 1:
             continue
         sols[i] = S.solve(f.targets, look=f.look, stance=f.stance or stance, prev=prev, smooth=1.0, swing=f.swing,
-                          base=f.base)
+                          base=f.base, world=getattr(f, "world", None))
         prev = sols[i]
     # fill the frames between solved ones
     last = None

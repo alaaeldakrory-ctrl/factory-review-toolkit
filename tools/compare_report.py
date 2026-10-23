@@ -20,6 +20,7 @@ def stats(op, frames):
         return {}
     sm = _smooth([r["score"] for r in rows], r=3)
     imp = [r for r in rows if r.get("implausible")]
+    inside = [r for r in rows if "inside_equipment" in (r.get("implausible") or {})]
     why = {}
     for r in imp:
         for k in r["implausible"]:
@@ -29,6 +30,7 @@ def stats(op, frames):
             "rula_median": int(np.median(sm)), "pct_5plus": round(100.0 * sum(s >= 5 for s in sm) / len(sm), 1),
             "pct_7": round(100.0 * sum(s >= 7 for s in sm) / len(sm), 1),
             "implausible_pct": round(100.0 * len(imp) / len(rows), 1),
+            "inside_pct": round(100.0 * len(inside) / len(rows), 1),
             "implausible_top": dict(sorted(why.items(), key=lambda kv: -kv[1])[:5]),
             "trunk_p90": round(float(np.percentile([abs(r["trunk_deg"]) for r in rows], 90)), 1),
             "arm_p90": round(float(np.percentile([r["upper_arm_deg"] for r in rows], 90)), 1),
@@ -49,15 +51,15 @@ def main():
     for tag, path in (("before", summ["scene"]), ("after", os.path.join(d, "after.usda"))):
         st = Usd.Stage.Open(path)
         res[tag] = {o["name"]: o for o in E.scan(st, "/World", step=step, frames=tuple(summ["frames"]),
-                                                 log=lambda *a: None)["operators"]}
+                                                 log=lambda *a: None, collide=True)["operators"]}
     out, L, worst = {}, [], []
     L += ["# Apples to apples: original animation vs re-solved by our solver", "",
           f"Scene `{summ['scene']}`. The same characters, frames, hand contact points, feet and gaze. Only the body posture "
           "in the working frames differs. Scored by Ergo Scan with the same settings: RULA, plus the anatomy judge "
           "(joint positions only, so any rig is judged the same way). Working frames only: walking and idle standing "
           "are identical in both.", "",
-          "| worker | version | RULA max | p90 | median | time at 5+ | time at 7 | physically impossible frames | main reasons | back p90 | arm p90 | knee p90 |",
-          "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+          "| worker | version | RULA max | p90 | median | time at 5+ | time at 7 | physically impossible frames | body inside equipment | main reasons | back p90 | arm p90 | knee p90 |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     if any("working" not in w for w in summ["workers"].values()):       # older summary: classify the frames again
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "exts", "frt.core"))
@@ -82,7 +84,7 @@ def main():
             out[name][tag] = s_
             if s_:
                 L.append(f"| {name} | {tag} | {s_['rula_max']} | {s_['rula_p90']} | {s_['rula_median']} | {s_['pct_5plus']}% | "
-                         f"{s_['pct_7']}% | {s_['implausible_pct']}% | {', '.join(s_['implausible_top']) or '-'} | "
+                         f"{s_['pct_7']}% | {s_['implausible_pct']}% | {s_['inside_pct']}% | {', '.join(s_['implausible_top']) or '-'} | "
                          f"{s_['trunk_p90']}° | {s_['arm_p90']}° | {s_['knee_p90']}° |")
         # the original's worst moments (working frames): RULA 7 or impossible, at least 4 s apart
         op = res["before"][name]
@@ -96,8 +98,10 @@ def main():
                 break
         worst.append({"worker": name, "frames": picks})
     L += ["", "Caveats:",
-          "- Re-solved with the feet where the original put them. The solver could not step closer, so problem 2 "
-          "(standing in the wrong place) is only partly addressed.",
+          "- The solver may step up to ~20 cm from where the original stood when that spot is clearly worse (the "
+          "feet ease over and back). Bigger moves would need the walk itself re-planned.",
+          "- Body inside equipment: the scene's geometry moment by moment; what stands still is an obstacle, what is "
+          "being carried is not. Hands and the held part are allowed to touch.",
           "- The hands' contact points are copied. Where the original put a hand somewhere a person cannot reach "
           "comfortably, the re-solve is the best posture for that point, and the score is a real workplace finding.",
           "- The hand orientation is chosen by the solver, so a held part may be gripped differently."]

@@ -177,6 +177,8 @@ class PostureSolver:
         self._wrap = {}
         self._thumb_cache = {}
         self.keep_out = []          # [(joint names, max z in the worker frame)]: fixture faces the body stays behind
+        self.field = None           # collide.SceneField: the scene's equipment the body stays out of
+        self._world = None          # 4x4 worker frame -> field, per solve
         self.base_correct = False   # base (generated / mocap) pose: allow small pelvis / trunk corrections on top
 
     # ------------------------------------------------------------------ building a pose from the variables
@@ -318,6 +320,10 @@ class PostureSolver:
         Rall, Pall = fk(sk, pose)
         if self.keep_out:
             terms["keep_out"] = keep_out_cost(Pall, self.keep_out)
+        if self.field is not None:
+            terms["collide"] = self.field.cost(Pall, self._world)
+        # knees: a deep knee bend is real effort too (so squatting is chosen over stooping, not for free)
+        terms["knees"] = (max(0.0, drop - 6.0) / 60.0) ** 2 * 0.5
         c = com(Pall)
         feet = []
         for s in ("l", "r"):
@@ -534,7 +540,14 @@ class PostureSolver:
         pose.rot[f"thumb_03_{s}"] = axis_angle(k3, math.radians(x[4]))
 
     # ------------------------------------------------------------------ solving
-    def solve(self, targets, look=None, stance=None, prev=None, smooth=1.0, seeds=None, swing=None, base=None):
+    def low_work(self, targets):
+        """Hands working below mid-thigh: squatting has to be among the postures tried, not only stooping."""
+        hip = float(self.sk.world["thigh_l"][1])
+        return any(t.weight >= 0.5 and float(t.point[1]) < hip * 0.75 for t in targets)
+
+    def solve(self, targets, look=None, stance=None, prev=None, smooth=1.0, seeds=None, swing=None, base=None,
+              world=None):
+        self._world = world
         stance = stance or self.default_stance()
         prev_arm = None
         if isinstance(prev, Solution):
@@ -575,6 +588,12 @@ class PostureSolver:
             if prev_v is not None:                                  # and an upright fresh start: no inherited lean
                 starts = list(starts) + [np.array([0.0, stance.drop, 0.0, 0.0, 5.0, 3.0, 0.0, 0.0])]
             starts = [np.clip(np.asarray(x0, float), lo, hi) for x0 in starts]
+        if getattr(stance, "drop", None) is None and self.low_work(targets):     # squat as well as stoop
+            hip = float(self.sk.world["thigh_l"][1])
+            low = min(float(t.point[1]) for t in targets if t.weight >= 0.5)
+            d1 = min(HI[1] - 2.0, max(15.0, (hip - low) * 0.55))
+            starts = list(starts) + [np.array([0.0, d1, 4.0, 0.0, 20.0, 8.0, 0.0, 0.0]),
+                                     np.array([0.0, min(HI[1] - 2.0, d1 + 15.0), 6.0, 0.0, 30.0, 12.0, 0.0, 0.0])]
         if getattr(stance, "hinge", None) is not None:
             lo[4], hi[4] = stance.hinge
         best = None

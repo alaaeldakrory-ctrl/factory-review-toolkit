@@ -42,7 +42,8 @@ def rot_angle(R):
     return math.degrees(math.acos(max(-1.0, min(1.0, c))))
 
 
-def check_frames(sk, frames, sols, name="", keep_out=None):
+def check_frames(sk, frames, sols, name="", keep_out=None, field=None):
+    """field: a collide.SceneField (or a function frame index -> field); frames carry .world (worker -> field)."""
     issues = []
     prev = None
     worst_pop, worst_lim, worst_contact, worst_foot = 0.0, 0.0, 0.0, 0.0
@@ -77,6 +78,20 @@ def check_frames(sk, frames, sols, name="", keep_out=None):
                 over = keep_out_over(P[q], rule)
                 if over > 2.0:
                     issues.append((i, "collision", q, round(over, 1), 2.0))
+        fld = field(i) if callable(field) else field
+        if fld is not None:                                  # the body inside the scene's equipment
+            from .collide import body_points
+            M = getattr(f, "world", None)
+            pts, rad, part = body_points(P)
+            if M is not None:
+                pts = (M[:3, :3] @ pts.T).T + M[:3, 3]
+            pen = fld.penetration((pts, rad, part))
+            worst = {}
+            for p_, q in zip(pen, part):
+                if p_ > 2.0:
+                    worst[q] = max(worst.get(q, 0.0), float(p_))
+            for q, p_ in worst.items():
+                issues.append((i, "inside equipment", q, round(p_, 1), 2.0))
         for s in ("l", "r"):                                 # elbows / knees never the wrong way
             ua, fa = P[f"lowerarm_{s}"] - P[f"upperarm_{s}"], P[f"hand_{s}"] - P[f"lowerarm_{s}"]
             th, ca = P[f"calf_{s}"] - P[f"thigh_{s}"], P[f"foot_{s}"] - P[f"calf_{s}"]
