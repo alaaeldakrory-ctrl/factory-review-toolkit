@@ -64,22 +64,59 @@ def soma_to_canonical(pj, names77, s):
     return {c: pj[ix[so]] / s for c, so in FROM_SOMA.items() if so in ix}
 
 
-def main():
-    from frt_core.people.bake import solve_frames
-    from frt_core.people.check import check_frames
-    from frt_core.people.jobs import BY_ID
-    from frt_core.people.mocap import retarget
+def pin_hands(sk, frames, ramp=6):
+    """Hands follow the job's targets only while they work (target weight >= 0.5); in between, the base (Kimodo)
+    arms play: each frame's target becomes a blend from the base hand to the job target by a pin weight that
+    eases in / out over `ramp` frames, so there is no jump where a hand starts or stops working."""
+    from frt_core.people.kinematics import fk
+    from frt_core.people.motion_gen import lerp_target
+    from frt_core.people.solver import HandTarget
+    n = len(frames)
+    for side in ("l", "r"):
+        work = np.array([any(t.side == side and t.weight >= 0.5 for t in f.targets) for f in frames], float)
+        w = work.copy()
+        for i in range(n):                                    # ease in / out around the working stretches
+            lo, hi = max(0, i - ramp), min(n, i + ramp + 1)
+            w[i] = max(work[i], float(np.max(work[lo:hi]) * 0.0))
+        dist = np.full(n, 1e9)                                # frames to the nearest working frame
+        last = -1e9
+        for i in range(n):
+            last = i if work[i] else last
+            dist[i] = i - last
+        last = 1e9
+        for i in range(n - 1, -1, -1):
+            last = i if work[i] else last
+            dist[i] = min(dist[i], last - i)
+        w = np.clip(1.0 - dist / float(ramp + 1), 0.0, 1.0)
+        w = w * w * (3 - 2 * w)
+        for i, f in enumerate(frames):
+            t = next((x for x in f.targets if x.side == side), None)
+            others = [x for x in f.targets if x.side != side]
+            if w[i] <= 1e-3:
+                f.targets = others                            # free: the base arm as generated
+                continue
+            if t is None:
+                continue
+            if w[i] >= 0.999 or f.base is None:
+                continue
+            R_, P_ = fk(sk, f.base)
+            sx = 1.0 if side == "l" else -1.0
+            fi = R_[f"hand_{side}"] @ np.array([sx, 0.0, 0.0])
+            pm = R_[f"hand_{side}"] @ np.array([0.0, -1.0, 0.0])
+            hl = sk.length(f"hand_{side}", f"middle_01_{side}") / 0.47
+            b = HandTarget(side, tuple(P_[f"hand_{side}"] + fi * hl * 0.4 + pm * 1.6), tuple(fi), tuple(pm), "relaxed", 0.3)
+            f.targets = others + [lerp_target(b, t, float(w[i]), grip=("blend", "relaxed", t.grip, float(w[i])))]
+    return frames
+
+
+def prepare(jid, every=4, steps=100, seed=0, full_every=3, force_full=False):
+    """Keyframes of a solved job for Kimodo -> (keys.npz path, generated npz path)."""
     from frt_core.people.motion_gen import FPS
     from frt_core.people.skeleton import Skeleton
-    from frt_core.people.solver import PostureSolver, Stance
     from frt_core.people.workers import WORKERS
-    jid = sys.argv[1]
-    opt = {a.split("=")[0][2:]: a.split("=")[1] for a in sys.argv[2:] if a.startswith("--")}
-    every, steps, seed = int(opt.get("every", 4)), int(opt.get("steps", 100)), int(opt.get("seed", 0))
     out = os.path.join(ROOT, "out", "people", "kimodo", jid)
     os.makedirs(out, exist_ok=True)
     c = pickle.load(open(os.path.join(ROOT, "out", "people", "jobs", "cache", jid + ".pkl"), "rb"))
-    job = BY_ID[jid]
     w = WORKERS[c["worker"]]
     sk = Skeleton.for_worker(w)
     frames, sols = c["frames"], c["sols"]
@@ -88,19 +125,49 @@ def main():
     feet = np.ones(len(idx), bool)
     posture = any(getattr(f.stance, "drop", None) is not None for f in frames if f.stance is not None)
     full = np.zeros(len(idx), bool)
-    if posture or "full" in opt:                      # kneel / squat: give the posture itself every 3rd keyframe
-        full[::int(opt.get("full_every", 3))] = True
+    if posture or force_full:                         # kneel / squat: give the posture itself every 3rd keyframe
+        full[::full_every] = True
     src = os.path.join(out, "keys.npz")
     np.savez(src, seconds=len(frames) / FPS, fps_in=FPS, frames=np.array(idx), t=np.array(idx) / FPS,
              names=np.array(names), P=P, R=R, use_r=ur, use_l=ul, use_feet=feet, use_full=full, scale=s, steps=steps,
              seed=seed)
-    gen = os.path.join(out, "kimodo.npz")
+    return src, os.path.join(out, "kimodo.npz")
+
+
+def generate(pairs):
+    """Run Kimodo on [(keys, out)] in one process (the model loads once)."""
     env = dict(os.environ, HF_HOME=r"C:/OmniverseData/kimodo/hf")
-    r = subprocess.run([KIMODO_PY, os.path.join(HERE, "kimodo_constrained.py"), src, gen], capture_output=True,
+    args = [x for p in pairs for x in p]
+    r = subprocess.run([KIMODO_PY, os.path.join(HERE, "kimodo_constrained.py")] + args, capture_output=True,
                        text=True, env=env)
-    print(r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr[-2000:])
+    return r.stdout, r.stderr
+
+
+def finalize(jid):
+    """Kimodo result -> our worker, final pass (Kimodo's body, our hands), checks -> summary dict."""
+    from frt_core.people.bake import solve_frames
+    from frt_core.people.check import check_frames
+    from frt_core.people.jobs import BY_ID
+    from frt_core.people.mocap import retarget
+    from frt_core.people.motion_gen import FPS
+    from frt_core.people.skeleton import Skeleton
+    from frt_core.people.solver import PostureSolver
+    from frt_core.people.workers import WORKERS
+    out = os.path.join(ROOT, "out", "people", "kimodo", jid)
+    c = pickle.load(open(os.path.join(ROOT, "out", "people", "jobs", "cache", jid + ".pkl"), "rb"))
+    job = BY_ID[jid]
+    w = WORKERS[c["worker"]]
+    sk = Skeleton.for_worker(w)
+    frames, sols = c["frames"], c["sols"]
+    s = KIMODO_HIP_M / float(sk.world["pelvis"][1])
+    gen = os.path.join(out, "kimodo.npz")
+    if not os.path.isfile(gen):
+        return {"job": jid, "error": "no Kimodo output"}
     g = np.load(gen)
     pj, names77, kfps = g["posed_joints"], [str(x) for x in g["names77"]], float(g["fps"])
+    k_ = np.array([1.0, 4.0, 6.0, 4.0, 1.0]) / 16.0          # light temporal smoothing (hands are pinned anyway)
+    pad = np.concatenate([pj[:1].repeat(2, 0), pj, pj[-1:].repeat(2, 0)])
+    pj = sum(k_[i] * pad[i:i + len(pj)] for i in range(5))
     # resample Kimodo (30 fps) to our frames (24 fps), retarget, keep our hand targets / tools / gaze
     new = []
     cal = soma_calibration(sk, s)
@@ -113,8 +180,8 @@ def main():
         pose = retarget(sk, J, cal)
         pose.pelvis = J["pelvis"] - sk.world["pelvis"]
         # the job's own stance (feet exactly where authored; legs solved to them), Kimodo's body on top
-        g_ = type(f)(f.targets, f.look, dict(f.tools), root=f.root, stance=f.stance, base=pose, label=f.label)
-        new.append(g_)
+        new.append(type(f)(f.targets, f.look, dict(f.tools), root=f.root, stance=f.stance, base=pose, label=f.label))
+    pin_hands(sk, new)                        # pinned while working, Kimodo's arms in between
     S = PostureSolver(sk, w)
     S.keep_out = job.keep_out_rules()
     S.base_correct = True                     # Kimodo's body, corrected for keep-outs / reach / the planted feet
@@ -123,10 +190,21 @@ def main():
     rep_r = check_frames(sk, frames, sols, jid + " rules", keep_out=S.keep_out)
     with open(os.path.join(out, "kimodo.pkl"), "wb") as f:
         pickle.dump({"frames": new, "sols": ks, "worker": c["worker"]}, f)
-    summary = {"job": jid, "kimodo": {"ok": rep_k["ok"], "counts": rep_k["counts"], "worst_contact_cm": rep_k["worst_contact_cm"]},
-               "rules": {"ok": rep_r["ok"], "counts": rep_r["counts"]}, "keyframes": len(idx), "every": every}
+    summary = {"job": jid, "kimodo": {"ok": rep_k["ok"], "counts": rep_k["counts"],
+                                      "worst_contact_cm": rep_k["worst_contact_cm"]},
+               "rules": {"ok": rep_r["ok"], "counts": rep_r["counts"]}}
     json.dump(summary, open(os.path.join(out, "check.json"), "w"), indent=1)
-    print(json.dumps(summary))
+    return summary
+
+
+def main():
+    jid = sys.argv[1]
+    opt = {a.split("=")[0][2:]: a.split("=")[1] for a in sys.argv[2:] if a.startswith("--")}
+    src, gen = prepare(jid, int(opt.get("every", 4)), int(opt.get("steps", 100)), int(opt.get("seed", 0)),
+                       int(opt.get("full_every", 3)), "full" in opt)
+    so, se = generate([(src, gen)])
+    print(so.strip().splitlines()[-1] if so.strip() else se[-2000:])
+    print(json.dumps(finalize(jid)))
 
 
 if __name__ == "__main__":

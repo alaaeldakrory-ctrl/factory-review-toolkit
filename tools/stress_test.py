@@ -153,6 +153,8 @@ def run(task):
         else:                                             # the worker may step to a better spot when it fails
             frames, sols, rep, spot, raw = solve_placed(S, frames, rules)
         counts = dict(rep["counts"])
+        from frt_core.people.placement import diagnose
+        findings = diagnose(S, frames, rep) if counts else []
         top = {}
         for it in rep["issues"]:
             top.setdefault(f"{it[1]}:{it[2]}", []).append(it[3])
@@ -172,7 +174,7 @@ def run(task):
             for it in rep2["issues"]:
                 top.setdefault(f"partner {it[1]}:{it[2]}", []).append(it[3])
         return {"job": jid, "variant": vname, "worker": wid, "ok": not counts, "counts": counts, "spot": spot,
-                "ok_authored": bool(raw["ok"]), "counts_authored": dict(raw["counts"]),
+                "ok_authored": bool(raw["ok"]), "counts_authored": dict(raw["counts"]), "findings": findings,
                 "top": {k: (len(v), round(max(v), 1)) for k, v in sorted(top.items(), key=lambda kv: -len(kv[1]))[:4]},
                 "frames": len(frames), "seconds": round(time.time() - t0, 1)}
     except Exception as e:

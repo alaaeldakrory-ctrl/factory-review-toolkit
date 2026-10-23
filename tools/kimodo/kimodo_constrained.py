@@ -33,12 +33,22 @@ def main():
     from kimodo.skeleton.registry import build_skeleton
     from kimodo_run import NoText, text_dim
     from kimodo.model.load_model import _resolve_hf_model_path
-    src, out = sys.argv[1], sys.argv[2]
-    d = np.load(src, allow_pickle=True)
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     name = "kimodo-soma-rp-v1.2"
     path = _resolve_hf_model_path(name)
     model = load_model(name, device=device, text_encoder=NoText(text_dim(str(path)), device))
+    pairs = list(zip(sys.argv[1::2], sys.argv[2::2]))       # several jobs per call: the model loads once
+    for src, out in pairs:
+        try:
+            generate(model, device, src, out)
+        except Exception as e:                                # one bad job does not stop the batch
+            print("failed", src, type(e).__name__, e)
+
+
+def generate(model, device, src, out):
+    from kimodo.constraints import EndEffectorConstraintSet
+    from kimodo.skeleton.registry import build_skeleton
+    d = np.load(src, allow_pickle=True)
     sk = model.skeleton                                   # the model's working skeleton (somaskel30)
     names = [n for n, _ in sk.bone_order_names_with_parents]
     neutral = sk.neutral_joints.cpu().numpy()             # rest (T-pose) joint positions, hips at the origin
@@ -77,6 +87,10 @@ def main():
         if len(idx):
             cons.append(EndEffectorConstraintSet(sk, torch.tensor(fi[idx]), torch.tensor(gp[idx], dtype=torch.float32),
                                                  torch.tensor(gr[idx], dtype=torch.float32), None, joint_names=[jn]))
+    if "r2_t" in d and len(d["r2_t"]):                     # walking route: root (x, z) waypoints
+        from kimodo.constraints import Root2DConstraintSet
+        ri = np.clip(np.round(d["r2_t"] * fps).astype(int), 0, n - 1)
+        cons.append(Root2DConstraintSet(sk, torch.tensor(ri), torch.tensor(d["r2_xz"] * s, dtype=torch.float32)))
     if "use_full" in d and d["use_full"].any():             # posture keyframes: the whole body as solved
         from kimodo.constraints import FullBodyConstraintSet
         idx = np.nonzero(d["use_full"])[0]
@@ -89,26 +103,31 @@ def main():
                                              joint_names=["LeftFoot", "RightFoot"]))
     # all constraint tensors on the model device; constraint sets Kimodo re-creates internally (crop_move) build
     # their joint indices on the CPU - keep them with their frame indices
-    _init = EndEffectorConstraintSet.__init__
+    if not getattr(EndEffectorConstraintSet, "_frt_dev", False):     # patch once per process
+        _init = EndEffectorConstraintSet.__init__
 
-    def _init_dev(self, *a_, **k_):
-        _init(self, *a_, **k_)
-        dev = self.frame_indices.device
-        self.pos_indices, self.rot_indices = self.pos_indices.to(dev), self.rot_indices.to(dev)
-    EndEffectorConstraintSet.__init__ = _init_dev
-    from kimodo.constraints import FullBodyConstraintSet as _F
-    _finit = _F.__init__
+        def _init_dev(self, *a_, **k_):
+            _init(self, *a_, **k_)
+            dev = self.frame_indices.device
+            self.pos_indices, self.rot_indices = self.pos_indices.to(dev), self.rot_indices.to(dev)
+        EndEffectorConstraintSet.__init__ = _init_dev
+        from kimodo.constraints import FullBodyConstraintSet as _F
+        _finit = _F.__init__
 
-    def _finit_dev(self, *a_, **k_):
-        _finit(self, *a_, **k_)
-        for a2 in ("pos_indices", "rot_indices"):
-            if hasattr(self, a2):
-                setattr(self, a2, getattr(self, a2).to(self.frame_indices.device))
-    _F.__init__ = _finit_dev
+        def _finit_dev(self, *a_, **k_):
+            _finit(self, *a_, **k_)
+            for a2 in ("pos_indices", "rot_indices"):
+                if hasattr(self, a2):
+                    setattr(self, a2, getattr(self, a2).to(self.frame_indices.device))
+        _F.__init__ = _finit_dev
+        EndEffectorConstraintSet._frt_dev = True
     for c_ in cons:
         c_.to(device)
     torch.manual_seed(int(d["seed"]) if "seed" in d else 0)
-    res = model([""], [n], constraint_lst=cons, num_denoising_steps=int(d["steps"]) if "steps" in d else 100,
+    seg = int(round(6.0 * fps))                            # long motions: ~6 s segments, blended by Kimodo
+    k_ = max(1, int(np.ceil(n / seg)))
+    lens = [n // k_ + (1 if i < n % k_ else 0) for i in range(k_)]
+    res = model([""] * k_, lens, constraint_lst=cons, num_denoising_steps=int(d["steps"]) if "steps" in d else 100,
                 num_samples=1, multi_prompt=True, post_processing=False, return_numpy=True)
     pj = res["posed_joints"][0]
     names77 = [nm for nm, _ in build_skeleton(77).bone_order_names_with_parents]

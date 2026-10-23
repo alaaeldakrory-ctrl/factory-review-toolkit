@@ -130,3 +130,38 @@ def solve_placed(S, frames, keep_out=(), log=None):
             break
     S.keep_out = move_rules(keep_out, translation(-best[4][0], -best[4][1]))
     return best[1], best[2], best[3], best[4], raw
+
+
+def diagnose(S, frames, rep):
+    """Why a job still fails after stepping, in workplace terms: for the flagged frames, where the working hand's
+    target is relative to this body (above the shoulder, beyond comfortable reach, below the knee, behind the body).
+    Returns a list of findings like {"kind": "too high", "cm": 18, "side": "r", "frames": 24}."""
+    sk = S.sk
+    flagged = sorted({i for i, *_ in rep["issues"]})
+    if not flagged:
+        return []
+    arm = {s: sum(S.L[s]) + S.hand_len * 0.45 for s in ("l", "r")}
+    knee = float(sk.world["calf_l"][1])
+    tally = {}
+    for i in flagged:
+        for t in frames[i].targets:
+            if t.weight < 0.5:
+                continue
+            sh = np.asarray(sk.world[f"upperarm_{t.side}"], float)
+            p = np.asarray(t.point, float)
+            d = p - sh
+            kinds = []
+            if d[1] > 8.0:
+                kinds.append(("too high", d[1]))
+            if np.linalg.norm(d) > 0.9 * arm[t.side]:
+                kinds.append(("too far", np.linalg.norm(d) - 0.9 * arm[t.side]))
+            if p[1] < knee:
+                kinds.append(("too low", knee - p[1]))
+            if d[2] < 5.0:
+                kinds.append(("too close / behind", 5.0 - d[2]))
+            for k, v in kinds:
+                key = (k, t.side)
+                n, worst = tally.get(key, (0, 0.0))
+                tally[key] = (n + 1, max(worst, float(v)))
+    out = [{"kind": k, "side": s, "frames": n, "cm": round(v)} for (k, s), (n, v) in tally.items()]
+    return sorted(out, key=lambda x: -x["frames"])
