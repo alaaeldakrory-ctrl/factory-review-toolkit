@@ -65,6 +65,8 @@ def main():
         st = Stance()
         st.free = True
         frames_k.append(Frame([], None, {}, stance=st, base=pose, label="kimodo walk"))
+    from kimodo_job import floor_fix
+    floor_fix(sk, [f.base for f in frames_k])
     S = PostureSolver(sk, w)
     sols_k = solve_frames(S, frames_k, log=lambda *a: None)
     # ours: the clip walk along the same route

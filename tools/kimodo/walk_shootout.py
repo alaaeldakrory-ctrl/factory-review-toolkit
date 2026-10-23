@@ -114,6 +114,8 @@ def main():
                 st = Stance()
                 st.free = True
                 kf.append(Frame([], None, {}, root=(0.0, 0.0, 0.0), stance=st, base=pose))
+            from kimodo_job import floor_fix
+            floor_fix(sk, [f.base for f in kf])
             sk_ = solve_frames(S, kf, log=lambda *a: None)
             m_k = measure(sk, kf, sk_, route)
             rows.append({"body": wid, "route": rname, "ours": m_o, "kimodo": m_k})

@@ -58,6 +58,26 @@ def soma_calibration(sk, s):
     return {j: Rw[j] for j in CAL_JOINTS if j in Rw}
 
 
+def floor_fix(sk, poses):
+    """Put the feet on the floor: Kimodo's leg proportions differ from the worker's, so after retargeting the
+    support foot can float or sink a few cm. Lower / raise every pelvis by the gap between the support point (the
+    lower of heel / ball, per frame) and the floor, smoothed over ~1/3 s so steps stay natural."""
+    from frt_core.people.kinematics import fk
+    gap = []
+    ball0 = float(sk.world["ball_l"][1])
+    for p in poses:
+        R, P = fk(sk, p)
+        gap.append(min(P["foot_l"][1] - float(sk.world["foot_l"][1]), P["foot_r"][1] - float(sk.world["foot_r"][1]),
+                       P["ball_l"][1] - ball0, P["ball_r"][1] - ball0))
+    g = np.array(gap)
+    k = 9
+    pad = np.concatenate([g[:1].repeat(k // 2), g, g[-1:].repeat(k // 2)])
+    gs = np.convolve(pad, np.ones(k) / k, mode="valid")
+    for p, d in zip(poses, gs):
+        p.pelvis = p.pelvis - np.array([0.0, d, 0.0])
+    return poses
+
+
 def soma_to_canonical(pj, names77, s):
     """Kimodo joints (m) -> canonical dict (cm, our worker frame)."""
     ix = {n: i for i, n in enumerate(names77)}
@@ -138,7 +158,7 @@ def generate(pairs):
     """Run Kimodo on [(keys, out)] in one process (the model loads once)."""
     env = dict(os.environ, HF_HOME=r"C:/OmniverseData/kimodo/hf")
     args = [x for p in pairs for x in p]
-    r = subprocess.run([KIMODO_PY, os.path.join(HERE, "kimodo_constrained.py")] + args, capture_output=True,
+    r = subprocess.run([KIMODO_PY, os.path.join(HERE, "kimodo_constrained.py")] + args, capture_output=True, encoding="utf-8", errors="replace",
                        text=True, env=env)
     return r.stdout, r.stderr
 
@@ -181,7 +201,9 @@ def finalize(jid):
         pose.pelvis = J["pelvis"] - sk.world["pelvis"]
         # the job's own stance (feet exactly where authored; legs solved to them), Kimodo's body on top
         new.append(type(f)(f.targets, f.look, dict(f.tools), root=f.root, stance=f.stance, base=pose, label=f.label))
-    pin_hands(sk, new)                        # pinned while working, Kimodo's arms in between
+    if os.environ.get("KIMODO_PIN", "all") == "work":          # measured: pinning on every frame passes 26/50, work-only 7/50
+        pin_hands(sk, new)                    # pinned while working, Kimodo's arms in between
+    # KIMODO_PIN=all: the job's hand targets on every frame (Kimodo gives only the body)
     S = PostureSolver(sk, w)
     S.keep_out = job.keep_out_rules()
     S.base_correct = True                     # Kimodo's body, corrected for keep-outs / reach / the planted feet

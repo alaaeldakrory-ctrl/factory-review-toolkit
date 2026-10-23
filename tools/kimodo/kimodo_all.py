@@ -29,14 +29,17 @@ def main():
     ids = [j.id for j in JOBS if "only" not in opt or j.id in opt["only"].split(",")]
     t0 = time.time()
     pairs = [KJ.prepare(j) for j in ids]
-    so, se = KJ.generate(pairs)
+    if "nogen" in opt:                                    # re-run the final passes on existing Kimodo output
+        so, se = "", ""
+    else:
+        so, se = KJ.generate(pairs)
     print("generated", so.count("ok ("), "of", len(ids), f"in {time.time() - t0:.0f} s")
     for ln in so.splitlines():
         if ln.startswith("failed"):
             print(ln)
     with mp.Pool(int(opt.get("workers", 10))) as pool:
         res = list(pool.imap_unordered(_fin, ids))
-    out = os.path.join(HERE, "..", "..", "out", "people", "kimodo", "all.json")
+    out = os.path.join(HERE, "..", "..", "out", "people", "kimodo", f"all_{os.environ.get('KIMODO_PIN', 'work')}.json")
     json.dump(res, open(out, "w"), indent=1)
     ok_k = [r["job"] for r in res if r.get("kimodo", {}).get("ok")]
     print(f"\nKimodo-based: {len(ok_k)}/{len(res)} pass  ({time.time() - t0:.0f} s)")

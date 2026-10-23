@@ -173,7 +173,7 @@ def main():
              r2_t=np.array([t for t, _ in r2]), r2_xz=np.array([p for _, p in r2]))
     gen = os.path.join(OUT, "kimodo.npz")
     r = subprocess.run([KIMODO_PY, os.path.join(HERE, "kimodo", "kimodo_constrained.py"), src, gen], capture_output=True,
-                       text=True, env=dict(os.environ, HF_HOME=r"C:/OmniverseData/kimodo/hf"))
+                       text=True, encoding="utf-8", errors="replace", env=dict(os.environ, HF_HOME=r"C:/OmniverseData/kimodo/hf"))
     print(r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr[-1500:])
     g = np.load(gen)
     pj, kfps = g["posed_joints"], float(g["fps"])
@@ -235,7 +235,7 @@ def scene():
         lib = MaterialLibrary(st, "/World/Looks")
         UsdGeom.Xform.Define(st, "/World/Asset")
         UsdGeom.Xform.Define(st, "/World/Asset/Parts")
-        for k, (tag, dx) in enumerate((("rules", 0.0), ("kimodo", 520.0))):
+        for k, (tag, dx) in enumerate((("rules", 0.0), ("kimodo", 430.0))):
             frames, sols = d[tag]
             base = f"/World/Asset/{tag}"
             UsdGeom.Xform.Define(st, base)
@@ -248,9 +248,9 @@ def scene():
                     loc.rbox((0.0, 30.0, 46.0), (40.0, 8.0, 30.0), 0.5, "plastic_blue", seg=1)       # bin
                 else:
                     J.bench(loc)
-                loc.build(st, f"{base}/{fixture}", lib.refs(list(loc.groups)))
-                xf = UsdGeom.Xformable(st.GetPrimAtPath(f"{base}/{fixture}"))
+                xf = UsdGeom.Xform.Define(st, f"{base}/{fixture}")      # placed group, geometry inside
                 xf.AddTransformOp().Set(Gf.Matrix4d(*T.T.flatten().tolist()))
+                loc.build(st, f"{base}/{fixture}/Geom", lib.refs(list(loc.groups)))
             sign(s, (dx + 120.0, 210.0, -60.0), (1, 0, 0), (0, 1, 0), (0, 0, 1), 60.0,
                  ["RULE-BASED" if tag == "rules" else "KIMODO + OUR HANDS"], header=tag.upper(),
                  header_mat="powder_blue" if tag == "rules" else "powder_green")
@@ -262,7 +262,7 @@ def scene():
                  log=lambda *a: None)
         dress(st, lib, st.GetPrimAtPath("/World/Asset"))
     n = len(d["rules"][0])
-    json.dump([{"seq": "process", "eye": [260.0, 520.0, -700.0], "at": [260.0, 60.0, 20.0], "mm": 20,
+    json.dump([{"seq": "process", "eye": [330.0, 620.0, -760.0], "at": [330.0, 40.0, 10.0], "mm": 18,
                 "frames": [0, n - 1, 1]}], open(os.path.join(OUT, "shots.json"), "w"), indent=1)
     print("->", out, n, "frames")
 
