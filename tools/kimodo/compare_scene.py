@@ -41,17 +41,21 @@ def main():
         for i, jid in enumerate(jobs):
             job = BY_ID[jid]
             z = i * DZ
-            for k, (tag, path) in enumerate((("RULES", os.path.join(ROOT, "out", "people", "jobs", "cache", jid + ".pkl")),
-                                             ("KIMODO", os.path.join(OUT, jid, "kimodo.pkl")))):
+            versions = [("RULES", os.path.join(ROOT, "out", "people", "jobs", "cache", jid + ".pkl")),
+                        ("ANDY", os.path.join(ROOT, "out", "people", "andy_fit", jid + ".pkl")),
+                        ("KIMODO", os.path.join(OUT, jid, "kimodo.pkl"))]
+            versions = [v for v in versions if os.path.isfile(v[1])]
+            for k, (tag, path) in enumerate(versions):
                 c = pickle.load(open(path, "rb"))
-                x = (k - 0.5) * GAP * 1.6
+                x = (k - (len(versions) - 1) / 2) * GAP * 1.6
                 base = f"/World/Asset/J{i}_{jid}_{tag}"
                 UsdGeom.Xform.Define(st, base).AddTranslateOp().Set(Gf.Vec3d(x, 0.0, z))
                 s = Shapes()
                 job.fixture(s)
                 sign(s, (0.0, 205.0, 95.0), (1, 0, 0), (0, 1, 0), (0, 0, 1), 40.0,
-                     [job.title.upper(), "RULE-BASED" if tag == "RULES" else "KIMODO + OUR HANDS"],
-                     header=tag, header_mat="powder_blue" if tag == "RULES" else "powder_green")
+                     [job.title.upper(), {"RULES": "RULE-BASED", "ANDY": "RECORDED (ANDY) + OUR HANDS",
+                                          "KIMODO": "KIMODO + OUR HANDS"}[tag]],
+                     header=tag, header_mat={"RULES": "powder_blue", "ANDY": "powder_grey", "KIMODO": "powder_green"}[tag])
                 s.build(st, f"{base}/Fixture", lib.refs(list(s.groups)))
                 w = WORKERS[c["worker"]]
                 UsdGeom.Xform.Define(st, f"{base}/{w.id}")
@@ -64,8 +68,8 @@ def main():
                             op.Set(Gf.Vec3d(0.0, 0.0, 0.0), tc)
             n = len(c["frames"])
             fx, fy, fz = job.focus
-            shots.append({"seq": f"{i + 1:02d}_{jid}", "eye": [-60.0, fy + 70.0, z + fz - 330.0],
-                          "at": [0.0, fy - 5.0, z + fz - 10.0], "mm": 26, "frames": [0, n - 1, 1]})
+            shots.append({"seq": f"{i + 1:02d}_{jid}", "eye": [-80.0, fy + 90.0, z + fz - 420.0],
+                          "at": [0.0, fy - 5.0, z + fz - 10.0], "mm": 24, "frames": [0, n - 1, 1]})
             print(jid, n, "frames")
         dress(st, lib, st.GetPrimAtPath("/World/Asset"))
     json.dump(shots, open(os.path.join(OUT, "shots.json"), "w"), indent=1)

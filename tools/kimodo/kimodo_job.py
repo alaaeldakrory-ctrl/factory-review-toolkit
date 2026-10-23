@@ -46,6 +46,18 @@ def keyframes(sk, frames, sols, every):
     return idx, np.array(P), np.array(R), np.array(ur), np.array(ul), list(NAMES)
 
 
+def soma_calibration(sk, s):
+    """Rest-shape offsets between Kimodo's SOMA skeleton and ours (spine curve, collarbones, feet): world rotations
+    of those joints when Kimodo's T-pose rest is retargeted onto our skeleton (whose rest is identity)."""
+    from frt_core.people.andy import CAL_JOINTS
+    from frt_core.people.mocap import retarget
+    from kimodo_names import NAMES77, NEUTRAL77
+    rest = np.array(NEUTRAL77) + np.array([0.0, KIMODO_HIP_M, 0.0])
+    J = soma_to_canonical(rest, NAMES77, s)
+    _, Rw = retarget(sk, J, world=True)
+    return {j: Rw[j] for j in CAL_JOINTS if j in Rw}
+
+
 def soma_to_canonical(pj, names77, s):
     """Kimodo joints (m) -> canonical dict (cm, our worker frame)."""
     ix = {n: i for i, n in enumerate(names77)}
@@ -91,13 +103,14 @@ def main():
     pj, names77, kfps = g["posed_joints"], [str(x) for x in g["names77"]], float(g["fps"])
     # resample Kimodo (30 fps) to our frames (24 fps), retarget, keep our hand targets / tools / gaze
     new = []
+    cal = soma_calibration(sk, s)
     for i, f in enumerate(frames):
         x = i / FPS * kfps
         a = min(int(np.floor(x)), len(pj) - 1)
         b = min(a + 1, len(pj) - 1)
         u = x - a
         J = soma_to_canonical(pj[a] * (1 - u) + pj[b] * u, names77, s)
-        pose = retarget(sk, J)
+        pose = retarget(sk, J, cal)
         pose.pelvis = J["pelvis"] - sk.world["pelvis"]
         # the job's own stance (feet exactly where authored; legs solved to them), Kimodo's body on top
         g_ = type(f)(f.targets, f.look, dict(f.tools), root=f.root, stance=f.stance, base=pose, label=f.label)
