@@ -74,6 +74,7 @@ class JobResult:
         self.job, self.worker, self.M = job, worker, M
         self.frames, self.sols, self.report, self.spot = frames, sols, report, spot
         self.findings, self.partner = findings, partner
+        self.character = None                  # a character.Character when solved for a real character
 
     @property
     def ok(self):
@@ -109,7 +110,7 @@ def _code_hash():
         h = hashlib.sha1()
         here = os.path.dirname(__file__)
         for n in ("solver.py", "check.py", "jobs.py", "jobs_awp.py", "handkit.py", "placement.py", "kinematics.py",
-                  "skeleton.py", "workers.py", "motion_gen.py", "motion_carry.py", "bake.py"):
+                  "skeleton.py", "workers.py", "motion_gen.py", "motion_carry.py", "bake.py", "character.py"):
             with open(os.path.join(here, n), "rb") as f:
                 h.update(f.read().replace(b"\r\n", b"\n"))
         _CODE.append(h.hexdigest()[:8])
@@ -127,7 +128,9 @@ def solve_job(job_id, worker=None, work=None, step=True, cache=True):
     """Generate, solve and check one job (a few minutes; up to ~20 when the worker has to step). Results are cached
     in data/solved (FRT_PEOPLE_CACHE), so the same job / body / placement is instant the next time; the offline
     bundle ships every job on every body at its authored placement already solved.
-    worker: "W05F" / "W50M" / "W95M" (or a Worker from workers.custom()); default: the job's own worker.
+    worker: "W05F" / "W50M" / "W95M", a Worker from workers.custom(), or a real character (character.load(asset)):
+            the job is then solved on that character's own proportions and baked onto its rig; default: the
+            job's own worker.
     work: None, a 4x4 matrix in the job frame, or {"d": (dx, dy, dz), "yaw": deg, "tilt": deg} about the work point.
     step: when the authored spot fails the checks, let the worker step to a better spot (reported in .spot)."""
     from .jobs import BY_ID
@@ -135,8 +138,12 @@ def solve_job(job_id, worker=None, work=None, step=True, cache=True):
     from .solver import PostureSolver
     from .workers import WORKERS
     job = BY_ID[job_id]
-    w = WORKERS[worker or job.worker] if not hasattr(worker, "id") else worker
-    sk = Skeleton.for_worker(w)
+    ch = worker if hasattr(worker, "skeleton") and hasattr(worker, "write") else None     # a real character
+    if ch is not None:
+        w, sk = ch.worker, ch.skeleton
+    else:
+        w = WORKERS[worker or job.worker] if not hasattr(worker, "id") else worker
+        sk = Skeleton.for_worker(w)
     S = PostureSolver(sk, w)
     if work is None:
         M = np.eye(4)
@@ -150,10 +157,13 @@ def solve_job(job_id, worker=None, work=None, step=True, cache=True):
         try:
             with open(path, "rb") as f:
                 d = pickle.load(f)
-            return JobResult(job, w, M, d["frames"], d["sols"], d["report"], d["spot"], d["findings"], d["partner"])
+            r = JobResult(job, w, M, d["frames"], d["sols"], d["report"], d["spot"], d["findings"], d["partner"])
+            r.character = ch
+            return r
         except Exception:
             pass                                                # stale cache (code changed): solve again
     res = _solve(job, w, sk, S, M, step)
+    res.character = ch
     if path:
         import pickle
         os.makedirs(CACHE, exist_ok=True)
@@ -218,8 +228,10 @@ def bake_into(stage, path, res, lib=None, fixture=True, start=0):
         fx.AddTransformOp().Set(Gf.Matrix4d(*res.M.T.flatten().tolist()))
         s.build(stage, f"{path}/Fixture/Geom", lib.refs(list(s.groups)))
     UsdGeom.Xform.Define(stage, f"{path}/Parts")
-    bake(stage, f"{path}/{res.worker.id}", res.worker, res.frames, lib, sols=res.sols, start=start,
-         root=(res.spot[0], res.spot[1], 0.0), parts_root=f"{path}/Parts", log=lambda *a: None)
+    from pxr import Tf
+    bake(stage, f"{path}/{Tf.MakeValidIdentifier(res.worker.id)}", res.worker, res.frames, lib, sols=res.sols,
+         start=start, root=(res.spot[0], res.spot[1], 0.0), parts_root=f"{path}/Parts", log=lambda *a: None,
+         character=res.character)
     if res.partner is not None:
         p = res.partner
         bake(stage, f"{path}/{p['worker'].id}_2", p["worker"], p["frames"], lib, sols=p["sols"], start=start,

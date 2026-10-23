@@ -116,21 +116,26 @@ def _rootT(r):
 
 
 def bake(stage, path, worker, frames, lib, start=0, stance=None, solver=None, log=print, root=None, step=1,
-         parts_root="/World/Asset/Parts", sols=None):
+         parts_root="/World/Asset/Parts", sols=None, character=None):
     """Tools (keys in TOOLS) live under the worker; parts (names "part:<id>", spec in the key) live in the world:
     while handled they follow the hands, afterwards they stay where they were put (USD holds the last sample)."""
     """root: the work spot (x, z, yaw) for frames that carry none (frames carry their own while walking)."""
-    sk = Skeleton.for_worker(worker)
+    """character: a character.Character (a real character asset, referenced) instead of the frt body."""
+    sk = character.skeleton if character is not None else Skeleton.for_worker(worker)
     S = solver or PostureSolver(sk, worker)
     if sols is None:
         sols = solve_frames(S, frames, stance, step, log, f"{worker.id}: ")
-    write_worker(stage, f"{path}/Body", worker, lib, pose=sols[0].pose if sols else None, sk=sk)
-    anim = UsdSkel.Animation(stage.GetPrimAtPath(f"{path}/Body/Skeleton/Pose"))
-    tr_a, rot_a = anim.GetTranslationsAttr(), anim.GetRotationsAttr()
-    for i, sol in enumerate(sols):
-        tr, rot = pose_arrays(sk, sol.pose)
-        tr_a.Set(tr, start + i)
-        rot_a.Set(rot, start + i)
+    if character is not None:
+        UsdGeom.Xform.Define(stage, path)
+        character.write(stage, f"{path}/Body", sols, start)
+    else:
+        write_worker(stage, f"{path}/Body", worker, lib, pose=sols[0].pose if sols else None, sk=sk)
+        anim = UsdSkel.Animation(stage.GetPrimAtPath(f"{path}/Body/Skeleton/Pose"))
+        tr_a, rot_a = anim.GetTranslationsAttr(), anim.GetRotationsAttr()
+        for i, sol in enumerate(sols):
+            tr, rot = pose_arrays(sk, sol.pose)
+            tr_a.Set(tr, start + i)
+            rot_a.Set(rot, start + i)
     roots = []
     xf = UsdGeom.Xformable(stage.GetPrimAtPath(path))
     if any(f.root is not None for f in frames) or root is not None:
