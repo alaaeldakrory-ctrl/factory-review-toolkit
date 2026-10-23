@@ -72,9 +72,11 @@ def main():
     for f in frames_o:
         if f.root is None:
             f.root = (0.0, 0.0, 0.0)
-    frames_o += idle(0.8)
-    for f in frames_o:
-        f.root = f.root or frames_o[-2].root
+    last = next(f.root for f in reversed(frames_o) if f.root is not None)
+    tail = idle(0.8)
+    for f in tail:                                            # standing where the walk ended
+        f.root = last
+    frames_o += tail
     sols_o = solve_frames(S, frames_o, log=lambda *a: None)
     out = os.path.join(OUT, "walk.usd")
     with safe_stage(out) as st:
