@@ -112,6 +112,17 @@ def _quat(R):
     return quat_from_matrix(R)
 
 
+def keep_out_cost(P, rules):
+    """Penalty for body joints in front of a fixture face: rules = [(joint names, max z)] (worker frame, cm)."""
+    c = 0.0
+    for joints, zmax in rules:
+        for q in joints:
+            over = float(P[q][2]) - zmax
+            if over > 0.0:
+                c += (over / 2.0) ** 2 * 3.0
+    return c
+
+
 def nelder_mead(f, x0, step, lo, hi, iters=160, tol=1e-4):
     n = len(x0)
     xs = [np.clip(x0, lo, hi)]
@@ -157,6 +168,7 @@ class PostureSolver:
         self.worker = worker
         self._wrap = {}
         self._thumb_cache = {}
+        self.keep_out = []          # [(joint names, max z in the worker frame)]: fixture faces the body stays behind
 
     # ------------------------------------------------------------------ building a pose from the variables
     def build(self, v, targets, look, stance, free_arms="hang", swing=None, base=None, prev_arm=None):
@@ -291,6 +303,8 @@ class PostureSolver:
         terms["trunk"] = (hinge_eff / 28.0) ** 2 + (min(0.0, hinge) / 2.0) ** 2 + (flex / 35.0) ** 2 * 0.5 + (lat / 10.0) ** 2 + (twist / 14.0) ** 2             + (min(0.0, hinge + flex) / 6.0) ** 2                       # leaning back is rare and costly
         terms["pelvis"] = (dx / 8.0) ** 2 * 0.3 + (dz / 10.0) ** 2 * 0.3 + (yaw / 25.0) ** 2 * 0.4
         Rall, Pall = fk(sk, pose)
+        if self.keep_out:
+            terms["keep_out"] = keep_out_cost(Pall, self.keep_out)
         c = com(Pall)
         feet = []
         for s in ("l", "r"):

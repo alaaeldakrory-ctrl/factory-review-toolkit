@@ -126,11 +126,13 @@ for _k, _f in (("sheet", _sheet), ("hydcyl", _hydcyl), ("wheel", _wheel), ("hose
 
 
 # ---------------------------------------------------------------------------------------------- fixtures
-def fx(*parts, kind="bench"):
+def fx(*parts, kind="bench", z=None):
     def f(s):
         for p in parts:
             p(s)
     f.kind = kind
+    if z is not None:
+        f.z = z
     return f
 
 
@@ -949,43 +951,47 @@ def j_guardrail(S, sk):
 
 # ---------------------------------------------------------------------------------------------- the library
 Job = J.Job
+_RAIL = ((J.HIPS, 47.5 - 10.0),)
+_CONSOLE = ((J.HIPS, 26.0 - 10.0),)
 JOBS_AWP = [
     Job("fitting_start", "Start a hose fitting", "hydraulics", "W50M", j_fitting_start, fx(b_manifold_front),
         (-4, TOP + 6, 34)),
     Job("two_wrench", "Two-wrench fitting", "hydraulics", "W95M", j_two_wrench, fx(b_two_wrench), (-4, TOP + 18, 36)),
-    Job("hose_clip", "Clip a hose to the rail", "hydraulics", "W05F", j_hose_clip, fx(b_hose_rail), (-6, 99, 44)),
+    Job("hose_clip", "Clip a hose to the rail", "hydraulics", "W05F", j_hose_clip, fx(b_hose_rail, kind="rail"), (-6, 99, 44),
+        keep_out=_RAIL),
     Job("coupler", "Quick coupler", "hydraulics", "W50M", j_coupler, fx(b_coupler, kind="panel"), (-4, 105, 32)),
     Job("cap_ports", "Cap open ports", "hydraulics", "W95M", j_cap_ports, fx(b_cap_ports), (-4, TOP + 9, 42)),
-    Job("overhead", "Overhead ratchet", "overhead / low", "W50M", j_overhead, fx(b_overhead), (-4, 165, 36),
+    Job("overhead", "Overhead ratchet", "overhead / low", "W50M", j_overhead, fx(b_overhead, kind="free"), (-4, 165, 36),
         camera=(-150.0, -40.0, -120.0)),
-    Job("kneel_drive", "Kneel and drive", "overhead / low", "W95M", j_kneel_drive, fx(b_kneel_plate, kind="panel"),
+    Job("kneel_drive", "Kneel and drive", "overhead / low", "W95M", j_kneel_drive, fx(b_kneel_plate, kind="panel", z=43.0),
         (-6, 50, 36), camera=(-150.0, 30.0, -70.0)),
-    Job("squat_connect", "Under-frame connector", "overhead / low", "W05F", j_squat_connect, fx(b_under),
+    Job("squat_connect", "Under-frame connector", "overhead / low", "W05F", j_squat_connect, fx(b_under, kind="free"),
         (-4, 66, 30), camera=(-130.0, 10.0, -90.0)),
     Job("lean_in", "Lean in to ratchet", "overhead / low", "W50M", j_lean_in, fx(b_lean_in), (-4, 100, 60),
         camera=(-150.0, 40.0, -10.0)),
-    Job("cylinder", "Align a cylinder (2 people)", "heavy", "W95M", j_cylinder, fx(b_clevis), (10, 104, 40),
+    Job("cylinder", "Align a cylinder (2 people)", "heavy", "W95M", j_cylinder, fx(b_clevis, kind="free"), (10, 104, 40),
         partner=("W50M", (78.0, 0.0, 0.0), p_cylinder), camera=(-70.0, 60.0, 230.0)),
-    Job("pivot_pin", "Drive a pivot pin", "heavy", "W50M", j_pivot_pin, fx(b_pivot), (0, 112, 42),
+    Job("pivot_pin", "Drive a pivot pin", "heavy", "W50M", j_pivot_pin, fx(b_pivot, kind="panel", z=50.0), (0, 112, 42),
         camera=(-150.0, 20.0, -40.0)),
-    Job("wheel", "Fit a wheel", "heavy", "W95M", j_wheel, fx(b_hub), (0, 60, 56), camera=(-150.0, 50.0, -30.0)),
-    Job("lug_torque", "Torque lug nuts", "heavy", "W50M", j_lug_torque, fx(b_hub_mounted), (20, 80, 56),
+    Job("wheel", "Fit a wheel", "heavy", "W95M", j_wheel, fx(b_hub, kind="free"), (0, 60, 56), camera=(-150.0, 50.0, -30.0)),
+    Job("lug_torque", "Torque lug nuts", "heavy", "W50M", j_lug_torque, fx(b_hub_mounted, kind="free"), (20, 80, 56),
         camera=(-140.0, 50.0, -60.0)),
-    Job("guide_hoist", "Guide a hoisted load", "heavy", "W05F", j_guide_hoist, fx(b_hoist), (0, 120, 46),
+    Job("guide_hoist", "Guide a hoisted load", "heavy", "W05F", j_guide_hoist, fx(b_hoist, kind="panel", z=36.0), (0, 120, 46),
         camera=(-150.0, 30.0, -60.0)),
     Job("circlip", "Fit a circlip", "heavy", "W05F", j_circlip, fx(b_circlip), (-4, 104, 36)),
     Job("control_box", "Mount a control box", "electrical", "W50M", j_control_box, fx(b_ctrl, kind="panel"),
         (-4, 116, 30)),
     Job("deutsch", "Sealed connector + wedge", "electrical", "W95M", j_deutsch, fx(b_deutsch, kind="panel"),
         (-4, 96, 36)),
-    Job("joystick", "Fit a joystick", "electrical", "W50M", j_joystick, fx(b_console), (-4, 98, 42),
+    Job("joystick", "Fit a joystick", "electrical", "W50M", j_joystick, fx(b_console, kind="console"), (-4, 98, 42),
+        keep_out=_CONSOLE,
         camera=(-140.0, 20.0, -60.0)),
     Job("battery", "Fit a battery", "electrical", "W95M", j_battery, fx(b_battery), (0, 90, 48)),
-    Job("decal", "Apply a decal", "finishing", "W05F", j_decal, fx(b_decal), (-2, 102, 44), camera=(-110.0, 20.0, -150.0)),
+    Job("decal", "Apply a decal", "finishing", "W05F", j_decal, fx(b_decal, kind="panel", z=48.0), (-2, 102, 44), camera=(-110.0, 20.0, -150.0)),
     Job("torque_stripe", "Torque-stripe bolts", "finishing", "W50M", j_torque_stripe, fx(b_stripe), (-6, 98, 42)),
     Job("grease", "Grease a pivot", "finishing", "W95M", j_grease, fx(b_grease), (-4, 108, 42)),
-    Job("inspect", "Inspect a weld (crouch)", "finishing", "W05F", j_inspect, fx(b_inspect), (-4, 62, 40),
+    Job("inspect", "Inspect a weld (crouch)", "finishing", "W05F", j_inspect, fx(b_inspect, kind="free"), (-4, 62, 40),
         camera=(-140.0, 10.0, -80.0)),
-    Job("guardrail", "Check the guardrail", "finishing", "W50M", j_guardrail, fx(b_guardrail), (-14, 104, 40),
+    Job("guardrail", "Check the guardrail", "finishing", "W50M", j_guardrail, fx(b_guardrail, kind="panel", z=44.0), (-14, 104, 40),
         camera=(-120.0, 40.0, -130.0)),
 ]

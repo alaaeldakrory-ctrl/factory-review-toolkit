@@ -41,7 +41,7 @@ def rot_angle(R):
     return math.degrees(math.acos(max(-1.0, min(1.0, c))))
 
 
-def check_frames(sk, frames, sols, name=""):
+def check_frames(sk, frames, sols, name="", keep_out=None):
     issues = []
     prev = None
     worst_pop, worst_lim, worst_contact, worst_foot = 0.0, 0.0, 0.0, 0.0
@@ -71,6 +71,11 @@ def check_frames(sk, frames, sols, name=""):
                     lim = AWKWARD_LOW_TRUNK                          # hands below the hips: bending is the task
                 if abs(float(ang.get(k, 0.0))) > lim:
                     issues.append((i, "awkward", k, round(abs(float(ang[k])), 1), lim))
+        for joints, zmax in keep_out or ():                  # the body stays behind the fixture faces
+            for q in joints:
+                over = float(P[q][2]) - zmax
+                if over > 2.0:
+                    issues.append((i, "collision", q, round(over, 1), 2.0))
         for s in ("l", "r"):                                 # elbows / knees never the wrong way
             ua, fa = P[f"lowerarm_{s}"] - P[f"upperarm_{s}"], P[f"hand_{s}"] - P[f"lowerarm_{s}"]
             th, ca = P[f"calf_{s}"] - P[f"thigh_{s}"], P[f"foot_{s}"] - P[f"calf_{s}"]

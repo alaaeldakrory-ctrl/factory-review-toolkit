@@ -26,6 +26,7 @@ def run(jid):
     w = WORKERS[job.worker]
     sk = Skeleton.for_worker(w)
     S = PostureSolver(sk, w)
+    S.keep_out = job.keep_out_rules()
     t0 = time.time()
     try:
         frames = job.frames(S)
@@ -33,7 +34,7 @@ def run(jid):
     except Exception as e:
         import traceback
         return {"job": jid, "error": f"{e}\n{traceback.format_exc()[-1500:]}"}
-    rep = check_frames(sk, frames, sols, jid)
+    rep = check_frames(sk, frames, sols, jid, keep_out=S.keep_out)
     data = {"frames": frames, "sols": sols, "worker": job.worker}
     issues = list(rep["issues"])
     if job.partner:                                   # a second worker in the station: solved and checked the same way

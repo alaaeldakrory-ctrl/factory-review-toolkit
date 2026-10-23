@@ -28,6 +28,9 @@ Z = np.array([0.0, 0.0, 1.0])
 X = np.array([1.0, 0.0, 0.0])
 TOP = 92.0                      # bench top
 PZ = 42.0                       # panel face (worker side)
+UPPER = ("head", "neck_01", "spine_03", "spine_02", "spine_01", "pelvis")   # head / chest / belly centres
+HIPS = ("pelvis", "thigh_l", "thigh_r")
+BENCH_FRONT = 25.0
 SZ = PZ + 16.0                  # panels worked at arm's length (screwdriver, push buttons): the worker stands back
 
 
@@ -42,9 +45,21 @@ class Job:
     focus: tuple                # camera target (worker frame)
     partner: tuple = None       # (worker id, (x, z, yaw) in the station, build(S, sk, place) -> frames)
     camera: tuple = None        # optional close-up (eye offset from the focus)
+    keep_out: tuple = None      # [(joint names, max z)] - default from the fixture (panel face / bench front)
 
     def frames(self, S):
         return self.build(S, S.sk)
+
+    def keep_out_rules(self):
+        if self.keep_out is not None:
+            return list(self.keep_out)
+        kind = getattr(self.fixture, "kind", "")
+        if kind == "panel":                        # chest / belly 13 cm, the head (face forward of it) 20 cm
+            z = getattr(self.fixture, "z", PZ)
+            return [(UPPER, z - 13.0), (("head",), z - 20.0)]
+        if kind == "bench":
+            return [(HIPS, BENCH_FRONT - 10.0)]
+        return []
 
 
 # ---------------------------------------------------------------------------------------------- fixtures
@@ -733,6 +748,7 @@ def _f_panel(extra=None, z=PZ):
         if extra:
             extra(s)
     f.kind = "panel"
+    f.z = z
     return f
 
 
