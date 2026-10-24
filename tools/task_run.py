@@ -88,9 +88,10 @@ def main():
         sys.exit(1)
     n = len(T.frames)
     say(f"compiled {len(T.steps)} steps, {n} frames ({n / 24:.1f} s); solving", progress=0.05)
-    rngs = chunks(T.steps, n)
+    nw = int(opt.get("workers", min(11, os.cpu_count() or 4)))
+    rngs = chunks(T.steps, n, size=max(24, min(160, -(-n // nw))))    # short tasks: small pieces, every core busy
     sols = [None] * n
-    with mp.Pool(int(opt.get("workers", min(11, os.cpu_count() or 4))), initializer=_init, initargs=(path, worker)) as pool:
+    with mp.Pool(nw, initializer=_init, initargs=(path, worker)) as pool:
         done = 0
         for a, s in pool.imap_unordered(_solve, rngs):
             sols[a:a + len(s)] = s
