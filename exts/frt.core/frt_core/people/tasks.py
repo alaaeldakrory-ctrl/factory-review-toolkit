@@ -1118,6 +1118,14 @@ class Task:
             return step_ang / 2 if power else -step_ang / 2
         from .jobs import held
         T_first = T_work(Ps[0], self.parts[seated[0]]["rise"] if seated[0] else 0.0, tool_ang(0.0, False))
+        if tool == "screwdriver" and not hold:
+            # round about its handle: picked up (and put back) turned so the work grip is a palm-down grab where
+            # it lies - the fingers roll it on the way, the hand does not arrive upside down
+            def at_roll(T, deg):
+                return T @ T_pos(np.zeros(3), rot_axis(Y, deg))
+            g = held(rh, T_first)
+            best = max(range(0, 360, 20), key=lambda d: -float(np.asarray(g({"t": at_roll(T_rest, d)}).palm)[1]))
+            T_home = T_end = at_roll(T_rest, best)
         tk.append((0.0, T_home))
         tk.append((1.0, T_home))
         hk += [(0.0, held(rh, T_first) if hold and not from_l else R["r"]), (0.95, held(rh, T_first)),
@@ -1160,6 +1168,10 @@ class Task:
         # tool back where it was
         t_back = t + 1.2
         last_T = T_work(Ps[-1], 0.0, tool_ang(ang, False))
+        if tool == "screwdriver" and not hold:                   # put back turned for the grip it has now
+            g2 = held(rh, T_work(Ps[-1], 4.0, tool_ang(ang, False)))
+            best2 = max(range(0, 360, 20), key=lambda d: -float(np.asarray(g2({"t": at_roll(T_rest, d)}).palm)[1]))
+            T_end = at_roll(T_rest, best2)
         tk += [(t + 0.3, T_work(Ps[-1], 4.0, tool_ang(ang, False))), (t_back, T_end), (t_back + 0.8, T_end)]
         hk += [(t + 0.3, rh), (t_back - 0.02, held(rh, last_T if False else T_first)), (t_back, held(rh, T_first))]
         hk = [(a_, v) for a_, v in hk]
@@ -1205,7 +1217,7 @@ class Task:
                 self.set_part(f, q, T_pos(P + nrm * h_, rot_axis(nrm, a0_ - ang_) @ Rn))
         self._add(fr, spot, sid)
         if not hold:
-            self.commit(tid, spot, T_rest)
+            self.commit(tid, spot, T_end)                        # (as it was put back)
         for q in [s_ for s_ in seated if s_]:
             P = Ps[seated.index(q)]
             a_end = self.parts[q]["angle"] - step_ang * strokes

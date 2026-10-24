@@ -126,6 +126,9 @@ def main():
         jobs = [(a, sols[a - 1], sols[a:b + 1]) for a, b in rngs[1:]]
         for a, s in pool.imap_unordered(_join, jobs):
             sols[a:a + len(s)] = s
+    if os.environ.get("FRT_DUMP_SOLS"):                             # (debugging: the solved poses, before smoothing)
+        import pickle
+        pickle.dump({"sols": sols, "rngs": rngs}, open(os.environ["FRT_DUMP_SOLS"], "wb"))
     sols = T.smooth_solutions(sols)
     say("checking", progress=0.82)
     import numpy as np

@@ -289,6 +289,7 @@ class PostureSolver:
             pa = (prev_arm or {}).get(s)
             Ru, Rf, wsw, tau, elbow, sw = self._arm(s, sx, S, u, a, h, dd, trunk, Rh, True, pa, torso)
             angles[f"swivel_{s}"], angles[f"twist_{s}"] = sw, tau
+            angles[f"twist_raw_{s}"] = float(self._raw_twist)
             ed = trunk.T @ unit(elbow - S)                     # where the elbow points (trunk frame), for the next frame
             angles[f"elbow_dirx_{s}"], angles[f"elbow_diry_{s}"], angles[f"elbow_dirz_{s}"] = (float(v_) for v_ in ed)
             ue, fe = unit(elbow - S), unit(S + u * dd - elbow)
@@ -441,8 +442,11 @@ class PostureSolver:
             w_, x_, y_, z_ = _quat(Q)
             tau = math.degrees(2.0 * math.atan2(x_ * sx, w_)) if abs(w_) + abs(x_) > 1e-9 else 0.0
             tau = (tau + 180.0) % 360.0 - 180.0
-            if prev is not None and prev[1] is not None:       # the twist continues, it never wraps around
-                tau = min((tau - 360.0, tau, tau + 360.0), key=lambda x: abs(x - prev[1]))
+            # the twist continues, it never wraps around - judged on the roll the hand really needed last frame
+            # (the forearm took at most 85 of it: comparing with that clipped value flipped it past half a turn)
+            ref = prev[3] if prev is not None and len(prev) > 3 and prev[3] is not None else                 (prev[1] if prev is not None else None)
+            if ref is not None:
+                tau = min((tau - 360.0, tau, tau + 360.0), key=lambda x: abs(x - ref))
             tc = max(-85.0, min(85.0, tau))
             Rf = Rf0 @ axis_angle(xa, math.radians(tc))
             wsw = angle(Rf @ xa, Rh @ xa)                       # wrist bend left after the forearm twist
@@ -460,7 +464,8 @@ class PostureSolver:
                 cont = angle(ue, pe) / 8.0 if pe is not None else (sw - prev[0]) / 10.0   # the elbow itself stays put
                 score += cont ** 2 + ((tc - (prev[1] or 0.0)) / 25.0) ** 2
             if best is None or score < best[0]:
-                best = (score, Ru, Rf, wsw + roll, tc, elbow, sw)
+                best = (score, Ru, Rf, wsw + roll, tc, elbow, sw, tau)
+        self._raw_twist = best[7]
         return best[1], best[2], best[3], best[4], best[5], best[6]
 
     def finger_angles(self, s, name):
@@ -626,7 +631,8 @@ class PostureSolver:
         if isinstance(prev, Solution):
             prev_arm = {s_: (prev.angles.get(f"swivel_{s_}"), prev.angles.get(f"twist_{s_}"),
                              tuple(prev.angles[f"elbow_dir{k}_{s_}"] for k in "xyz")
-                             if f"elbow_dirx_{s_}" in prev.angles else None) for s_ in ("l", "r")}
+                             if f"elbow_dirx_{s_}" in prev.angles else None,
+                             prev.angles.get(f"twist_raw_{s_}")) for s_ in ("l", "r")}
         if base is not None:                       # mocap-driven frame: no search, just exact limbs on the base pose
             v = np.zeros(8) if getattr(stance, "free", False) else self.fit_pelvis(base, stance)
             if self.base_correct:                  # generated base: small corrections (keep-outs, reach, feet)

@@ -125,7 +125,15 @@ def lerp_target(a, b, u, grip=None):
     the hand frame - never through a degenerate in-between that would flip the hand), hand shape blended."""
     from .bake import _R, _q, _slerp
     Fa, Fb = _hand_frame(a), _hand_frame(b)
-    Fu = _R(_slerp(_q(Fa), _q(Fb), u))
+    c = max(-1.0, min(1.0, (np.trace(Fa.T @ Fb) - 1.0) / 2.0))
+    if math.degrees(math.acos(c)) > 120.0:
+        # near half a turn the shortest rotation is ambiguous and its middle can be a hand the wrist cannot make
+        # (overhead palm-up back down to the side): turn through a natural hand instead - fingers forward, palm in
+        sx = 1.0 if a.side == "l" else -1.0
+        N = _hand_frame(HandTarget(a.side, a.point, (0.0, -0.45, 1.0), (-sx, 0.0, 0.0), a.grip, a.weight))
+        Fu = _R(_slerp(_q(Fa), _q(N), u * 2.0)) if u < 0.5 else _R(_slerp(_q(N), _q(Fb), u * 2.0 - 1.0))
+    else:
+        Fu = _R(_slerp(_q(Fa), _q(Fb), u))
     pt = np.asarray(a.point, float) * (1 - u) + np.asarray(b.point, float) * u
     return HandTarget(a.side, tuple(pt), tuple(Fu[:, 0]), tuple(Fu[:, 1]),
                       grip or grip_blend(a.grip, b.grip, u), a.weight * (1 - u) + b.weight * u)
