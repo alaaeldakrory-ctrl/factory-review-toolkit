@@ -28,9 +28,17 @@ def _load(path, worker=None):
     return T
 
 
-def _init(path, worker=None):
+def _init(path, worker=None, motion=None):
     global _T
     _T = _load(path, worker).compile(log=lambda *a: None)
+    _motion(_T, motion, log=lambda *a: None)
+
+
+def _motion(T, motion, log=print):
+    """--motion=andy (or motion = "andy" in [task]): real recorded bodies under the work (andy_base)."""
+    if (motion or T.data["task"].get("motion")) == "andy":
+        from frt_core.people.andy_base import apply
+        apply(T, log=log)
 
 
 def _solve(rng):
@@ -99,6 +107,7 @@ def main():
         if scene_only:                                               # just the scene and the worker at the start
             T.data["step"] = []
         T.compile(log=print)
+        _motion(T, opt.get("motion"))
         if scene_only:
             from frt_core.people.bake import solve_frames
             sols = solve_frames(T.S, T.frames, log=lambda *a: None)
@@ -115,7 +124,7 @@ def main():
     nw = int(opt.get("workers", min(11, os.cpu_count() or 4)))
     rngs = chunks(T.steps, n, size=max(24, min(160, -(-n // nw))))    # short tasks: small pieces, every core busy
     sols = [None] * n
-    with mp.Pool(nw, initializer=_init, initargs=(path, worker)) as pool:
+    with mp.Pool(nw, initializer=_init, initargs=(path, worker, opt.get("motion"))) as pool:
         done = 0
         for a, s in pool.imap_unordered(_solve, rngs):
             sols[a:a + len(s)] = s

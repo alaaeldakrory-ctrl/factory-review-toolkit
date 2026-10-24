@@ -246,6 +246,7 @@ class PostureSolver:
             S0 = P[f"upperarm_{s}"]
             if t is None and base is not None:                                   # mocap arm swing as it is
                 self._grip(pose, s, "relaxed")
+                self._clear_free_arm(pose, s, sx, torso)
                 continue
             if t is None:
                 grip_pt = S0 + DOWN * (sum(self.L[s]) + self.hand_len * 0.45) * 0.97 + R["spine_03"] @ FWD * 4.0
@@ -287,7 +288,13 @@ class PostureSolver:
             trunk = R2["spine_03"]
             Rh = frame_rot(np.array([sx, 0, 0]), DOWN, fingers, palm)
             pa = (prev_arm or {}).get(s)
-            Ru, Rf, wsw, tau, elbow, sw = self._arm(s, sx, S, u, a, h, dd, trunk, Rh, True, pa, torso)
+            ref = None
+            if base is not None and s == "r" and getattr(stance, "free", False) is False and wgt >= 0.9:
+                # the recorded person's working elbow: where this one goes (not a bracing hand - in the clip that
+                # arm did something else)
+                Rb, Pb = fk(sk, pose, [f"lowerarm_{s}"])
+                ref = unit(Pb[f"lowerarm_{s}"] - Pb[f"upperarm_{s}"])
+            Ru, Rf, wsw, tau, elbow, sw = self._arm(s, sx, S, u, a, h, dd, trunk, Rh, True, pa, torso, ref)
             angles[f"swivel_{s}"], angles[f"twist_{s}"] = sw, tau
             angles[f"twist_raw_{s}"] = float(self._raw_twist)
             ed = trunk.T @ unit(elbow - S)                     # where the elbow points (trunk frame), for the next frame
@@ -404,7 +411,21 @@ class PostureSolver:
     # the side of the chest - contact, and the trunk measurement there includes the shoulder of the clothes)
     ARM_SAMPLES = ((0.85, 4.5), (1.0, 4.5), (1.3, 4.0), (1.6, 3.5))
 
-    def _arm(self, s, sx, S, u, a, h, dd, trunk, Rh, has_target, prev=None, torso=None):
+    def _clear_free_arm(self, pose, s, sx, torso):
+        """A recorded free arm placed by direction on a bulkier body can sit inside it: swing it out from the
+        shoulder (about the trunk's forward axis) just until it is clear."""
+        for _ in range(10):
+            R, P = fk(self.sk, pose, [f"hand_{s}"])
+            S, E, W = P[f"upperarm_{s}"], P[f"lowerarm_{s}"], P[f"hand_{s}"]
+            pen = max(self.torso_pen(q, r, torso) for q, r in
+                      ((S + (E - S) * f, r) if f <= 1.0 else (E + (W - E) * (f - 1.0), r) for f, r in self.ARM_SAMPLES))
+            if pen <= self.TORSO_TOL:
+                return
+            Rot = axis_angle(R["spine_03"] @ np.array([0.0, 0.0, 1.0]), math.radians(sx * 4.0))
+            Rcl = R[f"clavicle_{s}"]
+            pose.rot[f"upperarm_{s}"] = Rcl.T @ Rot @ R[f"upperarm_{s}"]
+
+    def _arm(self, s, sx, S, u, a, h, dd, trunk, Rh, has_target, prev=None, torso=None, ref_elbow=None):
         """Elbow swivel + forearm twist: try elbow positions around the shoulder-wrist line (low and slightly out
         is preferred), give the forearm up to +-85 deg of the hand's roll (pronation / supination), leave the rest
         to the wrist; keep the swivel that bends the wrist least."""
@@ -430,6 +451,12 @@ class PostureSolver:
                     if abs(ang * sx - p0) > 4.0:                # (only when it differs: half the work otherwise)
                         near.append(ang * sx)
             cands = tuple(sorted({max(-90.0, min(90.0, c + d)) for c in near for d in (-12.0, -6.0, -3.0, 0.0, 3.0, 6.0, 12.0)}))
+        if ref_elbow is not None:                               # (a recorded elbow: search round it too)
+            ps = ref_elbow - u * np.dot(ref_elbow, u)
+            if np.linalg.norm(ps) > 1e-3:
+                ps = unit(ps)
+                ang = math.degrees(math.atan2(float(np.dot(np.cross(base_pole, ps), u)), float(np.dot(base_pole, ps))))
+                cands = tuple(sorted(set(cands) | {max(-90.0, min(90.0, ang * sx + d)) for d in (-8.0, 0.0, 8.0)}))
         for sw in cands:
             pole = axis_angle(u, math.radians(sw * sx)) @ base_pole
             elbow = S + u * a + pole * h
@@ -463,6 +490,8 @@ class PostureSolver:
             if prev is not None and prev[0] is not None:
                 cont = angle(ue, pe) / 8.0 if pe is not None else (sw - prev[0]) / 10.0   # the elbow itself stays put
                 score += cont ** 2 + ((tc - (prev[1] or 0.0)) / 25.0) ** 2
+            if ref_elbow is not None:
+                score += (angle(ue, ref_elbow) / 20.0) ** 2
             if best is None or score < best[0]:
                 best = (score, Ru, Rf, wsw + roll, tc, elbow, sw, tau)
         self._raw_twist = best[7]
