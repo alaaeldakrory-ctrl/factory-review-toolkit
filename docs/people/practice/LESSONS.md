@@ -37,7 +37,7 @@ Do these in Window > Task Builder with `my_task.toml`, in order. Each one takes 
 ## 6. Low work
 - The AWP validation scene is `docs/people/validation/awp_scene.toml`. In `scissor.toml`, the battery terminals are 40 cm high.
 - Without being told, the worker kneels: down on one knee, the work, then back up.
-- Set `posture = "stand"` on a step to see the stooped version. Type it into the task file: the window has no field for it yet. The RULA difference is the argument for kneeling.
+- Set posture = stand on the hand_start step (the window's posture field; auto is the default) to see the stooped version. The RULA difference is the argument for kneeling.
 
 ## 7. Same task, other body
 - Change Worker to `W05F` (small female) or `W95M` (large male) and solve again.

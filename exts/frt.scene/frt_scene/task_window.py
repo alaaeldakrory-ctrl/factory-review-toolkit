@@ -42,16 +42,16 @@ VERBS = {
     "carry": ([("what", "movable", "the part (both hands)"), ("to", "place", "where it is put down")],
               "pick up a part with both hands, walk if needed, put it down"),
     "hand_start": ([("what", "small_kind", "nut or screw"), ("on", "work_points", "studs / holes"),
-                    ("brace", "place", "where the other hand rests (optional)")],
+                    ("brace", "place", "where the other hand rests (optional)"), ("posture", "posture", "auto: kneels for low work")],
                    "take a nut / screw and thread it on by hand"),
     "fasten": ([("tool", "tool", "the tool (where it lies)"), ("on", "work_points", "the started nuts / screws"),
-                ("brace", "place", "where the other hand rests (optional)")],
+                ("brace", "place", "where the other hand rests (optional)"), ("posture", "posture", "auto: kneels for low work")],
                "drive / tighten at each point (gets the tool and puts it back, unless it is already in hand)"),
     "get_tool": ([("tool", "tool", "the tool to keep in hand")],
                  "pick a tool up and keep it for the next steps (walk / kneel with it)"),
     "put_back": ([("tool", "tool", "the tool in hand")], "put the tool in hand back where it was"),
-    "connect": ([("on", "work_points", "the sockets")], "plug connector halves into the sockets"),
-    "cable_tie": ([("on", "work_points", "the tie points on a harness")], "tie the harness at each point"),
+    "connect": ([("on", "work_points", "the sockets"), ("posture", "posture", "auto: kneels for low work")], "plug connector halves into the sockets"),
+    "cable_tie": ([("on", "work_points", "the tie points on a harness"), ("posture", "posture", "auto: kneels for low work")], "tie the harness at each point"),
     "push_door": ([("door", "door", "the cabinet")], "push the open door so it swings shut"),
     "latch": ([("door", "door", "the cabinet")], "press the door home and turn the latch"),
     "inspect": ([("on", "any_point", "what to look at"), ("seconds", "float", "how long")],
@@ -117,6 +117,7 @@ class Choices:
             "tool": [a["id"] for a in A if a.get("kind") == "tool"],
             "door": [a["id"] for a in A if a.get("kind") == "cabinet"],
             "slots": [], "place": [], "work_points": [], "any_point": [],
+            "posture": ["auto", "stand", "kneel"],
         }
         for a in A:
             for name, pts in a.get("points", {}).items():
@@ -241,7 +242,8 @@ class TaskWindow:
     def _summary(self, s):
         v = s.get("do", "?")
         keys = [k for k, _, _ in VERBS.get(v, ([], ""))[0]]
-        return v + "  " + "  ".join(f"{s[k]}" for k in keys if k in s and k != "brace")
+        return (v + "  " + "  ".join(f"{s[k]}" for k in keys if k in s and k not in ("brace", "posture"))
+                + (f"  ({s['posture']})" if s.get("posture") else ""))
 
     def _step_result(self, i):
         if not self.result or i >= len(self.result.get("steps", [])):
@@ -332,7 +334,7 @@ class TaskWindow:
                 s[name] = round(w.model.get_value_as_float(), 2)
             else:
                 v = opts[w.model.get_item_value_model().as_int]
-                if not v.startswith("("):
+                if not v.startswith("(") and not (kind == "posture" and v == "auto"):
                     s[name] = v
         return s
 
@@ -350,7 +352,7 @@ class TaskWindow:
             if name.rstrip("s") in kinds and name.rstrip("s") != s.get("what"):
                 return f"{s['to']} is for {name}, not {s.get('what')}s"
         for k, kind, _ in VERBS[s["do"]][0]:
-            if k not in s and k not in OPTIONAL and kind not in ("int", "float"):
+            if k not in s and k not in OPTIONAL and kind not in ("int", "float", "posture"):
                 return f"pick a value for '{k}'"
         return ""
 
@@ -373,6 +375,19 @@ class TaskWindow:
                 return f"step {i + 1}: the worker holds {held}, not {s.get('tool')}"
         return ""
 
+    def order_warning(self, steps):
+        """Allowed but probably not meant: starting nuts / screws that are still in a bin away from the work."""
+        moved = set()
+        for i, s in enumerate(steps):
+            if s.get("do") == "transfer":
+                moved.add(s.get("what"))
+            elif s.get("do") == "hand_start" and not s.get("from") and s.get("what") not in moved:
+                bins = [a["id"] for a in self.assets.values() if a.get("kind") == "bin" and a.get("holds") == s.get("what")]
+                where = f" ({', '.join(bins)})" if bins else ""
+                return (f"step {i + 1}: the {s.get('what')}s are still in their bin{where}; the worker will reach "
+                        f"for them from the work. Transfer them to the tray first?")
+        return ""
+
     def add_step(self, at):
         s = self._read_editor()
         bad = self.check_step(s)
@@ -393,6 +408,9 @@ class TaskWindow:
             self.steps[at] = s
         self.save()
         self.window.frame.rebuild()
+        warn = self.order_warning(self.steps)
+        if warn:
+            self._say("added, but: " + warn)
 
     def move(self, i, d):
         j = i + d
