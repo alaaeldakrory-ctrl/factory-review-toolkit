@@ -56,6 +56,36 @@ def _quat(R):
     return Gf.Quatf(float(q.GetReal()), *map(float, q.GetImaginary()))
 
 
+def _quats(R):
+    """(N, 3, 3) rotations (column form) -> (N, 4) quaternions (w, x, y, z), w >= 0."""
+    t = R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2]
+    q = np.empty((len(R), 4))
+    d = np.stack([t, R[:, 0, 0], R[:, 1, 1], R[:, 2, 2]], 1).argmax(1)
+    for k in range(4):
+        m = d == k
+        if not m.any():
+            continue
+        r = R[m]
+        if k == 0:
+            s = np.sqrt(np.maximum(t[m] + 1.0, 1e-12)) * 2
+            q[m] = np.stack([0.25 * s, (r[:, 2, 1] - r[:, 1, 2]) / s, (r[:, 0, 2] - r[:, 2, 0]) / s,
+                             (r[:, 1, 0] - r[:, 0, 1]) / s], 1)
+        elif k == 1:
+            s = np.sqrt(np.maximum(1.0 + r[:, 0, 0] - r[:, 1, 1] - r[:, 2, 2], 1e-12)) * 2
+            q[m] = np.stack([(r[:, 2, 1] - r[:, 1, 2]) / s, 0.25 * s, (r[:, 0, 1] + r[:, 1, 0]) / s,
+                             (r[:, 0, 2] + r[:, 2, 0]) / s], 1)
+        elif k == 2:
+            s = np.sqrt(np.maximum(1.0 + r[:, 1, 1] - r[:, 0, 0] - r[:, 2, 2], 1e-12)) * 2
+            q[m] = np.stack([(r[:, 0, 2] - r[:, 2, 0]) / s, (r[:, 0, 1] + r[:, 1, 0]) / s, 0.25 * s,
+                             (r[:, 1, 2] + r[:, 2, 1]) / s], 1)
+        else:
+            s = np.sqrt(np.maximum(1.0 + r[:, 2, 2] - r[:, 0, 0] - r[:, 1, 1], 1e-12)) * 2
+            q[m] = np.stack([(r[:, 1, 0] - r[:, 0, 1]) / s, (r[:, 0, 2] + r[:, 2, 0]) / s,
+                             (r[:, 1, 2] + r[:, 2, 1]) / s, 0.25 * s], 1)
+    q[q[:, 0] < 0] *= -1
+    return q / np.linalg.norm(q, axis=1, keepdims=True)
+
+
 def _axis_angle(axis, ang):
     a = np.asarray(axis, float)
     a = a / (np.linalg.norm(a) + 1e-12)
@@ -308,20 +338,17 @@ class Character:
         return W
 
     def local_arrays(self, pose, root=None):
-        """UsdSkel (translations, rotations) for one pose, in the skeleton's joint order."""
-        from pxr import Gf, Vt
+        """UsdSkel (translations, rotations) for one pose, in the skeleton's joint order (all joints at once)."""
+        from pxr import Vt
         W = self.pose_world(pose, root)
-        tr, rot = [], []
-        for j in self.joints:
-            n = _name(j)
-            p = self.parent.get(n)
-            L = W[n] if p is None else np.linalg.inv(W[p]) @ W[n]
-            R = L[:3, :3]
-            u, _, vt = np.linalg.svd(R)                               # clean numerical drift
-            R = u @ vt
-            tr.append(Gf.Vec3f(*map(float, L[:3, 3])))
-            rot.append(_quat(R))
-        return Vt.Vec3fArray(tr), Vt.QuatfArray(rot)
+        names = [_name(j) for j in self.joints]
+        Ws = np.array([W[n] for n in names])
+        Wp = np.array([W[self.parent[n]] if self.parent.get(n) is not None else np.eye(4) for n in names])
+        L = np.linalg.inv(Wp) @ Ws
+        u, _, vt = np.linalg.svd(L[:, :3, :3])                       # clean numerical drift
+        q = _quats(u @ vt)
+        return (Vt.Vec3fArray.FromNumpy(np.ascontiguousarray(L[:, :3, 3], dtype=np.float32)),
+                Vt.QuatfArray.FromNumpy(np.ascontiguousarray(q[:, [1, 2, 3, 0]], dtype=np.float32)))
 
     def write(self, stage, path, sols, start=0):
         """The character at `path` (an Xform in a Y-up cm stage, in the worker frame), playing `sols`."""

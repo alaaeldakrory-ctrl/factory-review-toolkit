@@ -2,13 +2,21 @@
 
     python tools/task_run.py docs/people/practice/reference_task.toml [--out=out/people/task/<name>] [--workers=11]
         [--worker=W05F]   (the same task on another body: an frt body id or a character .usd)
+        [--final]         (every frame solved; the default preview solves key poses - every KEY-th frame and every
+                           phase's first and last - and blends between them, several times faster)
+        [--motion=andy|best]   (recorded bodies under the work / per step the better of with and without)
     -> <out>/task.usda (scene + worker + parts), result.json (per step: frames, checks, RULA), log
+
+Steps that did not change since the last run in the same --out (same frames, scene, body, code, quality) are
+reused from <out>/step_cache.pkl; only the hand-over into them is re-solved.
 
 The Kit window (Task Builder) runs this in the background and opens the result.
 """
+import hashlib
 import json
 import multiprocessing as mp
 import os
+import pickle
 import sys
 import time
 
@@ -18,6 +26,8 @@ sys.path.insert(0, os.path.join(ROOT, "exts", "frt.core"))
 os.environ.setdefault("PXR_USDC_EMIT_DEPRECATION_WARNINGS", "0")
 
 _T = None
+EFFORT = float(os.environ.get("FRT_EFFORT", 0.5))                # preview: half the search iterations per key pose
+KEY = int(os.environ.get("FRT_KEY", 6))                         # preview: a solved pose every KEY frames (0.25 s)
 _TS = {}                                                             # (--motion=best: both versions)
 
 
@@ -29,14 +39,24 @@ def _load(path, worker=None):
     return T
 
 
-def _init(path, worker=None, motion=None):
+def _init(path, worker=None, motion=None, blob=None):
+    """A worker's tasks: the main process's compiled ones (blob: pickled {version: Task}), else compiled here."""
     global _T
-    keys = ("solver", "andy") if motion == "best" else (motion or "solver",)
+    if blob is not None:
+        _TS.update(pickle.loads(blob))
+        _T = list(_TS.values())[0]
+        return
+    keys = ("solver", "andy") if motion == "best" else (None,)
     for k in keys:
         T = _load(path, worker).compile(log=lambda *a: None)
-        _motion(T, k if motion == "best" else motion, log=lambda *a: None)   # (best: the solver one stays plain)
-        _TS[k] = T
-    _T = _TS[keys[0]]
+        _motion(T, k or motion, log=lambda *a: None)                 # (best: the solver one stays plain)
+        _TS[k or _key(T, motion)] = T
+    _T = list(_TS.values())[0]
+
+
+def _key(T, motion):
+    """Which version a run solves: "andy" (recorded bodies, from --motion or the task file) or "solver"."""
+    return "andy" if (motion or T.data["task"].get("motion")) == "andy" else "solver"
 
 
 def _motion(T, motion, log=print):
@@ -48,9 +68,10 @@ def _motion(T, motion, log=print):
 
 def _solve(job):
     from frt_core.people.bake import solve_frames
-    k, a, b = job
+    k, a, b, step = job
     T = _TS[k]
-    return k, a, solve_frames(T.S, T.frames[a:b + 1], log=lambda *a: None)
+    T.S.effort = EFFORT if step > 1 else 1.0
+    return k, a, solve_frames(T.S, T.frames[a:b + 1], log=lambda *a: None, step=step)
 
 
 def _apart(p, q):
@@ -64,13 +85,13 @@ def _join(job):
     """Carry on from the frame before a piece until the motion meets the piece's own solution (a piece warm-started
     from rest can have the elbow on the other side: handing over after a fixed number of frames was a snap)."""
     from frt_core.people.bake import solve_frames
-    k, a, prev, own = job
+    k, a, prev, own, step = job
     T = _TS[k]
     n = len(T.frames)
     out, i = [], a
     while i < n and i - a < len(own):
-        hi = min(n, i + 10, a + len(own))
-        fix = solve_frames(T.S, T.frames[i:hi], log=lambda *a: None, prev=prev)
+        hi = min(n, i + max(10, 2 * step), a + len(own))
+        fix = solve_frames(T.S, T.frames[i:hi], log=lambda *a: None, prev=prev, step=step)
         out += fix
         prev, i = fix[-1], hi
         if _apart(fix[-1], own[hi - 1 - a]) < 8.0:
@@ -78,29 +99,126 @@ def _join(job):
     return a, out
 
 
-def solve_set(pool, k, rngs, n, say, p0=0.05, p1=0.75):
-    """Every frame of one version (k: a key of _TS) solved in pieces, then the joins between them."""
+_CODE = None
+
+
+def _code_hash():
+    """The people code (solver, tasks, kinematics...): a change there makes every cached step stale."""
+    global _CODE
+    if _CODE is None:
+        h = hashlib.sha1()
+        d = os.path.join(ROOT, "exts", "frt.core", "frt_core", "people")
+        for f in sorted(os.listdir(d)):
+            if f.endswith(".py"):
+                h.update(open(os.path.join(d, f), "rb").read())
+        _CODE = h.hexdigest()
+    return _CODE
+
+
+def step_ranges(T):
+    """Each step's frames, up to the next step's first (the first from frame 0, the last to the end)."""
+    st = [0] + [s["start"] for s in T.steps[1:]] + [len(T.frames)]
+    return [(a, b - 1) for a, b in zip(st, st[1:])]
+
+
+def step_hash(T, s, k, step):
+    """Everything a step's solve depends on: its frames (targets, gaze, stance, walk, base pose), the scene and
+    body (the task file without the steps), the code, the version (k) and the key spacing."""
+    data = {x: v for x, v in T.data.items() if x != "step"}
+    def pose(b):                                                    # (joint order in a pose varies run to run)
+        return None if b is None else (b.pelvis.tobytes(), [(j, b.rot[j].tobytes()) for j in sorted(b.rot)])
+    fr = [(f.targets, f.look, f.root, f.stance, f.swing, f.static, f.label, pose(f.base))
+          for f in T.frames[s[0]:s[1] + 1]]
+    h = hashlib.sha1(pickle.dumps(fr, protocol=4))
+    h.update(json.dumps(data, sort_keys=True, default=str).encode())
+    h.update(f"{_code_hash()} {k} {step} {EFFORT if step > 1 else 1.0}".encode())
+    return h.hexdigest()
+
+
+def _worse(new, sol, k=1.25, add=2.0):
+    """A rebuilt pose clearly costlier than the solver's own for that frame (a wound-up forearm, a wrist past its
+    limit): the solver's own is kept."""
+    return sum(new.terms.values()) > k * sum(sol.terms.values()) + add
+
+
+def join_fast(T, a, prev, own, blend_n=12):
+    """A preview join, no search: the piece's own trunk (eased in from the frame before over blend_n frames), its
+    arms rebuilt carrying on from the frame before - the elbow branch flows on across the join. Stops where the
+    rebuilt frame is the piece's own again (~5 ms a frame)."""
+    out = []
+    for j, sol in enumerate(own):
+        f = T.frames[a + j]
+        if sol.v is None or prev.v is None or len(sol.v) != len(prev.v) or f.static:
+            out.append(sol)
+            prev = sol
+            continue
+        u = min(1.0, (j + 1) / (blend_n + 1))
+        new = T.S.at(prev.v * (1 - u) + sol.v * u, f.targets, look=f.look, stance=f.stance, prev=prev,
+                     swing=f.swing, base=f.base, world=getattr(f, "world", None))
+        if u >= 1.0 and (_apart(new, sol) < 1.0                       # back on the piece's own branch: keep the rest
+                         or _worse(new, sol)):                          # (or the carried-on arm winds up: its own)
+            return out + list(own[j:])
+        out.append(new)
+        prev = new
+    return out
+
+
+def solve_set(pool, k, T, say, size, step, cache=None, p0=0.05, p1=0.75):
+    """Every frame of one version (k: a key of _TS) solved in pieces - steps found in cache reused - then the joins
+    between them. cache: {step hash: solutions}, updated in place."""
+    n = len(T.frames)
     sols = [None] * n
+    segs, hashes = [], []                                            # segs: (a, b, reused)
+    for st in step_ranges(T):
+        a, b = st
+        h = step_hash(T, st, k, step)
+        hashes.append((a, b, h))
+        if cache is not None and len(cache.get(h, ())) == b - a + 1:
+            sols[a:b + 1] = cache[h]
+            segs.append((a, b, True))
+            continue
+        while b - a > size * 1.5:
+            segs.append((a, a + size - 1, False))
+            a += size
+        segs.append((a, b, False))
+    todo = [(k, a, b, step) for a, b, r in segs if not r]
+    total = sum(b - a + 1 for _, a, b, _ in todo) or 1
+    nre = sum(1 for *_, r in segs if r)
+    if nre:
+        say(f"{nre} of {len(T.steps)} steps unchanged: reused", progress=p0)
     done = 0
-    for _, a, s in pool.imap_unordered(_solve, [(k,) + r for r in rngs]):
+    for _, a, s in pool.imap_unordered(_solve, todo):
         sols[a:a + len(s)] = s
         done += len(s)
-        say(f"solving {done}/{n} frames" + (f" ({k})" if k != "solver" else ""), progress=p0 + (p1 - p0) * done / n)
-    # the joins between pieces, each carried on from the frame before it (all at once: they are independent)
+        say(f"solving {done}/{total} frames" + (f" ({k})" if k != "solver" else ""),
+            progress=p0 + (p1 - p0) * done / total)
+    # the joins between pieces, each carried on from the frame before it (all at once: they are independent);
+    # two reused steps side by side were joined when they were cached
     say("joining the pieces", progress=p1)
-    jobs = [(k, a, sols[a - 1], sols[a:b + 1]) for a, b in rngs[1:]]
-    own = {a: o for _, a, _, o in jobs}
+    idx = [i for i in range(1, len(segs)) if not (segs[i][2] and segs[i - 1][2])]
+    if step > 1:                                                     # preview: cheap joins, in order, here
+        for i in idx:
+            a, b, _ = segs[i]
+            sols[a:b + 1] = join_fast(T, a, sols[a - 1], sols[a:b + 1])
+        idx = []
+    own = {i: sols[segs[i][0]:segs[i][1] + 1] for i in idx}
+    at = {segs[i][0]: i for i in idx}
     ran = {}
-    for a, s in pool.imap_unordered(_join, jobs):
+    for a, s in pool.imap_unordered(_join, [(k, segs[i][0], sols[segs[i][0] - 1], own[i], step) for i in idx]):
         sols[a:a + len(s)] = s
-        ran[a] = len(s) == len(own[a])
+        ran[at[a]] = len(s) == len(own[at[a]])
     # a join that ran through its whole piece changed that piece's last frame: the next join started from the
     # old one (a wrong-branch arm carried on) - redo it from the new end, in order
-    for (a, _), (a2, _) in zip(rngs[1:], rngs[2:]):
-        if ran.get(a):
-            _, s = pool.apply(_join, ((k, a2, sols[a2 - 1], own[a2]),))
+    for i in range(2, len(segs)):
+        if ran.get(i - 1):
+            a2, b2, _ = segs[i]
+            o = own.get(i) or sols[a2:b2 + 1]
+            _, s = pool.apply(_join, ((k, a2, sols[a2 - 1], o, step),))
             sols[a2:a2 + len(s)] = s
-            ran[a2] = len(s) == len(own[a2])
+            ran[i] = len(s) == len(o)
+    if cache is not None:
+        for a, b, h in hashes:
+            cache[h] = sols[a:b + 1]
     return sols
 
 
@@ -124,13 +242,13 @@ def _fold(T, sols, a, b, over=60.0):
     return tot
 
 
-def best_of_both(T, TA, pool, rngs, n, say, usd):
+def best_of_both(T, TA, pool, say, usd, size, step, cache):
     """--motion=best: the task solved twice (solver only / recorded bodies), each step kept from the version with
     fewer and smaller check issues, the hand-over into a switched step re-solved from the kept frame before it."""
     from frt_core.people.bake import _rootT
     from frt_core.people.check import check_frames
-    S0 = solve_set(pool, "solver", rngs, n, say, 0.05, 0.40)
-    SA = solve_set(pool, "andy", rngs, n, say, 0.40, 0.72)
+    S0 = solve_set(pool, "solver", T, say, size, step, cache, 0.05, 0.40)
+    SA = solve_set(pool, "andy", TA, say, size, step, cache, 0.40, 0.72)
     bake_scene(T, T.smooth_solutions(S0), usd)                        # (the equipment is the same in both)
     field = T.field or equipment_field(T, usd)
     for f in TA.frames:
@@ -158,7 +276,7 @@ def best_of_both(T, TA, pool, rngs, n, say, usd):
             s = T.steps[j]
             a, b = s["start"], s["end"]
             own = (SA if keys[j] == "andy" else S0)[a:b + 1]
-            _, fix = pool.apply(_join, ((keys[j], a, sols[a - 1], own),))
+            _, fix = pool.apply(_join, ((keys[j], a, sols[a - 1], own, step),))
             sols[a:a + len(fix)] = fix
     if "andy" in keys:
         T.S.base_correct = True
@@ -188,14 +306,15 @@ def main():
     out = os.path.abspath(opt.get("out", os.path.join(ROOT, "out", "people", "task", name)))
     os.makedirs(out, exist_ok=True)
     status = os.path.join(out, "status.json")
+    t0 = time.time()
 
     def say(msg, **kw):
-        print(msg, flush=True)
+        print(f"[{time.time() - t0:5.0f} s] {msg}", flush=True)
         with open(status + ".tmp", "w") as f:
             json.dump({"msg": msg, "t": time.time(), **kw}, f)
         os.replace(status + ".tmp", status)                         # the window never reads half a file
-    t0 = time.time()
     scene_only = "--scene-only" in sys.argv
+    nw = int(opt.get("workers", min(11, os.cpu_count() or 4)))
     try:
         T = _load(path, worker)
         if scene_only:                                               # just the scene and the worker at the start
@@ -215,18 +334,31 @@ def main():
         sys.exit(1)
     n = len(T.frames)
     say(f"compiled {len(T.steps)} steps, {n} frames ({n / 24:.1f} s); solving", progress=0.05)
-    nw = int(opt.get("workers", min(11, os.cpu_count() or 4)))
-    rngs = chunks(T.steps, n, size=max(24, min(160, -(-n // nw))))    # short tasks: small pieces, every core busy
+    size = max(24, min(160, -(-n // nw)))                            # short tasks: small pieces, every core busy
+    step = 1 if "--final" in sys.argv else KEY
+    cpath = os.path.join(out, "step_cache.pkl")
+    try:
+        cache = pickle.load(open(cpath, "rb"))
+    except Exception:                                                # none yet / unreadable: solve everything
+        cache = {}
     pick = None
-    with mp.Pool(nw, initializer=_init, initargs=(path, worker, opt.get("motion"))) as pool:
+    tasks = {_key(T, opt.get("motion")): T}
+    if opt.get("motion") == "best":
+        TA = _load(path, worker).compile(log=lambda *a: None)
+        _motion(TA, "andy")
+        tasks = {"solver": T, "andy": TA}
+    # the workers get the compiled task (pickled, ~0.1 s) instead of each compiling it again
+    with mp.Pool(nw, initializer=_init, initargs=(path, worker, opt.get("motion"), pickle.dumps(tasks, protocol=4))) as pool:
         if opt.get("motion") == "best":
-            TA = _load(path, worker).compile(log=lambda *a: None)
-            _motion(TA, "andy")
-            sols, pick = best_of_both(T, TA, pool, rngs, n, say, os.path.join(out, "task.usda"))
+            sols, pick = best_of_both(T, TA, pool, say, os.path.join(out, "task.usda"), size, step, cache)
         else:
-            sols = solve_set(pool, opt.get("motion") or "solver", rngs, n, say)
+            sols = solve_set(pool, _key(T, opt.get("motion")), T, say, size, step, cache)
+    if len(cache) > 300:                                             # (keep the file small: this run's steps only)
+        cur = {step_hash(T, st, kk, step) for st in step_ranges(T) for kk in ("solver", "andy")}
+        cache = {h: v for h, v in cache.items() if h in cur}
+    pickle.dump(cache, open(cpath + ".tmp", "wb"), protocol=4)
+    os.replace(cpath + ".tmp", cpath)
     if os.environ.get("FRT_DUMP_SOLS"):                             # (debugging: the solved poses, before smoothing)
-        import pickle
         pickle.dump({"sols": sols, "rngs": rngs}, open(os.environ["FRT_DUMP_SOLS"], "wb"))
     sols = T.smooth_solutions(sols)
     say("checking", progress=0.82)
@@ -263,7 +395,7 @@ def main():
                                           key=lambda kv: -kv[1])},
                       "issues": [list(i) for i in sorted(iss, key=lambda i: -_severity(i))[:12]]})
     res = {"task": T.name, "file": path, "usd": usd, "frames": n, "fps": 24, "steps": steps,
-           "counts": rep["counts"], "notes": T.notes, "motion": pick, "solve_s": round(time.time() - t0, 1)}
+           "counts": rep["counts"], "notes": T.notes, "motion": pick, "quality": "final" if step == 1 else "preview", "solve_s": round(time.time() - t0, 1)}
     json.dump(res, open(os.path.join(out, "result.json"), "w"), indent=1)
     say(f"done in {time.time() - t0:.0f} s: {rep['counts'] or 'clean'}", progress=1.0, done=True, usd=usd)
 

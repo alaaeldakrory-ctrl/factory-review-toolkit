@@ -139,10 +139,42 @@ def lerp_target(a, b, u, grip=None):
                       grip or grip_blend(a.grip, b.grip, u), a.weight * (1 - u) + b.weight * u)
 
 
-def rest_targets(solver):
-    """Where each hand is when the worker stands at ease (from a free solve): HandTargets to blend from / back to."""
-    from .kinematics import fk
+def _rest_disk(solver):
+    """The free standing solve for this body, kept on disk by body and solver code (a cold solve: ~4 s a task)."""
+    import hashlib
+    import os
+    import pickle
+    sk = solver.sk
+    h = hashlib.sha1()
+    for j in sorted(sk.world):
+        h.update(j.encode() + np.asarray(sk.world[j], float).tobytes())
+    here = os.path.dirname(os.path.abspath(__file__))
+    for f in ("solver.py", "kinematics.py", "collide.py"):
+        h.update(open(os.path.join(here, f), "rb").read())
+    d = os.path.join(here, "..", "..", "..", "..", "out", "people", "cache")
+    path = os.path.join(d, f"rest_{h.hexdigest()[:16]}.pkl")
+    try:
+        return pickle.load(open(path, "rb"))
+    except Exception:
+        pass
     sol = solver.solve([], look=None)
+    try:
+        os.makedirs(d, exist_ok=True)
+        pickle.dump(sol, open(path + ".tmp", "wb"), protocol=4)
+        os.replace(path + ".tmp", path)
+    except OSError:                                                 # (read-only install: just solve each time)
+        pass
+    return sol
+
+
+def rest_targets(solver):
+    """Where each hand is when the worker stands at ease (from a free solve): HandTargets to blend from / back to.
+    Solved once per solver (every motion builder asks for it: it was most of a task's compile time)."""
+    from .kinematics import fk
+    memo = getattr(solver, "_rest_memo", None)
+    if memo is not None:
+        return dict(memo[0]), memo[1]
+    sol = _rest_disk(solver)
     R, P = fk(solver.sk, sol.pose)
     out = {}
     for s, sx in (("l", 1.0), ("r", -1.0)):
@@ -152,6 +184,7 @@ def rest_targets(solver):
         pt = P[f"hand_{s}"] + fingers * solver.hand_len * 0.40 + palm * 1.6
         pt = pt + np.array([0.0, 7.0, 6.0])                      # hand at the hip, elbow eased: always reachable
         out[s] = HandTarget(s, tuple(pt), tuple(fingers), tuple(palm), "relaxed", 0.3)
+    solver._rest_memo = (dict(out), sol)
     return out, sol
 
 

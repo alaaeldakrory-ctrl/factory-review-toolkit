@@ -49,12 +49,20 @@ def blend(p0, p1, u):
     return out
 
 
+def _phase_edge(frames, i):
+    """First or last frame of a phase (grasp, release, a turn's end): always solved, never blended over."""
+    lab = frames[i].label
+    return (i > 0 and frames[i - 1].label != lab) or (i + 1 < len(frames) and frames[i + 1].label != lab)
+
+
 def solve_frames(S, frames, stance=None, step=1, log=print, label="", prev=None):
     """prev: the solution just before these frames (continuing a longer stretch)."""
     t0 = time.time()
     sols = [None] * len(frames)
+    walk = not getattr(S, "base_correct", False)                    # (a walking frame is cheap: always solved)
     key = [i for i, f in enumerate(frames) if not f.static and (i % step == 0 or i == len(frames) - 1
-                                                                 or frames[i].root is not None and step > 1 and i % step == 0)]
+                                                                 or step > 1 and _phase_edge(frames, i)
+                                                                 or f.base is not None and walk)]
     keyset = set(key)
     for i, f in enumerate(frames):
         if f.static and prev is not None:
@@ -65,20 +73,39 @@ def solve_frames(S, frames, stance=None, step=1, log=print, label="", prev=None)
         sols[i] = S.solve(f.targets, look=f.look, stance=f.stance or stance, prev=prev, smooth=1.0, swing=f.swing,
                           base=f.base, world=getattr(f, "world", None))
         prev = sols[i]
-    # fill the frames between solved ones
+    # fill the frames between solved ones: the trunk blended between the two key poses, the arms and legs solved
+    # exactly for this frame's targets (one pose build, no search); a static frame repeats the one before
     last = None
+    solved = [s_ is not None for s_ in sols]
     for i in range(len(frames)):
-        if sols[i] is not None:
+        if solved[i]:
+            f = frames[i]
+            if i > 0 and not solved[i - 1] and sols[i].v is not None and not f.static and f.base is None:
+                # the key carried on from the frame before it, not from the key before (that can be the other elbow
+                # branch: a snap here) - its trunk kept, the limbs rebuilt
+                new = S.at(sols[i].v, f.targets, look=f.look, stance=f.stance or stance, prev=sols[i - 1],
+                           swing=f.swing, world=getattr(f, "world", None))
+                if sum(new.terms.values()) <= 1.25 * sum(sols[i].terms.values()) + 2.0:   # (not if it winds up)
+                    sols[i] = new
             last = i
             continue
-        nxt = next((k for k in range(i + 1, len(frames)) if sols[k] is not None), None)
+        nxt = next((k for k in range(i + 1, len(frames)) if solved[k]), None)
         if last is None or nxt is None:
             sols[i] = sols[last if last is not None else nxt]
             continue
         u = (i - last) / (nxt - last)
         a, b = sols[last], sols[nxt]
-        sols[i] = type(a)(blend(a.pose, b.pose, u), a.cost * (1 - u) + b.cost * u, a.terms,
-                          {k: a.angles.get(k, 0) * (1 - u) + b.angles.get(k, 0) * u for k in a.angles}, a.v)
+        f = frames[i]
+        if a.v is not None and b.v is not None and len(a.v) == len(b.v) and not f.static:
+            sols[i] = S.at(a.v * (1 - u) + b.v * u, f.targets, look=f.look, stance=f.stance or stance,
+                           prev=sols[i - 1], swing=f.swing, base=f.base, world=getattr(f, "world", None))
+            ref = sum(a.terms.values()) * (1 - u) + sum(b.terms.values()) * u
+            if sum(sols[i].terms.values()) > 1.25 * ref + 2.0:        # wound up carrying on: from the key before
+                sols[i] = S.at(a.v * (1 - u) + b.v * u, f.targets, look=f.look, stance=f.stance or stance,
+                               prev=a, swing=f.swing, base=f.base, world=getattr(f, "world", None))
+        else:
+            sols[i] = type(a)(blend(a.pose, b.pose, u), a.cost * (1 - u) + b.cost * u, a.terms,
+                              {k: a.angles.get(k, 0) * (1 - u) + b.angles.get(k, 0) * u for k in a.angles}, a.v)
     log(f"{label}{len(frames)} frames ({len(keyset)} solved) in {time.time() - t0:.1f} s")
     return sols
 

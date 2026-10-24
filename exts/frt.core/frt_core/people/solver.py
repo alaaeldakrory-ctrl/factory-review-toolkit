@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .kinematics import I3, Pose, angle, axis_angle, com, fk, frame_rot, rx, ry, rz, unit
+from .kinematics import I3, Pose, angle, axis_angle, com, cross3, fk, frame_rot, norm3, rx, ry, rz, unit
 
 UP = np.array([0.0, 1.0, 0.0])
 DOWN = -UP
@@ -65,6 +65,15 @@ class Stance:
     def foot_yaw(self, s):
         v = self.yaw_l if s == "l" else self.yaw_r
         return self.yaw if v is None else v
+
+
+def _prev_arm(prev):
+    """The arm branch of the frame before (swivel, twist, elbow direction): the next frame stays on it."""
+    if not isinstance(prev, Solution):
+        return None
+    return {s_: (prev.angles.get(f"swivel_{s_}"), prev.angles.get(f"twist_{s_}"),
+                 tuple(prev.angles[f"elbow_dir{k}_{s_}"] for k in "xyz") if f"elbow_dirx_{s_}" in prev.angles else None,
+                 prev.angles.get(f"twist_raw_{s_}")) for s_ in ("l", "r")}
 
 
 @dataclass
@@ -190,6 +199,7 @@ class PostureSolver:
         self.field = None           # collide.SceneField: the scene's equipment the body stays out of
         self._world = None          # 4x4 worker frame -> field, per solve
         self.base_correct = False   # base (generated / mocap) pose: allow small pelvis / trunk corrections on top
+        self.effort = 1.0           # search iterations x this (a preview: fewer - its poses start from the one before)
 
     # ------------------------------------------------------------------ building a pose from the variables
     def build(self, v, targets, look, stance, free_arms="hang", swing=None, base=None, prev_arm=None):
@@ -217,7 +227,7 @@ class PostureSolver:
             ank = np.asarray(getattr(stance, "left" if s == "l" else "right"), float)
             hip = P[f"thigh_{s}"]
             L1, L2 = self.leg[s]
-            d = np.linalg.norm(ank - hip)
+            d = norm3(ank - hip)
             terms[f"leg_{s}"] = max(0.0, d - (L1 + L2) * 0.999) ** 2 * 60.0
             dd = min(d, (L1 + L2) * 0.999)
             u = unit(ank - hip)
@@ -228,8 +238,8 @@ class PostureSolver:
             td, cd = unit(knee - hip), unit(ank - knee)
             rest_thigh = unit(sk.world[f"calf_{s}"] - sk.world[f"thigh_{s}"])
             Rt = frame_rot(rest_thigh, FWD, td, pole)
-            n = np.cross(td, cd)
-            Rc = axis_angle(n, math.radians(angle(td, cd))) @ Rt if np.linalg.norm(n) > 1e-9 else Rt
+            n = cross3(td, cd)
+            Rc = axis_angle(n, math.radians(angle(td, cd))) @ Rt if norm3(n) > 1e-9 else Rt
             Rf = ry(stance.foot_yaw(s)) @ rx(-getattr(stance, f"lift_{s}"))
             pose.rot[f"thigh_{s}"] = R["pelvis"].T @ Rt
             pose.rot[f"calf_{s}"] = Rt.T @ Rc
@@ -259,7 +269,7 @@ class PostureSolver:
                 grip_pt = np.asarray(t.point, float)
                 gname, wgt = t.grip, t.weight
                 fingers = unit(t.fingers) if t.fingers is not None else unit(grip_pt - S0)
-                palm = unit(t.palm) if t.palm is not None else unit(sx * np.cross(fingers, UP)) if abs(fingers[1]) < 0.95 \
+                palm = unit(t.palm) if t.palm is not None else unit(sx * cross3(fingers, UP)) if abs(fingers[1]) < 0.95 \
                     else np.array([-sx, 0.0, 0.0])
             # clavicle (scapula): elevates for high targets, protracts as the hand reaches forward / across the body -
             # a long reach comes from the shoulder girdle too, not only the arm
@@ -269,8 +279,8 @@ class PostureSolver:
             if t is not None:
                 vt = R["spine_03"].T @ (grip_pt - S0)
                 arm_len = sum(self.L[s]) + self.hand_len * 0.45
-                frac = float(np.linalg.norm(vt)) / arm_len
-                fwd_k = max(0.0, float(vt[2]) / (float(np.linalg.norm(vt)) + 1e-9)) + max(0.0, -sx * float(vt[0])) / arm_len
+                frac = float(norm3(vt)) / arm_len
+                fwd_k = max(0.0, float(vt[2]) / (float(norm3(vt)) + 1e-9)) + max(0.0, -sx * float(vt[0])) / arm_len
                 prot = min(22.0, max(0.0, (frac - 0.45) / 0.45) * 20.0 * min(1.0, fwd_k))
             pose.rot[f"clavicle_{s}"] = ry(-sx * prot) @ rz(sx * cl)
             angles[f"clavicle_{s}"] = prot
@@ -279,7 +289,7 @@ class PostureSolver:
             palm = unit(palm - fingers * np.dot(palm, fingers))
             wrist = grip_pt - fingers * self.hand_len * 0.40 - palm * 1.6
             L1, L2 = self.L[s]
-            d = np.linalg.norm(wrist - S)
+            d = norm3(wrist - S)
             terms[f"reach_{s}"] = max(0.0, d - (L1 + L2) * 0.985) ** 2 * 8.0 * max(wgt, 0.05)
             dd = min(max(d, abs(L1 - L2) + 1e-3), (L1 + L2) * 0.985)
             u = unit(wrist - S)
@@ -331,7 +341,7 @@ class PostureSolver:
             if t.weight >= 0.5:
                 sh = self.sk.world[f"upperarm_{t.side}"]
                 v_ = np.asarray(t.point, float) - sh
-                frac = float(np.linalg.norm(v_)) / (sum(self.L[t.side]) + self.hand_len * 0.45)
+                frac = float(norm3(v_)) / (sum(self.L[t.side]) + self.hand_len * 0.45)
                 if v_[2] > 0 and v_[1] < 5.0:                       # forward and not above the shoulder
                     lean = max(lean, min(1.0, max(0.0, (frac - 0.55) / 0.4)) * 14.0)
         hinge_eff = hinge + flex - lean
@@ -365,7 +375,7 @@ class PostureSolver:
             return self._wrap[key]
         sk = self.sk
         pts = [sk.world[f"{f}_0{i}_{s}"] for i in (1, 2, 3)] + [sk.tips[f"{f}_tip_{s}"]]
-        lens = [float(np.linalg.norm(b - a)) for a, b in zip(pts, pts[1:])]
+        lens = [float(norm3(b - a)) for a, b in zip(pts, pts[1:])]
         R = radius + 0.9                                           # finger half thickness
         th = [math.degrees(2 * math.asin(min(1.0, L / (2 * R)))) for L in lens]
         out = (min(95.0, th[0] * 0.5 + 8.0), min(100.0, (th[0] + th[1]) * 0.5), min(85.0, (th[1] + th[2]) * 0.5))
@@ -443,26 +453,26 @@ class PostureSolver:
                 # close to the shoulder) the same swivel is another elbow. Search round the swivel that puts the
                 # elbow back where it was, too.
                 ps = pe - u * np.dot(pe, u)
-                if np.linalg.norm(ps) > 1e-3:
+                if norm3(ps) > 1e-3:
                     ps = unit(ps)
-                    ang = math.degrees(math.atan2(float(np.dot(np.cross(base_pole, ps), u)), float(np.dot(base_pole, ps))))
+                    ang = math.degrees(math.atan2(float(np.dot(cross3(base_pole, ps), u)), float(np.dot(base_pole, ps))))
                     if abs(ang * sx - p0) > 4.0:                # (only when it differs: half the work otherwise)
                         near.append(ang * sx)
             cands = tuple(sorted({max(-90.0, min(90.0, c + d)) for c in near for d in (-12.0, -6.0, -3.0, 0.0, 3.0, 6.0, 12.0)}))
         if ref_elbow is not None:                               # (a recorded elbow: search round it too)
             ps = ref_elbow - u * np.dot(ref_elbow, u)
-            if np.linalg.norm(ps) > 1e-3:
+            if norm3(ps) > 1e-3:
                 ps = unit(ps)
-                ang = math.degrees(math.atan2(float(np.dot(np.cross(base_pole, ps), u)), float(np.dot(base_pole, ps))))
+                ang = math.degrees(math.atan2(float(np.dot(cross3(base_pole, ps), u)), float(np.dot(base_pole, ps))))
                 cands = tuple(sorted(set(cands) | {max(-90.0, min(90.0, ang * sx + d)) for d in (-8.0, 0.0, 8.0)}))
         for sw in cands:
             pole = axis_angle(u, math.radians(sw * sx)) @ base_pole
             elbow = S + u * a + pole * h
             ue, fe = unit(elbow - S), unit(S + u * dd - elbow)
             bend = fe - ue * np.dot(fe, ue)
-            Ru = frame_rot(xa, FWD, ue, bend if np.linalg.norm(bend) > 1e-6 else trunk @ FWD)
-            n = np.cross(ue, fe)
-            Rf0 = axis_angle(n, math.radians(angle(ue, fe))) @ Ru if np.linalg.norm(n) > 1e-9 else Ru
+            Ru = frame_rot(xa, FWD, ue, bend if norm3(bend) > 1e-6 else trunk @ FWD)
+            n = cross3(ue, fe)
+            Rf0 = axis_angle(n, math.radians(angle(ue, fe))) @ Ru if norm3(n) > 1e-9 else Ru
             Q = Rf0.T @ Rh                                     # hand relative to the untwisted forearm
             w_, x_, y_, z_ = _quat(Q)
             tau = math.degrees(2.0 * math.atan2(x_ * sx, w_)) if abs(w_) + abs(x_) > 1e-9 else 0.0
@@ -568,14 +578,14 @@ class PostureSolver:
         for a_, b_ in ((t2, t3), (t3, tip)):
             d = unit(b_ - a_)
             n_in = unit((palm_c - a_) - d * np.dot(palm_c - a_, d))
-            out.append(unit(np.cross(d, n_in)))
+            out.append(unit(cross3(d, n_in)))
         self._thumb_cache[key] = (t1, t2, t3, tip, out[0], out[1])
         return self._thumb_cache[key]
 
     def _thumb_tip(self, s, x):
         t1, t2, t3, tip, k2, k3 = self._thumb_axes(s)
         rv = np.radians(np.asarray(x[:3], float))
-        ang = float(np.linalg.norm(rv))
+        ang = float(norm3(rv))
         R1 = axis_angle(rv / ang, ang) if ang > 1e-9 else I3
         R2 = R1 @ axis_angle(k2, math.radians(x[3]))
         R3 = R2 @ axis_angle(k3, math.radians(x[4]))
@@ -618,7 +628,7 @@ class PostureSolver:
             c += 0.0004 * float(np.sum(np.asarray(x[:3]) ** 2)) + 0.0002 * (x[3] ** 2 + x[4] ** 2)
             c += 0.002 * (x[4] - 0.9 * x[3]) ** 2                # the two thumb joints bend together
             for q in (p2, p3, p):                                # never through the index finger
-                dmin = min(float(np.linalg.norm(q - (ix[i] + ix[i + 1]) / 2)) for i in range(3))
+                dmin = min(float(norm3(q - (ix[i] + ix[i + 1]) / 2)) for i in range(3))
                 c += max(0.0, 1.6 - dmin) ** 2 * 20.0
             return c
         lo = np.array([-60.0, -60.0, -60.0, -15.0, -15.0])
@@ -639,7 +649,7 @@ class PostureSolver:
         x = A["thumb"]
         _, _, _, _, k2, k3 = self._thumb_axes(s)
         rv = np.radians(np.asarray(x[:3], float))
-        ang = float(np.linalg.norm(rv))
+        ang = float(norm3(rv))
         pose.rot[f"thumb_01_{s}"] = axis_angle(rv / ang, ang) if ang > 1e-9 else I3
         pose.rot[f"thumb_02_{s}"] = axis_angle(k2, math.radians(x[3]))
         pose.rot[f"thumb_03_{s}"] = axis_angle(k3, math.radians(x[4]))
@@ -654,12 +664,7 @@ class PostureSolver:
               world=None):
         self._world = world
         stance = stance or self.default_stance()
-        prev_arm = None
-        if isinstance(prev, Solution):
-            prev_arm = {s_: (prev.angles.get(f"swivel_{s_}"), prev.angles.get(f"twist_{s_}"),
-                             tuple(prev.angles[f"elbow_dir{k}_{s_}"] for k in "xyz")
-                             if f"elbow_dirx_{s_}" in prev.angles else None,
-                             prev.angles.get(f"twist_raw_{s_}")) for s_ in ("l", "r")}
+        prev_arm = _prev_arm(prev)
         if base is not None:                       # mocap-driven frame: no search, just exact limbs on the base pose
             v = np.zeros(8) if getattr(stance, "free", False) else self.fit_pelvis(base, stance)
             if self.base_correct:                  # generated base: small corrections (keep-outs, reach, feet)
@@ -677,7 +682,7 @@ class PostureSolver:
                     return c
                 x0 = prev_v if prev_v is not None else v0
                 v, _ = nelder_mead(fb, np.clip(x0, v0 + lo_c, v0 + hi_c), SCALE * 0.5, v0 + lo_c, v0 + hi_c,
-                                   iters=90 if prev_v is not None else 200)
+                                   iters=self._it(90 if prev_v is not None else 200))
             pose, terms, angles, _ = self.build(v, targets, look, stance, swing=swing, base=base, prev_arm=prev_arm)
             return Solution(pose, float(sum(terms.values())), terms, angles, v)
         prev_v = prev.v if isinstance(prev, Solution) else (None if prev is None else np.asarray(prev, float))
@@ -706,13 +711,24 @@ class PostureSolver:
             lo[4], hi[4] = stance.hinge
         best = None
         for x0 in starts:
-            x, fx = nelder_mead(f, np.asarray(x0, float), SCALE, lo, hi, iters=220 if prev_v is None else 90)
-            x, fx = nelder_mead(f, x, SCALE * 0.3, lo, hi, iters=80)              # polish
+            x, fx = nelder_mead(f, np.asarray(x0, float), SCALE, lo, hi, iters=self._it(220 if prev_v is None else 90))
+            x, fx = nelder_mead(f, x, SCALE * 0.3, lo, hi, iters=self._it(80))    # polish
             if best is None or fx < best[1]:
                 best = (x, fx)
         x, fx = best
         pose, terms, angles, _ = self.build(x, targets, look, stance, swing=swing, prev_arm=prev_arm)
         return Solution(pose, fx, terms, angles, x)
+
+    def _it(self, n):
+        return n if self.effort >= 1.0 else max(20, int(n * self.effort))
+
+    def at(self, v, targets, look=None, stance=None, prev=None, swing=None, base=None, world=None):
+        """The pose for given trunk / pelvis values, no search: the limbs still go exactly onto the targets (the
+        in-between frames of a preview, the trunk blended between two solved key poses)."""
+        self._world = world
+        stance = stance or self.default_stance()
+        pose, terms, angles, _ = self.build(v, targets, look, stance, swing=swing, base=base, prev_arm=_prev_arm(prev))
+        return Solution(pose, float(sum(terms.values())), terms, angles, np.asarray(v, float))
 
     def fit_pelvis(self, base, stance, knee=0.975):
         """Pelvis drop / fore-aft shift so both feet reach their stance points with the knees just unlocked:

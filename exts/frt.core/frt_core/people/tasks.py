@@ -1433,7 +1433,8 @@ class Task:
         """Standing still <-> walking: the first / last frames of a walk blend the captured body from / back to
         the standing pose, so the hips and arms do not jump where the clip starts or ends."""
         from .bake import blend
-        stand = self.S.solve([self.rest["l"], self.rest["r"]], look=None).pose   # as it stands between steps
+        stand = self.S.solve([self.rest["l"], self.rest["r"]], look=None,          # as it stands between steps
+                             prev=rest_targets(self.S)[1]).pose                     # (from the free stand: quick)
         F = self.frames
         i = 0
         while i < len(F):

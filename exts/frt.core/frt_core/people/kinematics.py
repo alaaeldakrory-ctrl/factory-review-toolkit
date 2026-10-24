@@ -30,19 +30,41 @@ def rz(deg):
     return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
 
 
+def _xyz(v):
+    return v.tolist() if isinstance(v, np.ndarray) else [float(c) for c in v]
+
+
+def cross3(a, b):
+    """np.cross for two 3-vectors, without its overhead (20x faster: the solver calls it ~10^5 times a frame)."""
+    a0, a1, a2 = _xyz(a)
+    b0, b1, b2 = _xyz(b)
+    return np.array((a1 * b2 - a2 * b1, a2 * b0 - a0 * b2, a0 * b1 - a1 * b0))
+
+
+def norm3(v):
+    x, y, z = _xyz(v)
+    return math.sqrt(x * x + y * y + z * z)
+
+
 def axis_angle(axis, rad):
-    a = np.asarray(axis, float)
-    n = np.linalg.norm(a)
+    x, y, z = _xyz(axis)
+    n = math.sqrt(x * x + y * y + z * z)
     if n < 1e-12 or abs(rad) < 1e-12:
         return I3.copy()
-    k = a / n
-    K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
-    return I3 + math.sin(rad) * K + (1 - math.cos(rad)) * K @ K
+    x, y, z = x / n, y / n, z / n
+    c, s_ = math.cos(rad), math.sin(rad)
+    C = 1.0 - c
+    return np.array([[c + x * x * C, x * y * C - z * s_, x * z * C + y * s_],
+                     [y * x * C + z * s_, c + y * y * C, y * z * C - x * s_],
+                     [z * x * C - y * s_, z * y * C + x * s_, c + z * z * C]])
 
 
 def unit(v):
     v = np.asarray(v, float)
-    n = np.linalg.norm(v)
+    if v.shape != (3,):
+        n = np.linalg.norm(v)
+        return v / n if n > 1e-12 else v
+    n = norm3(v)
     return v / n if n > 1e-12 else v
 
 
@@ -51,10 +73,10 @@ def frame_rot(rest_axis, rest_ref, new_axis, new_ref):
     def basis(a, r):
         a = unit(a)
         r = np.asarray(r, float) - a * np.dot(r, a)
-        if np.linalg.norm(r) < 1e-9:                                        # reference parallel: any perpendicular
-            r = np.cross(a, [0, 1, 0] if abs(a[1]) < 0.9 else [1, 0, 0])
+        if norm3(r) < 1e-9:                                                 # reference parallel: any perpendicular
+            r = cross3(a, [0, 1, 0] if abs(a[1]) < 0.9 else [1, 0, 0])
         r = unit(r)
-        return np.column_stack([a, r, np.cross(a, r)])
+        return np.array([a, r, cross3(a, r)]).T
     return basis(new_axis, new_ref) @ basis(rest_axis, rest_ref).T
 
 

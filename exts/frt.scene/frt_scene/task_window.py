@@ -7,6 +7,7 @@ tools/task_run.py on it in the background; the result scene is opened when it is
   Scene       the assets and their tags (bins, tray slots, holes, studs, tools, doors) - read from the scene file
   Steps       verb + the assets it uses, picked from menus or from the viewport selection
   Solve       compile -> solve -> check -> RULA -> bake; per step: time, checks, RULA max; click a step to go there
+              (preview: key poses, unchanged steps reused - seconds; Final quality: every frame - minutes)
 """
 import asyncio
 import json
@@ -485,14 +486,18 @@ class TaskWindow:
     def _solve_panel(self):
         with ui.VStack(spacing=4, height=0):
             with ui.HStack(height=28, spacing=4):
-                ui.Button("Solve and preview", clicked_fn=self.solve, style={"background_color": 0xFF3D6B2A})
+                ui.Button("Solve (preview)", clicked_fn=self.solve, style={"background_color": 0xFF3D6B2A},
+                          tooltip="Key poses solved, blended between them; unchanged steps reused. Seconds to a minute.")
+                ui.Button("Final quality", width=100, clicked_fn=lambda: self.solve(final=True),
+                          tooltip="Every frame solved (for the video / the report). Several minutes.")
                 ui.Button("Play", width=60, clicked_fn=lambda: omni.timeline.get_timeline_interface().play())
                 ui.Button("Pause", width=60, clicked_fn=lambda: omni.timeline.get_timeline_interface().pause())
             self.progress = ui.ProgressBar(height=14)
             self._status_label = ui.Label("", word_wrap=True, height=0, style={"color": GREY})
             if self.result:
                 c = self.result.get("counts") or {}
-                ui.Label(f"Last solve: {self.result['frames']} frames ({self.result['frames'] / 24:.1f} s), "
+                ui.Label(f"Last solve ({self.result.get('quality', 'final')}): {self.result['frames']} frames "
+                         f"({self.result['frames'] / 24:.1f} s), "
                          f"{self.result.get('solve_s', '?')} s to solve. Checks: "
                          f"{', '.join(f'{k} {v}' for k, v in c.items()) or 'clean'}", word_wrap=True, height=0)
                 ui.Label("Colour per step: green = clean and RULA under 5, yellow = a few check findings or RULA 5-6,"
@@ -503,7 +508,7 @@ class TaskWindow:
         if self._status_label is not None:
             self._status_label.text = msg
 
-    def solve(self, scene_only=False):
+    def solve(self, scene_only=False, final=False):
         if self.proc is not None and self.proc.poll() is None:
             self._say("already solving...")
             return
@@ -517,6 +522,8 @@ class TaskWindow:
         args = [_python(), "-u", os.path.join(REPO, "tools", "task_run.py"), self.path, f"--out={out}"]
         if scene_only:
             args.append("--scene-only")
+        if final:
+            args.append("--final")
         st = os.path.join(out, "status.json")
         if os.path.isfile(st):
             os.remove(st)
