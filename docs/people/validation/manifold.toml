@@ -1,0 +1,29 @@
+[task]
+name = "Op 5: hydraulic manifold onto the chassis bosses, 3 bolts, ratchet + torque"
+scene = "assembly_scene.toml"
+worker = "C:/Nvidia_Assets/Characters_NVD/Assets/Characters/Reallusion/ActorCore/Uniform_M_0001/uniform_m_0001.usd"
+start = [-60, -40, 0]
+
+[[step]]
+do = "carry"
+what = "manifold"
+to = "tub_floor.bosses"
+
+[[step]]
+do = "hand_start"
+what = "screw"
+from = "bolt_bin"
+on = "manifold.holes"
+brace = "tub_floor.rest"
+
+[[step]]
+do = "fasten"
+tool = "ratchet_m"
+on = "manifold.holes"
+brace = "tub_floor.rest"
+
+[[step]]
+do = "fasten"
+tool = "torque_m"
+on = "manifold.holes"
+brace = "tub_floor.rest"

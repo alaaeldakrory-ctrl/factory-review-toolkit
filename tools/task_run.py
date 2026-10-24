@@ -124,8 +124,18 @@ def main():
         # the joins between pieces, each carried on from the frame before it (all at once: they are independent)
         say("joining the pieces", progress=0.76)
         jobs = [(a, sols[a - 1], sols[a:b + 1]) for a, b in rngs[1:]]
+        own = {a: o for a, _, o in jobs}
+        ran = {}
         for a, s in pool.imap_unordered(_join, jobs):
             sols[a:a + len(s)] = s
+            ran[a] = len(s) == len(own[a])
+        # a join that ran through its whole piece changed that piece's last frame: the next join started from the
+        # old one (a wrong-branch arm carried on) - redo it from the new end, in order
+        for (a, _), (a2, _) in zip(rngs[1:], rngs[2:]):
+            if ran.get(a):
+                _, s = pool.apply(_join, ((a2, sols[a2 - 1], own[a2]),))
+                sols[a2:a2 + len(s)] = s
+                ran[a2] = len(s) == len(own[a2])
     if os.environ.get("FRT_DUMP_SOLS"):                             # (debugging: the solved poses, before smoothing)
         import pickle
         pickle.dump({"sols": sols, "rngs": rngs}, open(os.environ["FRT_DUMP_SOLS"], "wb"))

@@ -1,0 +1,131 @@
+# Validation scene: scissor-lift chassis assembly stations from a public, generic process list (no real drawings).
+#   x = 0    op 5: hydraulic valve manifold lifted onto the bosses inside the chassis tub, 3 bolts, ratchet + torque
+#   x = 400  op 8: ground control box on the chassis side, worked half-kneeling: 4 screws + the harness connector
+# Stand-in shapes at plausible sizes and heights (cm).
+
+[[spot]]
+id = "tub"
+at = [0, 42]
+yaw = 0
+
+[[spot]]
+id = "manifold_cart"
+at = [-110, 34]
+yaw = 0
+
+[[spot]]
+id = "panel"
+at = [400, 40]
+yaw = 0
+
+# ------------------------------------------------------------------ op 5: chassis tub + manifold
+[[asset]]
+id = "tub_front"
+kind = "fixture"
+at = [0, 0, 76]
+size = [110, 62, 6]                       # front wall of the tub: the worker bends over its top edge
+look = "powder_dark"
+
+[[asset]]
+id = "tub_floor"
+kind = "fixture"
+at = [0, 0, 106]
+size = [110, 46, 54]                      # floor of the central compartment, 16 cm below the wall top
+look = "powder_dark"
+spot = "tub"
+[asset.points]
+bosses = [0, 46, -6]                      # the manifold sits here (on the isolation standoffs)
+rest = [-40, 62, -27]                     # free hand on the tub wall top
+
+[[asset]]
+id = "manifold_cart"
+kind = "cart"
+at = [-110, 0, 74]
+size = [56, 76, 40]
+
+[[asset]]
+id = "manifold"
+kind = "plate"
+at = [-118, 76, 72]                       # aluminium block, ~11 kg, lying on the cart
+size = [26, 12, 16]
+look = "aluminium"
+spot = "manifold_cart"
+[asset.points]
+holes = [[-10, 6, -5], [10, 6, -5], [0, 6, 5]]    # 3 flange bolts, top face
+
+[[asset]]
+id = "bolt_bin"
+kind = "bin"
+at = [-92, 76, 70]
+size = [16, 11, 20]
+holds = "screw"
+count = 4
+spot = "tub"
+[asset.points]
+grab = [0, 2.2, 2.0]
+
+[[asset]]
+id = "ratchet_m"
+kind = "tool"
+tool = "ratchet_38"
+at = [42, 62.8, 77]                       # lying on the tub wall top, right side
+x_axis = [0, 0, -1]
+y_axis = [0, 1, 0]
+spot = "tub"
+
+[[asset]]
+id = "torque_m"
+kind = "tool"
+tool = "torque_wrench"
+at = [30, 62.8, 77]
+x_axis = [0, 0, -1]
+y_axis = [0, 1, 0]
+spot = "tub"
+
+# ------------------------------------------------------------------ op 8: ground control box on the chassis side
+[[asset]]
+id = "chassis_side"
+kind = "fixture"
+at = [400, 0, 110]
+size = [120, 100, 40]
+look = "powder_dark"
+
+[[asset]]
+id = "ground_box"
+kind = "fixture"
+at = [400, 52, 88]
+size = [36, 28, 4]                        # control box face flush with the chassis side, chest height kneeling
+look = "powder_lightgrey"
+spot = "panel"
+[asset.points]
+holes = [[-15, 25, -2.2], [15, 25, -2.2], [-15, 3, -2.2], [15, 3, -2.2]]
+holes_axis = [0, 0, -1]
+plug = [[21, 14, 0]]                      # harness connector at the side of the box
+plug_axis = [1, 0, 0]
+side = [-20, 14, -1]                      # free hand on the box edge
+
+[[asset]]
+id = "cart_g"
+kind = "cart"
+at = [335, 0, 72]
+size = [36, 70, 30]
+
+[[asset]]
+id = "torx_bin"
+kind = "bin"
+at = [335, 70, 66]
+size = [16, 11, 20]
+holds = "screw"
+count = 5
+spot = "panel"
+[asset.points]
+grab = [0, 2.2, 2.0]
+
+[[asset]]
+id = "driver_g"
+kind = "tool"
+tool = "screwdriver"
+at = [323, 71.6, 80]
+x_axis = [0, 0, -1]
+y_axis = [1, 0, 0]
+spot = "panel"
