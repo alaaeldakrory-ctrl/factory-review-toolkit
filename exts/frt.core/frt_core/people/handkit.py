@@ -154,6 +154,9 @@ def squat_stance(sk, depth=0.55, width=None, heels_up=12.0):
     return st
 
 
+PATH_GUARD = None          # optional (side, HandTarget) -> HandTarget applied to every keyed hand (see tasks.Task)
+
+
 def keyed(duration, hands=None, tools=None, parts=None, look=None, label="work", stance=None):
     """Frames from keyframe tracks.
 
@@ -176,6 +179,8 @@ def keyed(duration, hands=None, tools=None, parts=None, look=None, label="work",
         for side, keys in hands.items():
             ev = [(tk, v(Td) if callable(v) else v) for tk, v in keys]
             v = _interp(ev, t, "hand")
+            if v is not None and PATH_GUARD is not None:
+                v = PATH_GUARD(side, v)
             if v is not None:
                 tg.append(v)
         if isinstance(look, list):

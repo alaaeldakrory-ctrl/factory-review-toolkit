@@ -426,6 +426,30 @@ class Task:
         self.kneeling = None                     # (spot, stance) while the worker is down on one knee
         self._want_kneel = False
         self.rest_stand = self._rest_base
+        K.PATH_GUARD = self._path_guard
+        try:
+            self._compile_steps(log)
+        finally:
+            K.PATH_GUARD = None
+        self.stand_up("end")
+        self._add(idle(0.8), self.at, "end:stand")
+        self._seams()
+        for f in self.frames:                    # worker frame -> world, for the equipment field
+            f.world = _rootT(f.root)
+        return self
+
+    def _path_guard(self, side, t):
+        """A hand on its way between keys keeps clear of its own shoulder: interpolated paths can pass right by it
+        (a tray at the side to the work in front, kneeling), which folds the arm shut - real hands swing round."""
+        sh = self._shoulders_kneel[side] if self.kneeling else self.sk.world[f"upperarm_{side}"]
+        v = np.asarray(t.point, float) - sh
+        d = float(np.linalg.norm(v))
+        m = 0.55 * (self.sk.length(f"upperarm_{side}", f"lowerarm_{side}") + self.sk.length(f"lowerarm_{side}", f"hand_{side}"))
+        if d >= m or d < 1e-6:
+            return t
+        return moved(t, v / d * (m - d))
+
+    def _compile_steps(self, log):
         for k, step in enumerate(self.data.get("step", [])):
             sid = step.get("id", f"{k + 1:02d}_{step['do']}")
             fn = getattr(self, "do_" + step["do"], None)
@@ -447,12 +471,6 @@ class Task:
             self.steps.append({"id": sid, "do": step["do"], "text": step.get("text", ""), "start": a0,
                                "end": len(self.frames) - 1, "phases": self._phases(a0)})
             log(f"  {sid:24s} {step['do']:10s} {a0:5d}-{len(self.frames) - 1:5d}  ({(len(self.frames) - a0) / FPS:4.1f} s)")
-        self.stand_up("end")
-        self._add(idle(0.8), self.at, "end:stand")
-        self._seams()
-        for f in self.frames:                    # worker frame -> world, for the equipment field
-            f.world = _rootT(f.root)
-        return self
 
     def equipment(self):
         """The static assets as a distance field (collide.SceneField) around the spots."""
@@ -714,6 +732,9 @@ class Task:
         st = self._kneel_clear(st)
         self.kneeling = (self.at, st)
         self.rest_kneel = self.rest_for(st)
+        from .kinematics import fk
+        _, P = fk(self.sk, self.S.solve([], look=None, stance=st).pose)
+        self._shoulders_kneel = {s_: P[f"upperarm_{s_}"].copy() for s_ in ("l", "r")}     # (trunk leant forward)
         self._transition(sid, True)
         self.rest = self.rest_kneel
 

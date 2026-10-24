@@ -289,6 +289,8 @@ class PostureSolver:
             pa = (prev_arm or {}).get(s)
             Ru, Rf, wsw, tau, elbow, sw = self._arm(s, sx, S, u, a, h, dd, trunk, Rh, True, pa, torso)
             angles[f"swivel_{s}"], angles[f"twist_{s}"] = sw, tau
+            ed = trunk.T @ unit(elbow - S)                     # where the elbow points (trunk frame), for the next frame
+            angles[f"elbow_dirx_{s}"], angles[f"elbow_diry_{s}"], angles[f"elbow_dirz_{s}"] = (float(v_) for v_ in ed)
             ue, fe = unit(elbow - S), unit(S + u * dd - elbow)
             Rcl = R2[f"clavicle_{s}"]
             pose.rot[f"upperarm_{s}"] = Rcl.T @ Ru
@@ -410,9 +412,22 @@ class PostureSolver:
         xa = np.array([sx, 0.0, 0.0])
         best = None
         cands = (-75.0, -50.0, -30.0, -15.0, 0.0, 15.0, 30.0, 50.0, 75.0)
+        pe = None
+        if prev is not None and len(prev) > 2 and prev[2] is not None:
+            pe = trunk @ np.asarray(prev[2], float)             # last frame's elbow direction
         if prev is not None and prev[0] is not None:            # search near the last frame's elbow (coherent)
             p0 = prev[0]
-            cands = tuple(sorted({max(-90.0, min(90.0, p0 + d)) for d in (-12.0, -6.0, -3.0, 0.0, 3.0, 6.0, 12.0)}))
+            near = [p0]
+            if pe is not None:
+                # the swivel is measured round the shoulder-wrist line: when that line swings (the hand passing
+                # close to the shoulder) the same swivel is another elbow. Search round the swivel that puts the
+                # elbow back where it was, too.
+                ps = pe - u * np.dot(pe, u)
+                if np.linalg.norm(ps) > 1e-3:
+                    ps = unit(ps)
+                    ang = math.degrees(math.atan2(float(np.dot(np.cross(base_pole, ps), u)), float(np.dot(base_pole, ps))))
+                    near.append(ang * sx)
+            cands = tuple(sorted({max(-90.0, min(90.0, c + d)) for c in near for d in (-12.0, -6.0, -3.0, 0.0, 3.0, 6.0, 12.0)}))
         for sw in cands:
             pole = axis_angle(u, math.radians(sw * sx)) @ base_pole
             elbow = S + u * a + pole * h
@@ -441,7 +456,8 @@ class PostureSolver:
                     if pen > 0.0:
                         score += (pen / 1.5) ** 2 * 2.0
             if prev is not None and prev[0] is not None:
-                score += ((sw - prev[0]) / 10.0) ** 2 + ((tc - (prev[1] or 0.0)) / 25.0) ** 2
+                cont = angle(ue, pe) / 8.0 if pe is not None else (sw - prev[0]) / 10.0   # the elbow itself stays put
+                score += cont ** 2 + ((tc - (prev[1] or 0.0)) / 25.0) ** 2
             if best is None or score < best[0]:
                 best = (score, Ru, Rf, wsw + roll, tc, elbow, sw)
         return best[1], best[2], best[3], best[4], best[5], best[6]
@@ -607,7 +623,9 @@ class PostureSolver:
         stance = stance or self.default_stance()
         prev_arm = None
         if isinstance(prev, Solution):
-            prev_arm = {s_: (prev.angles.get(f"swivel_{s_}"), prev.angles.get(f"twist_{s_}")) for s_ in ("l", "r")}
+            prev_arm = {s_: (prev.angles.get(f"swivel_{s_}"), prev.angles.get(f"twist_{s_}"),
+                             tuple(prev.angles[f"elbow_dir{k}_{s_}"] for k in "xyz")
+                             if f"elbow_dirx_{s_}" in prev.angles else None) for s_ in ("l", "r")}
         if base is not None:                       # mocap-driven frame: no search, just exact limbs on the base pose
             v = np.zeros(8) if getattr(stance, "free", False) else self.fit_pelvis(base, stance)
             if self.base_correct:                  # generated base: small corrections (keep-outs, reach, feet)
