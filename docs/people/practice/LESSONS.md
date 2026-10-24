@@ -29,6 +29,11 @@ Do these in Window > Task Builder with `my_task.toml`, in order. Each one takes 
 - Add `hand_start` nut on `battery_box.studs`, then `fasten` with the ratchet on the same studs. Use brace = battery_box.corner.
 - The worker takes the ratchet from where it lies and does short strokes. The handle swings back while the nut keeps turning. Then the ratchet goes back.
 
+### 5b. Keep the tool in hand
+- Put `get_tool` ratchet before the hand_start, and `put_back` ratchet after the fasten. Solve again.
+- The worker picks the ratchet up first, passes it to the left hand to start the nuts, takes it back into the
+  right hand to tighten, then puts it back once. Compare the step times with lesson 5.
+
 ## 6. Low work
 - The AWP validation scene is `docs/people/validation/awp_scene.toml`. In `scissor.toml`, the battery terminals are 40 cm high.
 - Without being told, the worker kneels: down on one knee, the work, then back up.

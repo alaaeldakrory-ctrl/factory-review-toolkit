@@ -14,6 +14,11 @@ Verbs (each one expands into reach / grasp / move / act / release / return phase
   carry       pick a part up with both hands, walk if needed, put it down   what, to
   hand_start  pick a nut / screw (from where it lies) and thread it by hand   what, on (points), count
   fasten      get a tool, drive / tighten at each point, put the tool back    tool, on (points)
+              (if the worker already holds that tool - get_tool - it stays in hand afterwards)
+  get_tool    pick a tool up and keep it in hand for the next steps          tool
+  put_back    put the held tool back where it was taken from                 tool
+  connect     plug connector halves into sockets                             on
+  cable_tie   tie a harness at its tie points                                on
   push_door   push an open door so it swings shut                     door
   latch       press the door home and turn its latch                  door
   inspect     look at a point and point at it                         on, seconds
@@ -402,12 +407,15 @@ class Task:
         return [q for q, p in self.parts.items() if p.get("parent") == pid]
 
     # ------------------------------------------------------------------ compile
-    def compile(self, log=print):
+    def compile(self, log=print, field=True):
         """Every step expanded into frames (the worker walks between spots by itself), one continuous take."""
         self._init_parts()
         self.w, self.sk, self.character = self.worker()
         from .solver import PostureSolver
         self.S = PostureSolver(self.sk, self.w)
+        self.field = self.equipment() if field else None    # the body keeps out of the scene's equipment
+        self.S.field = self.field
+        self.holding = None                      # (tool part id, hand) while a tool stays in hand between steps
         self.rest, _ = rest_targets(self.S)
         t = self.data["task"]
         st = t.get("start", [0, 0, 0])
@@ -417,7 +425,7 @@ class Task:
         self.carrying = None
         self.kneeling = None                     # (spot, stance) while the worker is down on one knee
         self._want_kneel = False
-        self.rest_stand = self.rest
+        self.rest_stand = self._rest_base
         for k, step in enumerate(self.data.get("step", [])):
             sid = step.get("id", f"{k + 1:02d}_{step['do']}")
             fn = getattr(self, "do_" + step["do"], None)
@@ -428,7 +436,7 @@ class Task:
                 self._want_kneel = self.wants_kneel(step)
                 if self.kneeling and not self._want_kneel:
                     self.stand_up(sid)
-                fn(step, sid)
+                self._run_holding(fn, step, sid)
             except KeyError as e:                                    # a missing field or an unknown name
                 msg = e.args[0] if e.args else e
                 if isinstance(msg, str) and msg in step.keys() | {"to", "from", "what", "on", "tool", "door"}:
@@ -442,7 +450,198 @@ class Task:
         self.stand_up("end")
         self._add(idle(0.8), self.at, "end:stand")
         self._seams()
+        for f in self.frames:                    # worker frame -> world, for the equipment field
+            f.world = _rootT(f.root)
         return self
+
+    def equipment(self):
+        """The static assets as a distance field (collide.SceneField) around the spots."""
+        try:
+            from pxr import Usd
+
+            from ..materials import MaterialLibrary
+            from .collide import SceneField, region_around
+            st = Usd.Stage.CreateInMemory()
+            self.build_static(st, "/Scene", MaterialLibrary(st, "/Looks"))
+            t = self.data["task"].get("start", [0, 0])
+            pts = [[float(t[0]), 0.0, float(t[1])]] + [[sp[0], 0.0, sp[1]] for sp in self.spots.values()]
+            return SceneField.from_stage(st, region_around(np.array(pts), margin=150.0))
+        except Exception as e:                   # (no pxr: the motion is made without it)
+            self.notes.append(f"no equipment field: {e}")
+            return None
+
+    # ------------------------------------------------------------------ a tool kept in hand between steps
+    OWN_TOOL = ("fasten", "get_tool", "put_back")
+
+    @property
+    def rest(self):
+        """Hands at ease between actions; the hand that holds a tool keeps it ready in front."""
+        if not self.holding:
+            return self._rest_base
+        out = dict(self._rest_base)
+        out[self.holding[1]] = self.ready(self.holding[1])[0]
+        return out
+
+    @rest.setter
+    def rest(self, v):
+        self._rest_base = v
+
+    def grip_fn(self, tool, side):
+        """The hand on a tool at tool pose Td["t"]: the right hand at the grip, the left one nearer the head (so the
+        two hands do not overlap when it is passed across)."""
+        sk = self.sk
+        if tool == "screwdriver":
+            d = 18.0 if side == "r" else 10.0
+            return lambda Td: K.power(sk, side, Td["t"][:3, :3] @ np.array([0.0, d, 0.0]) + Td["t"][:3, 3],
+                                      Td["t"][:3, :3] @ Y, grip="power:1.6")
+        d = 19.0 if side == "r" else 12.0
+        return lambda Td: K.power(sk, side, Td["t"][:3, :3] @ np.array([d, 1.0, 0.0]) + Td["t"][:3, 3],
+                                  -(Td["t"][:3, :3] @ X), grip="power:1.25")
+
+    def ready(self, side, base=None, tid=None):
+        """(hand target, tool pose) for a held tool at ease: fist a little in front of the resting hand, the tool's
+        head forward and down."""
+        tid = tid or self.holding[0]
+        tool = self.parts[tid]["tool"]
+        base = base or self._rest_base
+        p = np.asarray(base[side].point, float) + np.array([0.0, 6.0, 12.0])
+        if tool == "screwdriver":
+            Rt = K.T_at(np.zeros(3), X, K.unit(np.array([0.0, 0.5, -1.0])))[:3, :3]
+        else:
+            Rt = K.T_at(np.zeros(3), K.unit(np.array([0.0, 0.35, -1.0])), Y)[:3, :3]
+        g = self.grip_fn(tool, side)
+        T = T_pos(p, Rt)
+        for _ in range(2):                                   # the grip depends a little on where it is
+            h = g({"t": T})
+            T = T_pos(T[:3, 3] + p - np.asarray(h.point), Rt)
+        return g({"t": T}), T
+
+    def _snapshot(self):
+        import copy
+        return (len(self.frames), copy.deepcopy(self.parts), self.at, self.kneeling, self._rest_base,
+                getattr(self, "rest_kneel", None), self.holding)
+
+    def _restore(self, s):
+        n, self.parts, self.at, self.kneeling, self._rest_base, self.rest_kneel, self.holding = s
+        del self.frames[n:]
+
+    def _run_holding(self, fn, step, sid):
+        """Run a step. If it turns out to need the hand that holds the tool, take it back, pass the tool to the
+        other hand first and run it again; if it needs both hands, say so."""
+        if not self.holding or step["do"] in self.OWN_TOOL:
+            fn(step, sid)
+            return
+        snap = self._snapshot()
+        self._busy = 0
+        fn(step, sid)
+        if self._busy < 6:
+            return
+        self._restore(snap)
+        side = self.holding[1]
+        self.swap_hands(sid)
+        self._busy = 0
+        fn(step, sid)
+        if self._busy >= 6:
+            raise ValueError(f"it needs both hands and the worker holds {self.holding[0]}: put it back first "
+                             f"(put_back)")
+
+    def _hold_override(self, frames):
+        """Frames of a step done with a tool in hand: the holding hand keeps the tool ready (counting the frames
+        where the step wanted that hand somewhere else), the tool follows it."""
+        if not self.holding:
+            return
+        tid, side = self.holding
+        key = f"part:{tid}"
+        h, T = self.ready(side)
+        for f in frames:
+            if key in f.tools:
+                continue
+            mine = [t for t in f.targets if t.side == side]
+            if mine and math.dist(mine[0].point, h.point) > 12.0:
+                self._busy = getattr(self, "_busy", 0) + 1
+            f.targets = [t for t in f.targets if t.side != side] + [h]
+            self.set_part(f, tid, T)
+
+    def swap_hands(self, sid):
+        """Pass the held tool to the other hand in front of the body."""
+        tid, a = self.holding
+        b = "l" if a == "r" else "r"
+        tool = self.parts[tid]["tool"]
+        from .jobs import held
+        ha, Ta = self.ready(a)
+        hb, Tb = self.ready(b)
+        Tm = lerp4(Ta, Tb, 0.5)
+        Tm[:3, 3] += np.array([0.0, 8.0, 10.0])
+        ga, gb = self.grip_fn(tool, a), self.grip_fn(tool, b)
+        tk = [(0.0, Ta), (0.55, Tm), (0.9, Tm), (1.45, Tb)]
+        base = self._rest_base
+        hands = {a: [(0.0, held(ga, Ta)), (0.85, held(ga, Ta)), (1.45, base[a])],
+                 b: [(0.0, base[b]), (0.5, with_grip(held(gb, Tb)({"t": Tm}), "open")), (0.7, held(gb, Tb)),
+                     (1.45, held(gb, Tb))]}
+        fr = K.keyed(1.5, hands=hands, tools={"t": (tool, tk)}, look=tuple(Tm[:3, 3]), label="swap hands")
+        for f in fr:
+            self.set_part(f, tid, f.tools.pop("t")[1])
+        self.holding = None                                  # (the frames carry both hands themselves)
+        self._add(fr, self.at, sid)
+        self.holding = (tid, b)
+
+    def do_get_tool(self, step, sid):
+        """Pick a tool up where it lies and keep it in hand: the next fasten steps use it without fetching it,
+        and the worker can walk and kneel with it."""
+        tid = step["tool"]
+        if self.holding:
+            raise ValueError(f"the worker already holds {self.holding[0]}")
+        if self.parts.get(tid, {}).get("kind") != "tool":
+            raise ValueError(f"{tid!r} is not a tool")
+        spot = self.spot_of(step, tid)
+        self.go(spot, sid)
+        side = step.get("hand", "r")
+        tool = self.parts[tid]["tool"]
+        from .jobs import held
+        T0 = self.L(spot) @ self.parts[tid]["W"]
+        g = self.grip_fn(tool, side)
+        _, Tr = self.ready(side, tid=tid)
+        R = self._rest_base
+        tk = [(0.0, T0), (1.15, T0), (1.45, T_pos(T0[:3, 3] + Y * 8.0, T0[:3, :3])), (2.2, Tr), (2.5, Tr)]
+        hk = [(0.0, R[side]), (0.8, with_grip(moved(held(g, T0)({"t": T0}), Y * 6.0), "open")),
+              (1.05, held(g, T0)), (2.5, held(g, T0))]
+        fr = K.keyed(2.5, hands={side: hk}, tools={"t": (tool, tk)},
+                     look=[(0.0, T0[:3, 3]), (1.4, T0[:3, 3]), (2.5, Tr[:3, 3])], label="get tool")
+        ph = [(0.8, "reach"), (1.15, "grasp"), (2.2, "move"), (99, "hold")]
+        for i, f in enumerate(fr):
+            f.label = next(lab for a_, lab in ph if i / FPS <= a_)
+            self.set_part(f, tid, f.tools.pop("t")[1])
+        self._add(fr, spot, sid)
+        self.parts[tid]["taken_from"] = (self.parts[tid]["W"].copy(), spot)
+        self.holding = (tid, side)
+
+    def do_put_back(self, step, sid):
+        """Put the held tool back where it was taken from."""
+        tid = step.get("tool") or (self.holding or [None])[0]
+        if not self.holding or self.holding[0] != tid:
+            raise ValueError(f"the worker does not hold {tid!r}")
+        W, spot = self.parts[tid]["taken_from"]
+        spot = self.spots[step["at"]] if "at" in step else spot
+        self.go(spot, sid)
+        side = self.holding[1]
+        tool = self.parts[tid]["tool"]
+        from .jobs import held
+        T0 = self.L(spot) @ W
+        _, Tr = self.ready(side)
+        g = self.grip_fn(tool, side)
+        R = self._rest_base
+        tk = [(0.0, Tr), (0.9, T_pos(T0[:3, 3] + Y * 8.0, T0[:3, :3])), (1.2, T0), (2.4, T0)]
+        hk = [(0.0, held(g, T0)), (1.25, held(g, T0)), (1.5, with_grip(moved(held(g, T0)({"t": T0}), Y * 6.0), "open")),
+              (2.4, R[side])]
+        fr = K.keyed(2.4, hands={side: hk}, tools={"t": (tool, tk)},
+                     look=[(0.0, Tr[:3, 3]), (0.6, T0[:3, 3]), (2.4, T0[:3, 3])], label="put tool back")
+        ph = [(1.2, "move"), (1.5, "release"), (99, "return")]
+        self.holding = None
+        for i, f in enumerate(fr):
+            f.label = next(lab for a_, lab in ph if i / FPS <= a_)
+            self.set_part(f, tid, f.tools.pop("t")[1])
+        self._add(fr, spot, sid)
+        self.commit(tid, spot, T0)
 
     # ------------------------------------------------------------------ posture: kneel for low work
     KNEEL_BELOW = 0.30                           # work below this x stature -> down on one knee
@@ -497,7 +696,13 @@ class Task:
             u = (k + 1) / (n + 1)
             u = u if down else 1.0 - u
             hands = [lerp_target(R0[s_], R1[s_], ease(u)) for s_ in ("l", "r")]
-            self.frames.append(Frame(hands, None, {}, root=self.at, stance=self._stance_between(s0, st, u),
+            tools = {}
+            if self.holding:                                 # the tool comes along in its hand
+                tid, hs = self.holding
+                (h0, T0), (h1, T1) = self.ready(hs, R0), self.ready(hs, R1)
+                hands = [h for h in hands if h.side != hs] + [lerp_target(h0, h1, ease(u))]
+                tools[f"part:{tid}"] = (self.parts[tid]["spec"], lerp4(T0, T1, ease(u)))
+            self.frames.append(Frame(hands, None, tools, root=self.at, stance=self._stance_between(s0, st, u),
                                      label=f"{sid}:{'kneel down' if down else 'stand up'}"))
 
     def kneel(self, sid, step):
@@ -505,10 +710,37 @@ class Task:
             return
         from .handkit import kneel_stance
         st = kneel_stance(self.sk, "r", forward=float(step.get("kneel_forward", 24.0)), width=6.0)
+        st = self._kneel_clear(st)
         self.kneeling = (self.at, st)
         self.rest_kneel = self.rest_for(st)
         self._transition(sid, True)
         self.rest = self.rest_kneel
+
+    def _kneel_clear(self, st):
+        """Kneel a little further back if the knee, thigh or body would be inside the equipment (a tyre, a chassis
+        rail) where the worker stands."""
+        if self.field is None:
+            return st
+        import copy
+
+        from .collide import body_points
+        from .kinematics import fk
+        W = _rootT(self.at)
+        best = None
+        for back in (0.0, 6.0, 12.0, 18.0, 24.0, 32.0):
+            s2 = copy.copy(st)
+            s2.left = tuple(np.asarray(st.left, float) - np.array([0.0, 0.0, back]))
+            s2.right = tuple(np.asarray(st.right, float) - np.array([0.0, 0.0, back]))
+            _, P = fk(self.sk, self.S.solve([], look=None, stance=s2, world=W).pose)
+            pts, rad, part = body_points(P)
+            pen = float(np.max(self.field.penetration(((W[:3, :3] @ pts.T).T + W[:3, 3], rad, part)), initial=0.0))
+            if best is None or pen < best[0] - 0.5:
+                best = (pen, s2, back)
+            if pen <= 0.0:
+                break
+        if best[2]:
+            self.notes.append(f"kneels {best[2]:.0f} cm further back to clear the equipment")
+        return best[1]
 
     def generator_posture(self):
         """For the library generators that work out their own rest pose from the solver's default stance: while
@@ -553,6 +785,7 @@ class Task:
             if self.kneeling and f.stance is None:
                 f.stance = self.kneeling[1]
             f.label = f"{label.split(':')[0]}:{f.label or label.split(':')[-1]}"
+        self._hold_override(frames)
         self.frames.extend(frames)
 
     def L(self, spot):
@@ -581,6 +814,9 @@ class Task:
                 self.kneel(sid, {})
             return
         self.stand_up(sid)
+        if self.holding and carry is None:                    # walk with the tool held ready
+            h, T = self.ready(self.holding[1])
+            carry, parts = [h], dict(parts or {}, **{self.holding[0]: T})
         fr = walk(self.w, self.sk, [self.at[:2], spot[:2]], self.at[2], spot[2], carry=carry)
         for f in fr:
             f.label = f"{sid}:walk"
@@ -713,6 +949,8 @@ class Task:
             return None
         b = self.loc(spot, self.points(step["brace"])[0])
         side = "l"
+        if self.holding and self.holding[1] == side:
+            return None
         return K.brace(self.sk, side, b, self.locd(spot, self.axis_of(step["brace"])), weight=0.6)
 
     def do_hand_start(self, step, sid):
@@ -801,9 +1039,18 @@ class Task:
         aid = step["on"].split(".")[0]
         spot = self.spot_of(step, aid if "spot" in self.assets.get(aid, {}) else step["on_spot"])
         self.go(spot, sid)
-        R = self.rest
         sk = self.sk
         T_rest = self.L(spot) @ self.parts[tid]["W"]
+        hold = self.holding                                  # already in hand (get_tool): no fetching, keep it
+        if hold and hold[0] != tid:
+            raise ValueError(f"the worker holds {hold[0]}, not {tid}: put it back first")
+        from_l = bool(hold) and hold[1] == "l"               # in the left hand: the right one takes it over
+        T_home = self.ready(hold[1])[1] if hold else T_rest
+        h_l = self.ready("l")[0] if from_l else None
+        if hold:
+            self.holding = (tid, "r")
+        T_end = self.ready("r")[1] if hold else T_rest
+        R = self._rest_base
         seated = []
         for p in on:
             q = next((q for q, v in self.parts.items() if v.get("seat") is not None
@@ -844,12 +1091,13 @@ class Task:
             return step_ang / 2 if power else -step_ang / 2
         from .jobs import held
         T_first = T_work(Ps[0], self.parts[seated[0]]["rise"] if seated[0] else 0.0, tool_ang(0.0, False))
-        tk.append((0.0, T_rest))
-        tk.append((1.0, T_rest))
-        hk += [(0.0, R["r"]), (0.95, held(rh, T_first)), (1.0, held(rh, T_first))]
-        look += [(0.0, T_rest[:3, 3]), (1.0, T_rest[:3, 3])]
+        tk.append((0.0, T_home))
+        tk.append((1.0, T_home))
+        hk += [(0.0, held(rh, T_first) if hold and not from_l else R["r"]), (0.95, held(rh, T_first)),
+               (1.0, held(rh, T_first))]
+        look += [(0.0, T_home[:3, 3]), (1.0, T_home[:3, 3])]
         t = 1.0
-        phases = [(1.0, "get tool")]
+        phases = [(1.0, "take over" if from_l else "ready" if hold else "get tool")]
         for k_, (P, q) in enumerate(zip(Ps, seated)):
             rise = self.parts[q]["rise"] if q else 0.0
             a0 = self.parts[q]["angle"] if q else 0.0
@@ -885,16 +1133,19 @@ class Task:
         # tool back where it was
         t_back = t + 1.2
         last_T = T_work(Ps[-1], 0.0, tool_ang(ang, False))
-        tk += [(t + 0.3, T_work(Ps[-1], 4.0, tool_ang(ang, False))), (t_back, T_rest), (t_back + 0.8, T_rest)]
+        tk += [(t + 0.3, T_work(Ps[-1], 4.0, tool_ang(ang, False))), (t_back, T_end), (t_back + 0.8, T_end)]
         hk += [(t + 0.3, rh), (t_back - 0.02, held(rh, last_T if False else T_first)), (t_back, held(rh, T_first))]
         hk = [(a_, v) for a_, v in hk]
-        hk.append((t_back + 0.75, R["r"]))
+        hk.append((t_back + 0.75, held(rh, T_first) if hold else R["r"]))
         look.append((t + 0.3, Ps[-1]))
-        look.append((t_back - 0.2, T_rest[:3, 3]))
-        phases += [(t_back, "put tool back"), (99, "return")]
+        look.append((t_back - 0.2, T_end[:3, 3]))
+        phases += [(t_back, "tool to ready" if hold else "put tool back"), (99, "hold" if hold else "return")]
         dur = t_back + 0.8
         hands = {"r": self._held_back(hk, tk, rh, T_first, t, t_back, held)}
-        if br is not None:
+        if from_l:                                           # holds it out until the right hand has it
+            hands["l"] = [(0.0, h_l), (1.0, h_l)] + ([(1.6, br), (t, br), (t + 0.9, R["l"])] if br is not None
+                                                      else [(1.8, R["l"])])
+        elif br is not None:
             hands["l"] = [(0.0, R["l"]), (1.6, br), (t, br), (t + 0.9, R["l"])]
         fr = K.keyed(dur, hands=hands, tools={"t": (tool, tk)}, look=look, label="fasten")
         for i, f in enumerate(fr):
@@ -926,7 +1177,8 @@ class Task:
                             break
                 self.set_part(f, q, T_pos(P + nrm * h_, rot_axis(nrm, a0_ - ang_) @ Rn))
         self._add(fr, spot, sid)
-        self.commit(tid, spot, T_rest)
+        if not hold:
+            self.commit(tid, spot, T_rest)
         for q in [s_ for s_ in seated if s_]:
             P = Ps[seated.index(q)]
             a_end = self.parts[q]["angle"] - step_ang * strokes
@@ -1062,9 +1314,11 @@ class Task:
             # the free hand rests flat on the panel beside the socket (nothing to hold on a panel-mounted socket)
             other = "l" if side == "r" else "r"
             sx = 1.0 if other == "l" else -1.0
-            brace = K.brace(self.sk, other, P + np.array([sx * 12.0, 0.0, 0.0]) - nrm * 0.0, nrm, weight=0.5)
+            brace = None                                     # (not with the hand that holds a tool)
+            if not (self.holding and self.holding[1] == other):
+                brace = K.brace(self.sk, other, P + np.array([sx * 12.0, 0.0, 0.0]) - nrm * 0.0, nrm, weight=0.5)
             nr = int(0.8 * FPS)
-            for i, f in enumerate(fr):
+            for i, f in enumerate(fr if brace is not None else []):
                 w = min(1.0, (i + 1) / nr, (len(fr) - i) / nr)
                 f.targets = [t for t in f.targets if t.side != other] + [lerp_target(self.rest[other], brace, ease(w))]
             pid = f"conn_{aid}_{k_ + 1}"

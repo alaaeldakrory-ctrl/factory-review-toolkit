@@ -1,6 +1,7 @@
 """Run a task file: compile the steps, solve every frame, check, score (RULA) and bake one scene.
 
     python tools/task_run.py docs/people/practice/reference_task.toml [--out=out/people/task/<name>] [--workers=11]
+        [--worker=W05F]   (the same task on another body: an frt body id or a character .usd)
     -> <out>/task.usda (scene + worker + parts), result.json (per step: frames, checks, RULA), log
 
 The Kit window (Task Builder) runs this in the background and opens the result.
@@ -19,10 +20,17 @@ os.environ.setdefault("PXR_USDC_EMIT_DEPRECATION_WARNINGS", "0")
 _T = None
 
 
-def _init(path):
-    global _T
+def _load(path, worker=None):
     from frt_core.people.tasks import Task
-    _T = Task.load(path).compile(log=lambda *a: None)
+    T = Task.load(path)
+    if worker:
+        T.data["task"]["worker"] = worker
+    return T
+
+
+def _init(path, worker=None):
+    global _T
+    _T = _load(path, worker).compile(log=lambda *a: None)
 
 
 def _solve(rng):
@@ -48,6 +56,9 @@ def main():
     opt = {a.split("=")[0][2:]: a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--") and "=" in a}
     path = os.path.abspath(args[0] if args else os.path.join(ROOT, "docs", "people", "practice", "reference_task.toml"))
     name = os.path.splitext(os.path.basename(path))[0]
+    worker = opt.get("worker")
+    if worker:
+        name += "_" + os.path.splitext(os.path.basename(worker))[0]
     out = os.path.abspath(opt.get("out", os.path.join(ROOT, "out", "people", "task", name)))
     os.makedirs(out, exist_ok=True)
     status = os.path.join(out, "status.json")
@@ -58,10 +69,9 @@ def main():
             json.dump({"msg": msg, "t": time.time(), **kw}, f)
         os.replace(status + ".tmp", status)                         # the window never reads half a file
     t0 = time.time()
-    from frt_core.people.tasks import Task
     scene_only = "--scene-only" in sys.argv
     try:
-        T = Task.load(path)
+        T = _load(path, worker)
         if scene_only:                                               # just the scene and the worker at the start
             T.data["step"] = []
         T.compile(log=print)
@@ -80,7 +90,7 @@ def main():
     say(f"compiled {len(T.steps)} steps, {n} frames ({n / 24:.1f} s); solving", progress=0.05)
     rngs = chunks(T.steps, n)
     sols = [None] * n
-    with mp.Pool(int(opt.get("workers", min(11, os.cpu_count() or 4))), initializer=_init, initargs=(path,)) as pool:
+    with mp.Pool(int(opt.get("workers", min(11, os.cpu_count() or 4))), initializer=_init, initargs=(path, worker)) as pool:
         done = 0
         for a, s in pool.imap_unordered(_solve, rngs):
             sols[a:a + len(s)] = s
@@ -98,10 +108,10 @@ def main():
 
     from frt_core.people.bake import _rootT
     from frt_core.people.check import check_frames
-    rep = check_frames(T.sk, T.frames, sols, name)
-    say("baking the scene", progress=0.86)
+    say("baking the scene", progress=0.84)
     usd = os.path.join(out, "task.usda")
     bake_scene(T, sols, usd)
+    rep = check_frames(T.sk, T.frames, sols, name, field=T.field or equipment_field(T, usd))
     say("scoring (RULA)", progress=0.93)
     scores = score(usd)
     steps = []
@@ -125,6 +135,26 @@ def main():
            "counts": rep["counts"], "notes": T.notes, "solve_s": round(time.time() - t0, 1)}
     json.dump(res, open(os.path.join(out, "result.json"), "w"), indent=1)
     say(f"done in {time.time() - t0:.0f} s: {rep['counts'] or 'clean'}", progress=1.0, done=True, usd=usd)
+
+
+def equipment_field(T, usd):
+    """The scene's still equipment (not the worker, not the parts) as a distance field, so the checks also find
+    the body inside a fixture, a wheel or a cart."""
+    import numpy as np
+    from pxr import Usd
+
+    from frt_core.people.bake import _rootT
+    from frt_core.people.collide import SceneField, region_around
+    for f in T.frames:
+        f.world = _rootT(f.root)
+    try:
+        st = Usd.Stage.Open(usd)
+        pts = np.array([[f.root[0], 0.0, f.root[1]] for f in T.frames])
+        return SceneField.from_stage(st, region_around(pts, margin=120.0),
+                                     exclude=("/World/Asset/Worker", "/World/Asset/Parts"))
+    except Exception as e:                                           # no field: the other checks still run
+        print(f"(no equipment check: {e})")
+        return None
 
 
 def bake_scene(T, sols, usd):

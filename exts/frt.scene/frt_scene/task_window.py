@@ -46,7 +46,12 @@ VERBS = {
                    "take a nut / screw and thread it on by hand"),
     "fasten": ([("tool", "tool", "the tool (where it lies)"), ("on", "work_points", "the started nuts / screws"),
                 ("brace", "place", "where the other hand rests (optional)")],
-               "get the tool, drive / tighten at each point, put it back"),
+               "drive / tighten at each point (gets the tool and puts it back, unless it is already in hand)"),
+    "get_tool": ([("tool", "tool", "the tool to keep in hand")],
+                 "pick a tool up and keep it for the next steps (walk / kneel with it)"),
+    "put_back": ([("tool", "tool", "the tool in hand")], "put the tool in hand back where it was"),
+    "connect": ([("on", "work_points", "the sockets")], "plug connector halves into the sockets"),
+    "cable_tie": ([("on", "work_points", "the tie points on a harness")], "tie the harness at each point"),
     "push_door": ([("door", "door", "the cabinet")], "push the open door so it swings shut"),
     "latch": ([("door", "door", "the cabinet")], "press the door home and turn the latch"),
     "inspect": ([("on", "any_point", "what to look at"), ("seconds", "float", "how long")],
@@ -115,6 +120,8 @@ class Choices:
         }
         for a in A:
             for name, pts in a.get("points", {}).items():
+                if name.endswith(("_axis", "_dir")):          # directions of the other tags, not places
+                    continue
                 ref = f"{a['id']}.{name}"
                 many = isinstance(pts[0], (list, tuple))
                 self.c["any_point"].append(ref)
@@ -339,14 +346,43 @@ class TaskWindow:
             n = len(A.get(aid, {}).get("points", {}).get(name, []))
             if s.get("count", 1) > n:
                 return f"{s['to']} has {n} slots, you are moving {s.get('count')}"
+            kinds = {a.get("holds") for a in A.values() if a.get("holds")}
+            if name.rstrip("s") in kinds and name.rstrip("s") != s.get("what"):
+                return f"{s['to']} is for {name}, not {s.get('what')}s"
         for k, kind, _ in VERBS[s["do"]][0]:
             if k not in s and k not in OPTIONAL and kind not in ("int", "float"):
                 return f"pick a value for '{k}'"
         return ""
 
+    def check_order(self, steps):
+        """Tool in hand: get_tool / put_back must pair up, and nothing two-handed in between."""
+        held = None
+        for i, s in enumerate(steps):
+            v = s.get("do")
+            if v == "get_tool":
+                if held:
+                    return f"step {i + 1}: already holding {held} (put_back first)"
+                held = s.get("tool")
+            elif v == "put_back":
+                if held != s.get("tool"):
+                    return f"step {i + 1}: {s.get('tool')} is not in hand (get_tool first)"
+                held = None
+            elif held and v in ("carry", "latch", "cable_tie"):
+                return f"step {i + 1}: {v} needs both hands, the worker holds {held} (put_back first)"
+            elif held and v == "fasten" and s.get("tool") != held:
+                return f"step {i + 1}: the worker holds {held}, not {s.get('tool')}"
+        return ""
+
     def add_step(self, at):
         s = self._read_editor()
         bad = self.check_step(s)
+        if not bad:
+            trial = list(self.steps)
+            if at is None:
+                trial.insert(self.sel + 1 if self.sel is not None else len(trial), s)
+            else:
+                trial[at] = s
+            bad = self.check_order(trial)
         if bad:
             self._say("not added: " + bad)
             return

@@ -1,0 +1,28 @@
+[task]
+name = "Telehandler wheel: 5 lug nuts, ratchet kept in hand"
+scene = "awp_scene.toml"
+worker = "C:/Nvidia_Assets/Characters_NVD/Assets/Characters/Reallusion/ActorCore/Uniform_M_0001/uniform_m_0001.usd"
+start = [400, -30, 0]
+
+# Same job as telehandler.toml, but the ratchet is picked up standing, before kneeling at the hub,
+# and stays in hand (left hand while the nuts are started) until it goes back on the cart.
+
+[[step]]
+do = "get_tool"
+tool = "ratchet_t"
+
+[[step]]
+do = "hand_start"
+what = "nut"
+from = "nut_bin_t"
+on = "wheel.studs"
+brace = "wheel.rest"
+
+[[step]]
+do = "fasten"
+tool = "ratchet_t"
+on = "wheel.studs"
+
+[[step]]
+do = "put_back"
+tool = "ratchet_t"

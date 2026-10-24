@@ -24,7 +24,11 @@ Files:
    - **Transfer**: what = screw/nut, from = a bin, to = tray slots.
    - **Carry**: a tray or plate, and a place to put it.
    - **Hand_start**: nut or screw, onto studs or holes.
-   - **Fasten**: a tool, onto the started studs or holes.
+   - **Fasten**: a tool, onto the started studs or holes. On its own it fetches the tool and puts it back.
+   - **Get_tool / put_back**: keep a tool in hand across several steps. The worker walks and kneels with it, and
+     passes it to the left hand by itself when the right one is needed (e.g. to start nuts). Two-hand steps (carry,
+     latch, cable_tie) are refused while a tool is in hand.
+   - **Connect, cable_tie**: plug connectors into sockets, tie a harness (used in the AWP validation scene).
    - **Push_door, latch**: the cabinet.
    - **Inspect**: something to look at.
 
@@ -45,6 +49,7 @@ You never say where the worker stands or when to walk. Every asset has a spot, s
 - **Hand-start screws before the cover is on.** The holes belong to the cover, so the screws go where the cover lies, on the cart.
 - **Fasten before hand_start.** The tool turns, but there is nothing started to drive.
 - **Transfer 5 screws into a 4-slot compartment.** You get an error message, not a broken animation.
+- **A screw into the nut compartment** (`tray.nuts`). Refused now: the compartment name says what goes in it.
 - **Latch before push_door.** It runs, but on an open door. There is no rule for that yet.
 
 The same task file can be written by an AI agent or a script. The window is just one way to write it:
