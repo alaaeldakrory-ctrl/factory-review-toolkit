@@ -504,7 +504,7 @@ class Task:
         tid = tid or self.holding[0]
         tool = self.parts[tid]["tool"]
         base = base or self._rest_base
-        p = np.asarray(base[side].point, float) + np.array([0.0, 6.0, 12.0])
+        p = np.asarray(base[side].point, float) + np.array([0.0, 8.0, 17.0])   # (clear of the belly)
         if tool == "screwdriver":
             Rt = K.T_at(np.zeros(3), X, K.unit(np.array([0.0, 0.5, -1.0])))[:3, :3]
         else:
@@ -575,9 +575,10 @@ class Task:
         ga, gb = self.grip_fn(tool, a), self.grip_fn(tool, b)
         tk = [(0.0, Ta), (0.55, Tm), (0.9, Tm), (1.45, Tb)]
         base = self._rest_base
+        meet = with_grip(held(gb, Tb)({"t": Tm}), "open")
+        way = moved(lerp_target(base[b], meet, 0.5), np.array([0.0, 0.0, 12.0]))   # round the belly, not through it
         hands = {a: [(0.0, held(ga, Ta)), (0.85, held(ga, Ta)), (1.45, base[a])],
-                 b: [(0.0, base[b]), (0.5, with_grip(held(gb, Tb)({"t": Tm}), "open")), (0.7, held(gb, Tb)),
-                     (1.45, held(gb, Tb))]}
+                 b: [(0.0, base[b]), (0.28, way), (0.5, meet), (0.7, held(gb, Tb)), (1.45, held(gb, Tb))]}
         fr = K.keyed(1.5, hands=hands, tools={"t": (tool, tk)}, look=tuple(Tm[:3, 3]), label="swap hands")
         for f in fr:
             self.set_part(f, tid, f.tools.pop("t")[1])

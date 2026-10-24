@@ -44,6 +44,8 @@ def rot_angle(R):
 
 def check_frames(sk, frames, sols, name="", keep_out=None, field=None):
     """field: a collide.SceneField (or a function frame index -> field); frames carry .world (worker -> field)."""
+    from .solver import PostureSolver, torso_profile_of
+    prof = torso_profile_of(sk)
     issues = []
     prev = None
     worst_pop, worst_lim, worst_contact, worst_foot = 0.0, 0.0, 0.0, 0.0
@@ -92,6 +94,9 @@ def check_frames(sk, frames, sols, name="", keep_out=None, field=None):
                     worst[q] = max(worst.get(q, 0.0), float(p_))
             for q, p_ in worst.items():
                 issues.append((i, "inside equipment", q, round(p_, 1), 2.0))
+        for s, pen in zip(("l", "r"), PostureSolver.arm_in_body(R, P, prof)):   # arms never through the body
+            if pen > 1.5:
+                issues.append((i, "arm in body", f"arm_{s}", round(pen, 1), 1.5))
         for s in ("l", "r"):                                 # elbows / knees never the wrong way
             ua, fa = P[f"lowerarm_{s}"] - P[f"upperarm_{s}"], P[f"hand_{s}"] - P[f"lowerarm_{s}"]
             th, ca = P[f"calf_{s}"] - P[f"thigh_{s}"], P[f"foot_{s}"] - P[f"calf_{s}"]

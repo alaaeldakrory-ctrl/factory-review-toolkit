@@ -147,11 +147,65 @@ class Character:
         dp = str(st.GetDefaultPrim().GetPath()) if st.GetDefaultPrim() else ""
         rel = st_skel[len(dp):].lstrip("/") if dp and st_skel.startswith(dp + "/") else st_skel.lstrip("/")
         ch = cls(asset, rel, joints, bind, B, top, w)
+        try:
+            ch.skeleton.torso = ch.torso_profile(st)
+        except Exception:                                                # (the solver then uses a generic torso)
+            ch.skeleton.torso = None
         ch.skel_to_asset = np.array(L2W, float).T                        # skeleton space -> asset root (column form)
         if dp:
             Ldp = np.array(UsdGeom.Xformable(st.GetDefaultPrim()).ComputeLocalToWorldTransform(0), float).T
             ch.skel_to_asset = np.linalg.inv(Ldp) @ ch.skel_to_asset    # relative to the default prim (referenced)
         return ch
+
+    TRUNK = ("Hip", "Pelvis", "Waist", "Spine01", "Spine02", "L_Breast", "R_Breast")
+
+    def torso_profile(self, st, step=4.0):
+        """The body's own trunk (skin and clothes skinned to the hips / spine), measured at rest in the frt frame:
+        [(t, half width, front, back)] along pelvis -> chest (t 0..1, the solver's torso axis), cm from the spine.
+        The arms keep out of this, so a bulky vest or a belly counts."""
+        from pxr import Usd, UsdGeom, UsdSkel
+        cache = UsdSkel.Cache()
+        root = next(UsdSkel.Root(p) for p in Usd.PrimRange(st.GetPseudoRoot()) if p.IsA(UsdSkel.Root))
+        cache.Populate(root, Usd.TraverseInstanceProxies())
+        pts = []
+        for b in cache.ComputeSkelBindings(root, Usd.TraverseInstanceProxies()):
+            names = [_name(j) for j in b.GetSkeleton().GetJointsAttr().Get()]
+            for t in b.GetSkinningTargets():
+                m = UsdGeom.Mesh(t.GetPrim())
+                P = m.GetPointsAttr().Get()
+                if not P or not t.HasJointInfluences() or t.IsRigidlyDeformed():
+                    continue
+                n = t.GetNumInfluencesPerComponent()
+                idx, w = t.ComputeJointInfluences()
+                idx, w = np.array(idx).reshape(-1, n), np.array(w).reshape(-1, n)
+                order = t.GetJointOrder()
+                jn = [_name(str(x)) for x in order] if order else names
+                dom = idx[np.arange(len(idx)), w.argmax(1)]
+                keep = np.array([jn[i] in self.TRUNK for i in dom])
+                if not keep.any():
+                    continue
+                G = np.array(t.GetGeomBindTransform(), float).T                # mesh -> skeleton space (bind)
+                v = np.array(P, float)[keep]
+                v = (G[:3, :3] @ v.T).T + G[:3, 3]
+                pts.append((self.B[:3, :3] @ v.T).T + self.B[:3, 3])
+        if not pts:
+            return None
+        V = np.concatenate(pts)
+        sk = self.skeleton
+        a = sk.world["pelvis"]
+        b = sk.world["spine_03"] + np.array([0.0, 6.0, 0.0])
+        top = min(b[1], sk.world["upperarm_l"][1] - 4.0)                 # up to the armpits
+        out = []
+        for y in np.arange(a[1], top + 1e-6, step):
+            band = V[np.abs(V[:, 1] - y) < step * 0.75]
+            if len(band) < 12:
+                continue
+            t_ = float((y - a[1]) / (b[1] - a[1]))
+            c = a + (b - a) * t_
+            dx, dz = band[:, 0] - c[0], band[:, 2] - c[2]
+            out.append((round(t_, 3), float(np.percentile(np.abs(dx), 96)), float(max(1.0, np.percentile(dz, 97))),
+                        float(max(1.0, np.percentile(-dz, 97)))))
+        return out or None
 
     def _p(self, n):
         return self.B[:3, :3] @ self.bind[n][:3, 3] + self.B[:3, 3]

@@ -85,6 +85,8 @@ def grip_blend(ga, gb, u):
     closes on contact - as people do."""
     if ga == gb:
         return ga
+    if ga == "open" or gb == "open":                       # already open (or opening fully): one smooth change
+        return ("blend", ga, gb, ease(u))
     if str(gb).split(":")[0] in CLOSING and not (isinstance(gb, tuple)) and str(ga).split(":")[0] not in CLOSING:
         if u < 0.7:
             return ("blend", ga, "open", ease(u / 0.7))

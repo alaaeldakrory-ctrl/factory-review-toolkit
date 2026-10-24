@@ -99,10 +99,23 @@ def main():
             say(f"solving {done}/{n} frames", progress=0.05 + 0.75 * done / n)
     # re-solve the joins between pieces warm-started from the frame before (no jumps where pieces meet)
     from frt_core.people.bake import solve_frames
+    from frt_core.people.check import rot_angle
+    from frt_core.people.skeleton import NAMES
+
+    def apart(p, q):                                   # the biggest joint difference between two solved poses, deg
+        return max(rot_angle(p.pose.local(j).T @ q.pose.local(j)) for j in NAMES if j != "root")
     for a, _ in rngs[1:]:
-        lo, hi = max(0, a - 1), min(n, a + 10)
-        fix = solve_frames(T.S, T.frames[lo + 1:hi], log=lambda *a: None, prev=sols[lo])
-        sols[lo + 1:hi] = fix
+        # carry on from the frame before the piece until it meets the piece's own solution (a piece warm-started
+        # from rest can have the elbow on the other side: handing over after a fixed 10 frames was a snap)
+        k, prev = a, sols[max(0, a - 1)]
+        while k < n:
+            hi = min(n, k + 10)
+            fix = solve_frames(T.S, T.frames[k:hi], log=lambda *a: None, prev=prev)
+            met = apart(fix[-1], sols[hi - 1]) < 8.0
+            sols[k:hi] = fix
+            prev, k = fix[-1], hi
+            if met or k - a >= 160:
+                break
     sols = T.smooth_solutions(sols)
     say("checking", progress=0.82)
     import numpy as np
@@ -125,7 +138,12 @@ def main():
         sc = [scores[i] for i in range(a, b + 1) if i < len(scores) and scores[i] is not None]
         foc = [_rootT(T.frames[i].root)[:3, :3] @ np.asarray(T.frames[i].look, float) + _rootT(T.frames[i].root)[:3, 3]
                for i in range(a, b + 1) if T.frames[i].look is not None and T.frames[i].base is None]
-        steps.append({**s, "seconds": round((b - a + 1) / 24.0, 1), "checks": cnt,
+        worst = {}
+        for i in iss:                                                 # how bad, not only how often
+            if isinstance(i[3], (int, float)):
+                over = float(i[3]) - float(i[4] or 0.0) if i[1] in ("limit", "pop", "awkward") else float(i[3])
+                worst[i[1]] = round(max(worst.get(i[1], 0.0), over), 1)
+        steps.append({**s, "seconds": round((b - a + 1) / 24.0, 1), "checks": cnt, "worst": worst,
                       "focus": [round(float(v), 1) for v in np.median(foc, axis=0)] if foc else None,
                       "rula_max": max(sc) if sc else None, "rula_mean": round(sum(sc) / len(sc), 2) if sc else None,
                       "by_joint": {f"{k[0]} {k[1]}": v for k, v in

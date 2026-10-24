@@ -166,6 +166,16 @@ def nelder_mead(f, x0, step, lo, hi, iters=160, tol=1e-4):
     return xs[i], fs[i]
 
 
+def torso_profile_of(sk):
+    """[(t, half width, front, back)] along pelvis -> chest: the character's measured trunk (skin and clothes,
+    Character.torso_profile) or, for the frt bodies, one from the shoulder breadth."""
+    prof = getattr(sk, "torso", None)
+    if not prof:
+        half = abs(float(sk.world["upperarm_l"][0] - sk.world["upperarm_r"][0])) / 2.0
+        prof = [(0.0, 0.95 * half, 0.72 * half, 0.75 * half), (1.0, 0.92 * half, 0.70 * half, 0.75 * half)]
+    return prof
+
+
 class PostureSolver:
     def __init__(self, sk, worker=None):
         self.sk = sk
@@ -229,6 +239,8 @@ class PostureSolver:
         R, P = fk(sk, pose, ["spine_03", "clavicle_l", "clavicle_r", "upperarm_l", "upperarm_r", "head"])
         tg = {t.side: t for t in targets}
         angles = {}
+        # the torso the arms stay out of: an elliptic cylinder pelvis -> chest, sized from the shoulder breadth
+        torso = (P["pelvis"], P["spine_03"] + R["spine_03"] @ UP * 6.0, R["spine_03"], self.torso_profile())
         for s, sx in (("l", 1.0), ("r", -1.0)):
             t = tg.get(s)
             S0 = P[f"upperarm_{s}"]
@@ -275,7 +287,7 @@ class PostureSolver:
             trunk = R2["spine_03"]
             Rh = frame_rot(np.array([sx, 0, 0]), DOWN, fingers, palm)
             pa = (prev_arm or {}).get(s)
-            Ru, Rf, wsw, tau, elbow, sw = self._arm(s, sx, S, u, a, h, dd, trunk, Rh, True, pa)
+            Ru, Rf, wsw, tau, elbow, sw = self._arm(s, sx, S, u, a, h, dd, trunk, Rh, True, pa, torso)
             angles[f"swivel_{s}"], angles[f"twist_{s}"] = sw, tau
             ue, fe = unit(elbow - S), unit(S + u * dd - elbow)
             Rcl = R2[f"clavicle_{s}"]
@@ -352,7 +364,44 @@ class PostureSolver:
         self._wrap[key] = out
         return out
 
-    def _arm(self, s, sx, S, u, a, h, dd, trunk, Rh, has_target, prev=None):
+    def torso_profile(self):
+        return torso_profile_of(self.sk)
+
+    @classmethod
+    def arm_in_body(cls, R, P, prof):
+        """cm each arm (l, r) reaches into the trunk at worst, for posed joints R, P."""
+        tor = (P["pelvis"], P["spine_03"] + R["spine_03"] @ UP * 6.0, R["spine_03"], prof)
+        out = []
+        for s_ in ("l", "r"):
+            S, E, W = P[f"upperarm_{s_}"], P[f"lowerarm_{s_}"], P[f"hand_{s_}"]
+            out.append(max(cls.torso_pen(S + (E - S) * f if f <= 1.0 else E + (W - E) * (f - 1.0), r, tor)
+                           for f, r in cls.ARM_SAMPLES))
+        return out
+
+    TORSO_TOL = 1.5                 # cm of contact (sleeve on the side of the chest, soft tissue) before it counts
+
+    @classmethod
+    def torso_pen(cls, q, r, torso):
+        """cm a sphere (centre q, radius r) reaches into the trunk (<= 0: clear); torso = (pelvis, chest top,
+        trunk rotation, profile)."""
+        a, b, Rt, prof = torso
+        ax = b - a
+        t = min(1.0, max(0.0, float(np.dot(q - a, ax) / (np.dot(ax, ax) + 1e-9))))
+        d = Rt.T @ (q - (a + ax * t))
+        k = next((i for i in range(1, len(prof)) if prof[i][0] >= t), len(prof) - 1)
+        t0, t1 = prof[k - 1][0], prof[k][0]
+        u = 0.0 if t1 <= t0 else min(1.0, max(0.0, (t - t0) / (t1 - t0)))
+        A, F, Bk = (prof[k - 1][j] * (1 - u) + prof[k][j] * u for j in (1, 2, 3))
+        x, z = float(d[0]), float(d[2])
+        Bz = F if z >= 0.0 else Bk
+        e = math.hypot(x / (A + r), z / (Bz + r))
+        return (1.0 - e) * min(A + r, Bz + r) - cls.TORSO_TOL
+
+    # along the upper arm (0-1) and forearm (1-2): from below the armpit down (higher up, the upper arm lies against
+    # the side of the chest - contact, and the trunk measurement there includes the shoulder of the clothes)
+    ARM_SAMPLES = ((0.85, 4.5), (1.0, 4.5), (1.3, 4.0), (1.6, 3.5))
+
+    def _arm(self, s, sx, S, u, a, h, dd, trunk, Rh, has_target, prev=None, torso=None):
         """Elbow swivel + forearm twist: try elbow positions around the shoulder-wrist line (low and slightly out
         is preferred), give the forearm up to +-85 deg of the hand's roll (pronation / supination), leave the rest
         to the wrist; keep the swivel that bends the wrist least."""
@@ -384,6 +433,13 @@ class PostureSolver:
             roll = abs(tau - tc)                                # roll the forearm could not take
             elbow_up = max(0.0, float(np.dot(ue, trunk @ UP)) + 0.3)
             score = (wsw / 30.0) ** 2 + (roll / 20.0) ** 2 + (sw / 60.0) ** 2 * 0.3 + elbow_up ** 2 * 2.0
+            if torso is not None:                              # the arm never goes through the body
+                wr = S + u * dd
+                for f_, r_ in self.ARM_SAMPLES:
+                    q = S + (elbow - S) * f_ if f_ <= 1.0 else elbow + (wr - elbow) * (f_ - 1.0)
+                    pen = self.torso_pen(q, r_, torso)
+                    if pen > 0.0:
+                        score += (pen / 1.5) ** 2 * 2.0
             if prev is not None and prev[0] is not None:
                 score += ((sw - prev[0]) / 10.0) ** 2 + ((tc - (prev[1] or 0.0)) / 25.0) ** 2
             if best is None or score < best[0]:
