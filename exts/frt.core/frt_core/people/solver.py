@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .kinematics import I3, Pose, angle, axis_angle, com, cross3, fk, frame_rot, norm3, rx, ry, rz, unit
+from .kinematics import I3, Pose, angle, axis_angle, com, cross3, fk, frame_rot, norm3, quat_from_matrix, rx, ry, rz, unit
 
 UP = np.array([0.0, 1.0, 0.0])
 DOWN = -UP
@@ -65,6 +65,29 @@ class Stance:
     def foot_yaw(self, s):
         v = self.yaw_l if s == "l" else self.yaw_r
         return self.yaw if v is None else v
+
+
+WRIST_MAX = 88.0             # deg: the hand never turns further than this from the forearm (checks flag 95)
+
+
+def _clamp_rot(R, max_deg, prev=None):
+    """R, or the same turn about the same axis cut to max_deg (a target orientation the wrist can't reach - e.g.
+    a blended hand path rolling past the forearm's twist range - is followed only as far as a wrist goes). Past a
+    half turn the axis flips: prev (the frame before's hand) picks the side it stays on."""
+    c = (R[0, 0] + R[1, 1] + R[2, 2] - 1.0) / 2.0
+    if c >= math.cos(math.radians(max_deg)):
+        return R
+    q = quat_from_matrix(R)
+    ax = np.array(q[1:], float)
+    n = norm3(ax)
+    if n < 1e-9:
+        return R
+    C = axis_angle(ax / n, math.radians(max_deg))
+    if prev is not None:
+        C2 = axis_angle(-ax / n, math.radians(max_deg))
+        if np.trace(prev.T @ C2) > np.trace(prev.T @ C):              # (closer to the frame before)
+            return C2
+    return C
 
 
 def _prev_arm(prev):
@@ -198,6 +221,7 @@ class PostureSolver:
         self.keep_out = []          # [(joint names, max z in the worker frame)]: fixture faces the body stays behind
         self.field = None           # collide.SceneField: the scene's equipment the body stays out of
         self._world = None          # 4x4 worker frame -> field, per solve
+        self._prev_hand = None      # the frame before's hand rotations (which way a clamped wrist stays)
         self.base_correct = False   # base (generated / mocap) pose: allow small pelvis / trunk corrections on top
         self.effort = 1.0           # search iterations x this (a preview: fewer - its poses start from the one before)
 
@@ -311,7 +335,8 @@ class PostureSolver:
             Rcl = R2[f"clavicle_{s}"]
             pose.rot[f"upperarm_{s}"] = Rcl.T @ Ru
             pose.rot[f"lowerarm_{s}"] = Ru.T @ Rf
-            pose.rot[f"hand_{s}"] = Rf.T @ Rh
+            pose.rot[f"hand_{s}"] = _clamp_rot(Rf.T @ Rh, WRIST_MAX,  # (a target past the wrist's range: as far as it goes)
+                                               (self._prev_hand or {}).get(s))
             elev = angle(ue, trunk @ DOWN)
             eflex = angle(ue, fe)
             wdev = wsw
@@ -663,6 +688,7 @@ class PostureSolver:
     def solve(self, targets, look=None, stance=None, prev=None, smooth=1.0, seeds=None, swing=None, base=None,
               world=None):
         self._world = world
+        self._prev_hand = {s_: prev.pose.local(f"hand_{s_}") for s_ in ("l", "r")} if isinstance(prev, Solution) else None
         stance = stance or self.default_stance()
         prev_arm = _prev_arm(prev)
         if base is not None:                       # mocap-driven frame: no search, just exact limbs on the base pose
@@ -726,6 +752,7 @@ class PostureSolver:
         """The pose for given trunk / pelvis values, no search: the limbs still go exactly onto the targets (the
         in-between frames of a preview, the trunk blended between two solved key poses)."""
         self._world = world
+        self._prev_hand = {s_: prev.pose.local(f"hand_{s_}") for s_ in ("l", "r")} if isinstance(prev, Solution) else None
         stance = stance or self.default_stance()
         pose, terms, angles, _ = self.build(v, targets, look, stance, swing=swing, base=base, prev_arm=_prev_arm(prev))
         return Solution(pose, float(sum(terms.values())), terms, angles, np.asarray(v, float))

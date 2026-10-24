@@ -55,6 +55,30 @@ def _phase_edge(frames, i):
     return (i > 0 and frames[i - 1].label != lab) or (i + 1 < len(frames) and frames[i + 1].label != lab)
 
 
+def _repair(S, frames, sols, stance=None):
+    """Preview frames with a joint past its human range solved in full from the frame before (a few in a hundred;
+    the rest stay cheap). Returns how many."""
+    from .check import LIMITS, _family, rot_angle
+    joints = [j for j in sols[0].pose.rot if j != "root" and _family(j) not in ("finger", "thumb", "thumb_01")]
+
+    def bad(i):
+        p = sols[i].pose
+        for j in joints:
+            fam = _family(j)
+            if rot_angle(p.local(j)) > LIMITS.get(fam, 120) - 2.0:
+                return True
+        return False
+    n = 0
+    for i in range(1, len(frames)):
+        f = frames[i]
+        if f.static or sols[i] is sols[i - 1] or not bad(i):
+            continue
+        sols[i] = S.solve(f.targets, look=f.look, stance=f.stance or stance, prev=sols[i - 1], smooth=1.0,
+                          swing=f.swing, base=f.base, world=getattr(f, "world", None))
+        n += 1
+    return n
+
+
 def solve_frames(S, frames, stance=None, step=1, log=print, label="", prev=None):
     """prev: the solution just before these frames (continuing a longer stretch)."""
     t0 = time.time()
@@ -106,7 +130,8 @@ def solve_frames(S, frames, stance=None, step=1, log=print, label="", prev=None)
         else:
             sols[i] = type(a)(blend(a.pose, b.pose, u), a.cost * (1 - u) + b.cost * u, a.terms,
                               {k: a.angles.get(k, 0) * (1 - u) + b.angles.get(k, 0) * u for k in a.angles}, a.v)
-    log(f"{label}{len(frames)} frames ({len(keyset)} solved) in {time.time() - t0:.1f} s")
+    fixed = _repair(S, frames, sols, stance) if step > 1 else 0
+    log(f"{label}{len(frames)} frames ({len(keyset)} solved, {fixed} repaired) in {time.time() - t0:.1f} s")
     return sols
 
 

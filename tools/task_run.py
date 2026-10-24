@@ -144,7 +144,8 @@ def _worse(new, sol, k=1.25, add=2.0):
 def join_fast(T, a, prev, own, blend_n=12):
     """A preview join, no search: the piece's own trunk (eased in from the frame before over blend_n frames), its
     arms rebuilt carrying on from the frame before - the elbow branch flows on across the join. Stops where the
-    rebuilt frame is the piece's own again (~5 ms a frame)."""
+    rebuilt frame is the piece's own again (~5 ms a frame). Returns (frames, settled): not settled = it never met
+    the piece's own pose, or carrying on would wind the forearm up (handing over there is a snap)."""
     out = []
     for j, sol in enumerate(own):
         f = T.frames[a + j]
@@ -155,12 +156,13 @@ def join_fast(T, a, prev, own, blend_n=12):
         u = min(1.0, (j + 1) / (blend_n + 1))
         new = T.S.at(prev.v * (1 - u) + sol.v * u, f.targets, look=f.look, stance=f.stance, prev=prev,
                      swing=f.swing, base=f.base, world=getattr(f, "world", None))
-        if u >= 1.0 and (_apart(new, sol) < 1.0                       # back on the piece's own branch: keep the rest
-                         or _worse(new, sol)):                          # (or the carried-on arm winds up: its own)
-            return out + list(own[j:])
+        if u >= 1.0 and _apart(new, sol) < 1.0:                      # back on the piece's own branch: keep the rest
+            return out + list(own[j:]), True
+        if u >= 1.0 and _worse(new, sol):                            # the carried-on arm winds up
+            return out + list(own[j:]), False
         out.append(new)
         prev = new
-    return out
+    return out, False
 
 
 def solve_set(pool, k, T, say, size, step, cache=None, p0=0.05, p1=0.75):
@@ -196,17 +198,23 @@ def solve_set(pool, k, T, say, size, step, cache=None, p0=0.05, p1=0.75):
     # two reused steps side by side were joined when they were cached
     say("joining the pieces", progress=p1)
     idx = [i for i in range(1, len(segs)) if not (segs[i][2] and segs[i - 1][2])]
-    if step > 1:                                                     # preview: cheap joins, in order, here
+    if step > 1:                                                     # preview: cheap joins, in order, here;
+        hard = []                                                    # the ones that don't settle: solved (below)
         for i in idx:
             a, b, _ = segs[i]
-            sols[a:b + 1] = join_fast(T, a, sols[a - 1], sols[a:b + 1])
-        idx = []
+            fix, ok = join_fast(T, a, sols[a - 1], sols[a:b + 1])
+            if ok:
+                sols[a:b + 1] = fix
+            else:
+                hard.append(i)
+        idx = hard
     own = {i: sols[segs[i][0]:segs[i][1] + 1] for i in idx}
     at = {segs[i][0]: i for i in idx}
     ran = {}
-    for a, s in pool.imap_unordered(_join, [(k, segs[i][0], sols[segs[i][0] - 1], own[i], step) for i in idx]):
+    cap = None if step == 1 else 48                                 # (a preview's hard joins: up to 2 s each)
+    for a, s in pool.imap_unordered(_join, [(k, segs[i][0], sols[segs[i][0] - 1], own[i][:cap], step) for i in idx]):
         sols[a:a + len(s)] = s
-        ran[at[a]] = len(s) == len(own[at[a]])
+        ran[at[a]] = cap is None and len(s) == len(own[at[a]])
     # a join that ran through its whole piece changed that piece's last frame: the next join started from the
     # old one (a wrong-branch arm carried on) - redo it from the new end, in order
     for i in range(2, len(segs)):
@@ -220,6 +228,35 @@ def solve_set(pool, k, T, say, size, step, cache=None, p0=0.05, p1=0.75):
         for a, b, h in hashes:
             cache[h] = sols[a:b + 1]
     return sols
+
+
+def depop(sols, over=60.0, k=6):
+    """Last resort for a snap (a body joint turning more than `over` deg in one frame - the elbow jumping to its
+    other side where continuity broke): the k frames each side become an eased blend between the poses around it,
+    so the arm swings across as a person's would (the hand can leave the work for that half second)."""
+    from frt_core.people.bake import blend
+    from frt_core.people.check import _family, rot_angle
+    from frt_core.people.motion_gen import ease
+    n = len(sols)
+    joints = [j for j in sols[0].pose.rot if j != "root" and _family(j) not in ("finger", "thumb", "thumb_01")]
+
+    out, cnt, i = list(sols), 0, 1
+
+    def jump(i):
+        p, q = out[i].pose, out[i - 1].pose
+        return max(rot_angle(q.local(j).T @ p.local(j)) for j in joints)
+    while i < n:
+        if out[i] is out[i - 1] or jump(i) <= over:
+            i += 1
+            continue
+        a, b = max(0, i - 1 - k), min(n - 1, i + k)
+        A, B = out[a], out[b]
+        for j in range(a + 1, b):
+            u = ease((j - a) / (b - a))
+            out[j] = type(A)(blend(A.pose, B.pose, u), A.cost, A.terms, A.angles, A.v)
+        cnt += 1
+        i = b + 1
+    return out, cnt
 
 
 def _badness(iss):
@@ -360,6 +397,9 @@ def main():
     os.replace(cpath + ".tmp", cpath)
     if os.environ.get("FRT_DUMP_SOLS"):                             # (debugging: the solved poses, before smoothing)
         pickle.dump({"sols": sols, "rngs": rngs}, open(os.environ["FRT_DUMP_SOLS"], "wb"))
+    sols, npop = depop(sols)
+    if npop:
+        say(f"{npop} snaps eased", progress=0.81)
     sols = T.smooth_solutions(sols)
     say("checking", progress=0.82)
     import numpy as np
