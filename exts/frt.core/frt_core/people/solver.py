@@ -426,7 +426,8 @@ class PostureSolver:
                 if np.linalg.norm(ps) > 1e-3:
                     ps = unit(ps)
                     ang = math.degrees(math.atan2(float(np.dot(np.cross(base_pole, ps), u)), float(np.dot(base_pole, ps))))
-                    near.append(ang * sx)
+                    if abs(ang * sx - p0) > 4.0:                # (only when it differs: half the work otherwise)
+                        near.append(ang * sx)
             cands = tuple(sorted({max(-90.0, min(90.0, c + d)) for c in near for d in (-12.0, -6.0, -3.0, 0.0, 3.0, 6.0, 12.0)}))
         for sw in cands:
             pole = axis_angle(u, math.radians(sw * sx)) @ base_pole

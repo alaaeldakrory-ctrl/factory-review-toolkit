@@ -68,12 +68,25 @@ def tool_from_hand(tool, hand_target):
 
 
 def lerp_T(A, B, u):
-    """Blend two rigid transforms (positions linearly, rotations by normalised matrix lerp + re-orthogonalise)."""
+    """Blend two rigid transforms: positions linearly, rotations by turning steadily about the one axis between them
+    (a matrix lerp + re-orthogonalise flips suddenly for turns past ~90 deg - a tool put away spun in a frame)."""
     M = np.eye(4)
     M[:3, 3] = A[:3, 3] * (1 - u) + B[:3, 3] * u
-    R = A[:3, :3] * (1 - u) + B[:3, :3] * u
-    U, _, Vt = np.linalg.svd(R)
-    M[:3, :3] = U @ Vt
+    Ra, Rb = A[:3, :3], B[:3, :3]
+    D = Ra.T @ Rb
+    c = max(-1.0, min(1.0, (np.trace(D) - 1.0) / 2.0))
+    th = math.acos(c)
+    if th < 1e-6:
+        M[:3, :3] = Ra
+        return M
+    w = np.array([D[2, 1] - D[1, 2], D[0, 2] - D[2, 0], D[1, 0] - D[0, 1]])
+    if np.linalg.norm(w) < 1e-6:                          # (half a turn: the axis from the symmetric part)
+        k = int(np.argmax(np.diag(D)))
+        w = (D[:, k] + np.eye(3)[:, k])
+    ax = w / np.linalg.norm(w)
+    K_ = np.array([[0, -ax[2], ax[1]], [ax[2], 0, -ax[0]], [-ax[1], ax[0], 0]])
+    a = th * u
+    M[:3, :3] = Ra @ (np.eye(3) + math.sin(a) * K_ + (1 - math.cos(a)) * K_ @ K_)
     return M
 
 

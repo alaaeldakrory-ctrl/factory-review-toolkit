@@ -438,16 +438,21 @@ class Task:
             f.world = _rootT(f.root)
         return self
 
-    def _path_guard(self, side, t):
+    def _path_guard(self, side, t, w=1.0):
         """A hand on its way between keys keeps clear of its own shoulder: interpolated paths can pass right by it
         (a tray at the side to the work in front, kneeling), which folds the arm shut - real hands swing round."""
         sh = self._shoulders_kneel[side] if self.kneeling else self.sk.world[f"upperarm_{side}"]
         v = np.asarray(t.point, float) - sh
         d = float(np.linalg.norm(v))
-        m = 0.55 * (self.sk.length(f"upperarm_{side}", f"lowerarm_{side}") + self.sk.length(f"lowerarm_{side}", f"hand_{side}"))
-        if d >= m or d < 1e-6:
+        m = 0.7 * (self.sk.length(f"upperarm_{side}", f"lowerarm_{side}") + self.sk.length(f"lowerarm_{side}", f"hand_{side}"))
+        if d >= m:
             return t
-        return moved(t, v / d * (m - d))
+        # push forward (and a little out to its side) by just enough: a smooth bow in front of the shoulder, where
+        # pushing straight away from it would swing round as the path passes close by
+        F = K.unit(np.array([0.25 if side == "l" else -0.25, 0.0, 1.0]))
+        vf = float(np.dot(v, F))
+        k = -vf + math.sqrt(max(0.0, vf * vf - (d * d - m * m)))
+        return moved(t, F * k * w)
 
     def _compile_steps(self, log):
         for k, step in enumerate(self.data.get("step", [])):

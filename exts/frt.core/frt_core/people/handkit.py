@@ -157,6 +157,20 @@ def squat_stance(sk, depth=0.55, width=None, heels_up=12.0):
 PATH_GUARD = None          # optional (side, HandTarget) -> HandTarget applied to every keyed hand (see tasks.Task)
 
 
+def _between(keys, t, pos):
+    """0 at keys, 1 halfway between two that are well apart (a real move, > 10 cm): how much a path correction may
+    move a hand there - never the contact points themselves, no jump where a segment starts, nothing while working
+    in place. pos: value -> point."""
+    for (t0, a), (t1, b) in zip(keys, keys[1:]):
+        if t0 <= t <= t1:
+            if t1 <= t0 or a is None or b is None:
+                return 0.0
+            if float(np.linalg.norm(np.asarray(pos(b), float) - np.asarray(pos(a), float))) < 10.0:
+                return 0.0
+            return min(1.0, 3.0 * math.sin(math.pi * (t - t0) / (t1 - t0)))     # full soon after leaving a key
+    return 0.0
+
+
 def keyed(duration, hands=None, tools=None, parts=None, look=None, label="work", stance=None):
     """Frames from keyframe tracks.
 
@@ -172,6 +186,19 @@ def keyed(duration, hands=None, tools=None, parts=None, look=None, label="work",
     for i in range(n):
         t = i / FPS
         Td = {name: _interp(keys, t, "T") for name, (key, keys) in tools.items()}
+        if PATH_GUARD is not None:                  # a hand carrying a tool: the tool's path keeps clear (hand follows)
+            for side, keys in hands.items():
+                tk_ = next(iter(tools.values()))[1] if tools else None
+                w = _between(tk_, t, lambda T: T[:3, 3]) if tk_ else 0.0          # (the tool moving)
+                if w > 0.0 and any(callable(kv) for _, kv in keys) and Td:
+                    ev = [(tk, v(Td) if callable(v) else v) for tk, v in keys]
+                    v = _interp(ev, t, "hand")
+                    if v is not None:
+                        d = np.asarray(PATH_GUARD(side, v, w).point, float) - np.asarray(v.point, float)
+                        if float(np.linalg.norm(d)) > 1e-6:
+                            for name in Td:
+                                Td[name] = Td[name].copy()
+                                Td[name][:3, 3] += d
         tl = {name: (key, Td[name]) for name, (key, keys) in tools.items()}
         for name, (spec, keys) in parts.items():
             tl[name] = (spec, _interp(keys, t, "T"))
@@ -179,8 +206,10 @@ def keyed(duration, hands=None, tools=None, parts=None, look=None, label="work",
         for side, keys in hands.items():
             ev = [(tk, v(Td) if callable(v) else v) for tk, v in keys]
             v = _interp(ev, t, "hand")
-            if v is not None and PATH_GUARD is not None:
-                v = PATH_GUARD(side, v)
+            if v is not None and PATH_GUARD is not None and not any(callable(kv) for _, kv in keys):
+                w = _between(keys, t, lambda h: h.point)
+                if w > 0.0:
+                    v = PATH_GUARD(side, v, w)
             if v is not None:
                 tg.append(v)
         if isinstance(look, list):
