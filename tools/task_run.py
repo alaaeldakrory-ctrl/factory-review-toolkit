@@ -94,6 +94,9 @@ def main():
         sols[lo + 1:hi] = fix
     sols = T.smooth_solutions(sols)
     say("checking", progress=0.82)
+    import numpy as np
+
+    from frt_core.people.bake import _rootT
     from frt_core.people.check import check_frames
     rep = check_frames(T.sk, T.frames, sols, name)
     say("baking the scene", progress=0.86)
@@ -109,8 +112,14 @@ def main():
         for i in iss:
             cnt[i[1]] = cnt.get(i[1], 0) + 1
         sc = [scores[i] for i in range(a, b + 1) if i < len(scores) and scores[i] is not None]
+        foc = [_rootT(T.frames[i].root)[:3, :3] @ np.asarray(T.frames[i].look, float) + _rootT(T.frames[i].root)[:3, 3]
+               for i in range(a, b + 1) if T.frames[i].look is not None and T.frames[i].base is None]
         steps.append({**s, "seconds": round((b - a + 1) / 24.0, 1), "checks": cnt,
+                      "focus": [round(float(v), 1) for v in np.median(foc, axis=0)] if foc else None,
                       "rula_max": max(sc) if sc else None, "rula_mean": round(sum(sc) / len(sc), 2) if sc else None,
+                      "by_joint": {f"{k[0]} {k[1]}": v for k, v in
+                                   sorted(__import__("collections").Counter((i[1], i[2]) for i in iss).items(),
+                                          key=lambda kv: -kv[1])},
                       "issues": [list(i) for i in iss[:12]]})
     res = {"task": T.name, "file": path, "usd": usd, "frames": n, "fps": 24, "steps": steps,
            "counts": rep["counts"], "notes": T.notes, "solve_s": round(time.time() - t0, 1)}

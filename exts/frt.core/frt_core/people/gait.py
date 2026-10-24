@@ -111,20 +111,31 @@ _CLAV = {}
 
 
 def clavicle_cal(sk, cy):
-    """Collarbones of the walk clip relative to its own neutral (the cycle mean), for skeletons whose collarbone
-    rest shape differs a lot from the captured person's (real character rigs: up to 40 deg otherwise). Skeletons
-    close to the capture (the frt bodies) get none, so their walks stay exactly as captured."""
+    """Collarbones (and, when far off, the lower spine) of the walk clip relative to its own neutral (the cycle
+    mean), for skeletons whose rest shape differs a lot from the captured person's (real character rigs: up to
+    40 deg at the collarbones; the small female body: 50 deg at the lower back). Skeletons close to the capture
+    get none, so their walks stay exactly as captured."""
     from . import mocap as MC
     key = (id(sk), id(cy))
     if key not in _CLAV:
         mean = {q: np.mean([cy.local[i][q] for i in range(cy.n)], axis=0) for q in cy.local[0]}
         pose, Rw = MC.retarget(sk, mean, world=True)
         cal = {}
+
+        def off(j):
+            return math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(pose.local(j)) - 1.0) / 2.0))))
         for s in ("l", "r"):
             j = f"clavicle_{s}"
-            ang = math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(pose.local(j)) - 1.0) / 2.0))))
-            if ang > 12.0:
+            if off(j) > 12.0:
                 cal[j] = Rw["spine_03"].T @ Rw[j]           # R @ cal.T: the neutral collarbone follows the chest
+        # trunk: a body whose lower back is curved much more than the captured person's (the small female body)
+        # walks with its own curve instead of being bent 50 deg to the capture's - only when the mismatch is large
+        trunk = ("spine_01", "spine_02", "spine_03")
+        if any(off(j) > 30.0 for j in trunk):
+            # every joint above the pelvis keeps its neutral relative to the pelvis (R @ cal.T: the neutral trunk,
+            # neck, head and collarbones then sit in this body's own rest shape over the captured hips)
+            for j in trunk + ("neck_01", "head", "clavicle_l", "clavicle_r"):
+                cal[j] = Rw["pelvis"].T @ Rw[j]
         _CLAV[key] = cal
     return _CLAV[key]
 

@@ -1,0 +1,26 @@
+[task]
+name = "Scissor chassis: battery terminals, connectors, harness ties"
+scene = "awp_scene.toml"
+worker = "C:/Nvidia_Assets/Characters_NVD/Assets/Characters/Reallusion/ActorCore/Uniform_M_0001/uniform_m_0001.usd"
+start = [0, -40, 0]
+
+[[step]]
+do = "hand_start"
+what = "nut"
+from = "nut_bin_s"
+on = "chassis.studs"
+brace = "chassis.rest"
+
+[[step]]
+do = "fasten"
+tool = "ratchet_s"
+on = "chassis.studs"
+brace = "chassis.rest"
+
+[[step]]
+do = "connect"
+on = "chassis.sockets"
+
+[[step]]
+do = "cable_tie"
+on = "chassis.ties"

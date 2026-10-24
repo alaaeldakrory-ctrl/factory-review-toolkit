@@ -1,0 +1,202 @@
+# Validation scene: three AWP assembly stations (generic shapes, no real drawings).
+#   x = 0    scissor lift chassis: battery terminals low on top (y 40), connectors + harness on the front face (y 22-30)
+#   x = 400  telehandler wheel hub: 5 lug studs facing the worker (hub centre y 62)
+#   x = 800  boom lift platform control box: 4 cover screws + 2 connectors on its face (y 109-131)
+#   x = 690  boom jib bracket overhead: 2 studs pointing down (y 172)
+# Each station has its own cart with the parts bin and tools (shadow-board style).
+
+[[spot]]
+id = "chassis"
+at = [0, 55]
+yaw = 0
+
+[[spot]]
+id = "wheel"
+at = [400, 75]
+yaw = 0
+
+[[spot]]
+id = "control_box"
+at = [800, 50]
+yaw = 0
+
+[[spot]]
+id = "jib"
+at = [690, 90]
+yaw = 0
+
+# ------------------------------------------------------------------ scissor lift chassis
+[[asset]]
+id = "chassis"
+kind = "fixture"
+at = [0, 0, 110]
+size = [80, 40, 50]
+look = "powder_dark"
+spot = "chassis"
+[asset.points]
+studs = [[-12, 40, -18], [12, 40, -18], [-12, 40, -7], [12, 40, -7]]   # battery terminals (top)
+sockets = [[-20, 30, -25.2], [2, 30, -25.2]]                          # front face, facing the worker
+sockets_axis = [0, 0, -1]
+harness = [[-36, 22, -26.5], [0, 21, -26.5], [36, 22, -26.5]]
+ties = [[-16, 21.5, -26.5], [16, 21.5, -26.5]]
+ties_dir = [1, 0, 0]
+rest = [30, 40, -15]                                                  # where the free hand rests
+
+[[asset]]
+id = "cart_s"
+kind = "cart"
+at = [-62, 0, 75]
+size = [36, 78, 30]
+
+[[asset]]
+id = "nut_bin_s"
+kind = "bin"
+at = [-62, 78, 66]
+size = [20, 11, 20]
+holds = "nut"
+count = 6
+spot = "chassis"
+[asset.points]
+grab = [0, 2.0, 2.0]
+
+[[asset]]
+id = "ratchet_s"
+kind = "tool"
+tool = "ratchet_38"
+at = [-62, 79.2, 84]
+x_axis = [1, 0, 0]
+y_axis = [0, 1, 0]
+spot = "chassis"
+
+# ------------------------------------------------------------------ telehandler wheel hub
+[[asset]]
+id = "wheel"
+kind = "wheel"
+at = [400, 62, 120]
+radius = 55
+axis = [0, 0, -1]
+spot = "wheel"
+[asset.points]
+studs = [[11, 0, -0.2], [3.4, 10.46, -0.2], [-8.9, 6.47, -0.2], [-8.9, -6.47, -0.2], [3.4, -10.46, -0.2]]
+studs_axis = [0, 0, -1]
+rest = [30, 25, -6]
+
+[[asset]]
+id = "cart_t"
+kind = "cart"
+at = [338, 0, 95]
+size = [36, 78, 30]
+
+[[asset]]
+id = "nut_bin_t"
+kind = "bin"
+at = [338, 78, 86]
+size = [20, 11, 20]
+holds = "nut"
+count = 6
+spot = "wheel"
+[asset.points]
+grab = [0, 2.0, 2.0]
+
+[[asset]]
+id = "ratchet_t"
+kind = "tool"
+tool = "ratchet_38"
+at = [338, 79.2, 104]
+x_axis = [1, 0, 0]
+y_axis = [0, 1, 0]
+spot = "wheel"
+
+# ------------------------------------------------------------------ boom lift: platform control box on a post
+[[asset]]
+id = "box_post"
+kind = "fixture"
+at = [800, 0, 98]
+size = [8, 105, 8]
+look = "powder_dark"
+
+[[asset]]
+id = "control_box"
+kind = "fixture"
+at = [800, 105, 90]
+size = [40, 30, 14]
+look = "powder_lightgrey"
+spot = "control_box"
+[asset.points]
+holes = [[-16, 26, -7.2], [16, 26, -7.2], [-16, 4, -7.2], [16, 4, -7.2]]   # cover screws on the face
+holes_axis = [0, 0, -1]
+sockets = [[-6, 13, -7.4], [6, 13, -7.4]]
+sockets_axis = [0, 0, -1]
+side = [22, 15, 0]                                                        # free hand on the box side
+side_axis = [1, 0, 0]
+
+[[asset]]
+id = "cart_b"
+kind = "cart"
+at = [745, 0, 70]
+size = [36, 78, 30]
+
+[[asset]]
+id = "screw_bin_b"
+kind = "bin"
+at = [745, 78, 62]
+size = [20, 11, 20]
+holds = "screw"
+count = 6
+spot = "control_box"
+[asset.points]
+grab = [0, 2.2, 2.0]
+
+[[asset]]
+id = "screwdriver_b"
+kind = "tool"
+tool = "screwdriver"
+at = [733, 77.6, 80]
+x_axis = [0, 0, -1]
+y_axis = [1, 0, 0]
+spot = "control_box"
+
+# ------------------------------------------------------------------ boom lift: jib bracket overhead
+[[asset]]
+id = "jib_post"
+kind = "fixture"
+at = [722, 0, 112]
+size = [8, 172, 8]
+look = "powder_dark"
+
+[[asset]]
+id = "jib"
+kind = "fixture"
+at = [690, 172, 112]
+size = [70, 12, 24]
+look = "powder_lightgrey"
+spot = "jib"
+[asset.points]
+studs = [[-10, 0, -5], [10, 0, -5]]                                  # pointing down, worked from below
+studs_axis = [0, -1, 0]
+
+[[asset]]
+id = "cart_j"
+kind = "cart"
+at = [635, 0, 85]
+size = [36, 78, 30]
+
+[[asset]]
+id = "nut_bin_j"
+kind = "bin"
+at = [635, 78, 78]
+size = [20, 11, 20]
+holds = "nut"
+count = 4
+spot = "jib"
+[asset.points]
+grab = [0, 2.0, 2.0]
+
+[[asset]]
+id = "ratchet_j"
+kind = "tool"
+tool = "ratchet_38"
+at = [635, 79.2, 96]
+x_axis = [1, 0, 0]
+y_axis = [0, 1, 0]
+spot = "jib"

@@ -86,6 +86,21 @@ def moved(t, d):
     return HandTarget(t.side, tuple(np.asarray(t.point) + np.asarray(d, float)), t.fingers, t.palm, t.grip, t.weight)
 
 
+def perp(v, n):
+    v = np.asarray(v, float)
+    n = K.unit(n)
+    return v - n * np.dot(v, n)
+
+
+def R_up(n):
+    """Rotation taking +Y to n (and +X to the nearest direction across it): a part / tool frame on a surface whose
+    outward normal is n (n = +Y: identity)."""
+    n = K.unit(n)
+    ref = X if abs(n[0]) < 0.9 else Z
+    e1 = K.unit(perp(ref, n))
+    return np.column_stack([e1, n, np.cross(e1, n)])
+
+
 def target_of(f, side):
     return next((t for t in f.targets if t.side == side), None)
 
@@ -201,6 +216,8 @@ def build_asset(s, a):
             q = at + np.asarray(p, float)
             s.cylinder(tuple(q - Y * 0.1), tuple(q + Y * 2.4), 0.45, "steel_machined", sides=12)
             s.cylinder(tuple(q - Y * 0.1), tuple(q + Y * 0.4), 1.6, "galvanised", sides=16)   # terminal pad
+    elif k in ("fixture", "wheel"):
+        _fixture(s, a)
     elif k == "cabinet":                                                 # wall cabinet on a stand, door is a part
         w, h, d = size
         y0 = at[1]
@@ -211,6 +228,58 @@ def build_asset(s, a):
             s.rprism((at[0] + x, 0.0, z0 + d / 2), (at[0] + x, y0, z0 + d / 2), 4.0, 4.0, 0.5, "powder_dark",
                      up=(1, 0, 0))
         s.rbox((at[0] + w / 2, 1.0, z0 + d / 2), (w + 10.0, 2.0, d + 20.0), 0.4, "powder_dark", seg=1)
+
+
+def _features(s, a, T):
+    """Draw an asset's tagged work features by their names: studs*, holes*, sockets*, harness* (a cable through
+    its points), ties* (nothing: they go on the harness). Each tag can have '<name>_axis' (the outward normal)."""
+    pts = a.get("points", {})
+    for name, P in pts.items():
+        if name.endswith(("_axis", "_dir")):
+            continue
+        P = [P] if not isinstance(P[0], (list, tuple)) else P
+        W = [T[:3, :3] @ np.asarray(p, float) + T[:3, 3] for p in P]
+        n = K.unit(T[:3, :3] @ np.asarray(pts.get(f"{name}_axis", (0, 1, 0)), float))
+        Rn = R_up(n)
+        if name.startswith("studs"):
+            for q in W:
+                s.cylinder(tuple(q - n * 0.1), tuple(q + n * 2.6), 0.55, "steel_machined", sides=12)
+                s.cylinder(tuple(q - n * 0.2), tuple(q + n * 0.3), 1.7, "galvanised", sides=16)
+        elif name.startswith("holes"):
+            for q in W:
+                s.cylinder(tuple(q - n * 0.3), tuple(q + n * 0.05), 0.75, "powder_black", sides=12)
+        elif name.startswith("sockets"):
+            for q in W:
+                s.obox(tuple(q - n * 1.2), (3.2, 2.4, 2.2), [Rn[:, 0], n, Rn[:, 2]], "plastic_black")
+        elif name.startswith("harness") and len(W) >= 2:
+            s.sweep([tuple(q) for q in W], 0.9, "cable_pvc", sides=10)
+
+
+def _fixture(s, a):
+    """A generic piece of the machine: a block (chassis rail, battery tray, platform, control box...) or a wheel,
+    optionally on legs / a stand, with its tagged features drawn."""
+    at = np.asarray(a["at"], float)
+    T = T_pos(at, Ry(float(a.get("yaw", 0.0))))
+    look = a.get("look", "powder_dark")
+    if a["kind"] == "wheel":
+        n = K.unit(T[:3, :3] @ np.asarray(a.get("axis", (0, 0, -1)), float))
+        R0 = float(a.get("radius", 30.0))
+        s.torus(tuple(at - n * 4.0), tuple(n), R0 - 6.0, 6.5, "rubber_black", seg=36, sides=12)
+        s.cylinder(tuple(at - n * 9.0), tuple(at + n * 0.2), R0 - 11.0, "powder_lightgrey", sides=32)
+        s.cylinder(tuple(at - n * 30.0), tuple(at - n * 8.0), 9.0, "steel_dark", sides=20)       # axle housing
+        if a.get("stand", True):
+            s.rbox((at[0], (at[1] - R0 + 2) / 2, at[2] + 26.0 * (1 if n[2] < 0 else -1)), (20.0, at[1] - R0 + 2, 20.0),
+                   0.5, "powder_dark", seg=1)
+    else:
+        w, h, d = a["size"]
+        c = T[:3, :3] @ np.array([0.0, h / 2, 0.0]) + at
+        s.obox(tuple(c), (w, h, d), [T[:3, 0], T[:3, 1], T[:3, 2]], look)
+        if a.get("legs"):
+            for sx in (-1, 1):
+                for sz in (-1, 1):
+                    q = T[:3, :3] @ np.array([sx * (w / 2 - 4), 0.0, sz * (d / 2 - 4)]) + at
+                    s.rprism((q[0], 0.0, q[2]), tuple(q), 5.0, 5.0, 0.6, "powder_dark", up=(1, 0, 0))
+    _features(s, a, T)
 
 
 # ---------------------------------------------------------------------------------------------- the compiler
@@ -268,6 +337,15 @@ class Task:
             raise KeyError(f"asset {aid!r} has no point {name!r} (tags: {list(self.assets[aid].get('points', {}))})")
         pts = [pts] if not isinstance(pts[0], (list, tuple)) else pts
         return [T[:3, :3] @ np.asarray(p, float) + T[:3, 3] for p in pts]
+
+    def axis_of(self, ref):
+        """Outward normal of a tagged surface: '<asset>.<name>' looks for the tag '<name>_axis' (asset frame);
+        without one the work faces up (+Y)."""
+        aid, _, name = ref.partition(".")
+        a = self.assets.get(aid, {}).get("points", {}).get(f"{name}_axis")
+        if a is None:
+            return Y.copy()
+        return K.unit(self.asset_T(aid)[:3, :3] @ np.asarray(a, float))
 
     def spot_of(self, step, aid):
         if "at" in step:
@@ -337,6 +415,9 @@ class Task:
         self.frames = []
         self.steps = []
         self.carrying = None
+        self.kneeling = None                     # (spot, stance) while the worker is down on one knee
+        self._want_kneel = False
+        self.rest_stand = self.rest
         for k, step in enumerate(self.data.get("step", [])):
             sid = step.get("id", f"{k + 1:02d}_{step['do']}")
             fn = getattr(self, "do_" + step["do"], None)
@@ -344,6 +425,9 @@ class Task:
                 raise ValueError(f"step {sid}: unknown verb {step['do']!r}")
             a0 = len(self.frames)
             try:
+                self._want_kneel = self.wants_kneel(step)
+                if self.kneeling and not self._want_kneel:
+                    self.stand_up(sid)
                 fn(step, sid)
             except KeyError as e:                                    # a missing field or an unknown name
                 msg = e.args[0] if e.args else e
@@ -355,13 +439,105 @@ class Task:
             self.steps.append({"id": sid, "do": step["do"], "text": step.get("text", ""), "start": a0,
                                "end": len(self.frames) - 1, "phases": self._phases(a0)})
             log(f"  {sid:24s} {step['do']:10s} {a0:5d}-{len(self.frames) - 1:5d}  ({(len(self.frames) - a0) / FPS:4.1f} s)")
+        self.stand_up("end")
         self._add(idle(0.8), self.at, "end:stand")
         self._seams()
         return self
 
-    def _phases(self, a0):
+    # ------------------------------------------------------------------ posture: kneel for low work
+    KNEEL_BELOW = 0.30                           # work below this x stature -> down on one knee
+
+    def wants_kneel(self, step):
+        """posture = "kneel" / "stand" / "auto" (default): auto kneels when the step's work points are low."""
+        mode = step.get("posture", "auto")
+        if mode != "auto":
+            return mode == "kneel"
+        refs = [step[k] for k in ("on",) if k in step]
+        ys = [float(p[1]) for ref in refs for p in self.points(ref)]
+        return bool(ys) and min(ys) < self.KNEEL_BELOW * self.w.stature
+
+    def rest_for(self, stance):
+        """Hands at ease for a stance (kneeling: lower, with the body)."""
+        sol = self.S.solve([], look=None, stance=stance)
+        from .kinematics import fk
+        R, P = fk(self.sk, sol.pose)
+        out = {}
+        for s_, sx in (("l", 1.0), ("r", -1.0)):
+            Rh = R[f"hand_{s_}"]
+            fingers = Rh @ np.array([sx, 0.0, 0.0])
+            palm = Rh @ np.array([0.0, -1.0, 0.0])
+            pt = P[f"hand_{s_}"] + fingers * self.S.hand_len * 0.40 + palm * 1.6 + np.array([0.0, 7.0, 6.0])
+            out[s_] = HandTarget(s_, tuple(pt), tuple(fingers), tuple(palm), "relaxed", 0.3)
+        return out
+
+    def _stance_between(self, a, b, u, front="l"):
+        """Standing -> kneeling at u in 0..1: the front foot steps forward first, then the back foot goes back,
+        toes tucked, as the pelvis lowers."""
+        from .solver import Stance
+        back = "r" if front == "l" else "l"
+        o = Stance(yaw=a.yaw)
+        uf = ease(min(1.0, u / 0.45))
+        ub = ease(max(0.0, (u - 0.35) / 0.65))
+        for s_, uu, arc in ((front, uf, 6.0 * math.sin(math.pi * uf)), (back, ub, 3.0 * math.sin(math.pi * ub))):
+            pa = np.asarray(getattr(a, "left" if s_ == "l" else "right"), float)
+            pb = np.asarray(getattr(b, "left" if s_ == "l" else "right"), float)
+            setattr(o, "left" if s_ == "l" else "right", tuple(pa * (1 - uu) + pb * uu + np.array([0.0, arc, 0.0])))
+        setattr(o, f"lift_{front}", -10.0 * math.sin(math.pi * uf))
+        setattr(o, f"lift_{back}", getattr(b, f"lift_{back}") * ub)
+        o.drop = (b.drop or 0.0) * ease(max(0.0, (u - 0.3) / 0.7))
+        o.hinge = b.hinge if u > 0.5 else None
+        return o
+
+    def _transition(self, sid, down):
+        st = self.kneeling[1]
+        s0 = self.S.default_stance()
+        R0, R1 = self.rest_stand, self.rest_kneel
+        n = int(1.3 * FPS)
+        for k in range(n):
+            u = (k + 1) / (n + 1)
+            u = u if down else 1.0 - u
+            hands = [lerp_target(R0[s_], R1[s_], ease(u)) for s_ in ("l", "r")]
+            self.frames.append(Frame(hands, None, {}, root=self.at, stance=self._stance_between(s0, st, u),
+                                     label=f"{sid}:{'kneel down' if down else 'stand up'}"))
+
+    def kneel(self, sid, step):
+        if self.kneeling:
+            return
+        from .handkit import kneel_stance
+        st = kneel_stance(self.sk, "r", forward=float(step.get("kneel_forward", 24.0)), width=6.0)
+        self.kneeling = (self.at, st)
+        self.rest_kneel = self.rest_for(st)
+        self._transition(sid, True)
+        self.rest = self.rest_kneel
+
+    def generator_posture(self):
+        """For the library generators that work out their own rest pose from the solver's default stance: while
+        kneeling that default is the kneel, so their reaches start and end at the kneeling hands."""
+        import contextlib
+
+        @contextlib.contextmanager
+        def cm():
+            if not self.kneeling:
+                yield
+                return
+            st = self.kneeling[1]
+            self.S.default_stance = lambda *a, **k: st
+            try:
+                yield
+            finally:
+                del self.S.default_stance
+        return cm()
+
+    def stand_up(self, sid):
+        if not self.kneeling:
+            return
+        self._transition(sid, False)
+        self.kneeling = None
+        self.rest = self.rest_stand
+
+    def _phases(self, a0, b=None):
         out = []
-        for i in range(a0, len(self.frames)):
+        for i in range(a0, (b + 1) if b is not None else len(self.frames)):
             lab = self.frames[i].label.split(":", 1)[-1]
             if not out or out[-1][0] != lab:
                 out.append([lab, i, i])
@@ -374,6 +550,8 @@ class Task:
         for f in frames:
             if f.root is None:
                 f.root = spot
+            if self.kneeling and f.stance is None:
+                f.stance = self.kneeling[1]
             f.label = f"{label.split(':')[0]}:{f.label or label.split(':')[-1]}"
         self.frames.extend(frames)
 
@@ -399,7 +577,10 @@ class Task:
     def go(self, spot, sid, carry=None, parts=None):
         """Walk (or turn) to a spot if the worker is not there yet."""
         if math.dist(self.at[:2], spot[:2]) < 5.0 and abs(((spot[2] - self.at[2]) + 180) % 360 - 180) < 5:
+            if self._want_kneel:
+                self.kneel(sid, {})
             return
+        self.stand_up(sid)
         fr = walk(self.w, self.sk, [self.at[:2], spot[:2]], self.at[2], spot[2], carry=carry)
         for f in fr:
             f.label = f"{sid}:walk"
@@ -407,6 +588,8 @@ class Task:
                 self.set_part(f, pid, T)
         self.frames.extend(fr)
         self.at = spot
+        if self._want_kneel:
+            self.kneel(sid, {})
 
     # ------------------------------------------------------------------ verbs
     def take_free(self, kind, home, n):
@@ -530,7 +713,7 @@ class Task:
             return None
         b = self.loc(spot, self.points(step["brace"])[0])
         side = "l"
-        return K.brace(self.sk, side, b, Y, weight=0.6)
+        return K.brace(self.sk, side, b, self.locd(spot, self.axis_of(step["brace"])), weight=0.6)
 
     def do_hand_start(self, step, sid):
         """For each point: pick the part from where it lies (tray slot), bring it over the stud / hole, thread it
@@ -549,31 +732,40 @@ class Task:
         side = "r"
         br = self._brace_on(spot, step)
         rise = 0.9 if kind == "screw" else 0.6                          # how far above seated it is left
+        nrm = self.locd(spot, self.axis_of(step["on"]))                 # the surface faces this way (worker frame)
+        fw = perp(Z, nrm)
+        fw = K.unit(fw) if np.linalg.norm(fw) > 0.3 else -Y            # a wall facing the worker: come in from above
+        Rn = R_up(nrm)
         for k_ in range(n):
             q = pool[k_]
             P = self.loc(spot, on[k_])                                    # seat point (top of the surface / stud)
             T0 = self.L(spot) @ self.parts[q]["W"]
             p0 = T0[:3, 3]
             pin = K.pinch(self.sk, side, p0 + Y * 0.5, approach=(0.0, -0.8, 0.6), palm=(0, -1, 0.3))
-            top = P + Y * (rise + 1.2 + (0.35 if kind == "screw" else 0.25))
-            hold = K.pinch(self.sk, side, top + Y * 0.4, approach=(0.15, -0.6, 1.0), palm=(0, -1, 0.2))
+            top = P + nrm * (rise + 1.2 + (0.35 if kind == "screw" else 0.25))
+            if abs(nrm[1]) < 0.5:                       # a face towards the worker: fingertips in, palm down
+                hold = K.pinch(self.sk, side, top + nrm * 0.4, approach=-nrm * 1.0 - Y * 0.25 + X * 0.1,
+                               palm=(0.0, -1.0, 0.0))
+            else:                                       # up (or down, overhead): come in over / under it
+                hold = K.pinch(self.sk, side, top + nrm * 0.4, approach=-nrm * 0.6 + fw * 1.0 + X * 0.15,
+                               palm=-nrm + fw * 0.2)
             keys = [(0.0, R[side]), (0.75, with_grip(moved(pin, Y * 6), "open")), (1.0, pin), (1.2, pin),
-                    (1.5, moved(pin, Y * 8)), (2.2, moved(hold, Y * 3)), (2.45, hold)]
+                    (1.5, moved(pin, Y * 8)), (2.2, moved(hold, nrm * 3)), (2.45, hold)]
             t = 2.45
             twists = int(step.get("twists", 3))
             for _ in range(twists):
                 loose = "tripod"                    # fingers ease off for the regrip (a plain blend, no fling open)
-                keys += [(t + 0.4, rot_target(hold, Y, -55.0, top)), (t + 0.5, with_grip(rot_target(hold, Y, -55.0, top), loose)),
+                keys += [(t + 0.4, rot_target(hold, nrm, -55.0, top)),
+                         (t + 0.5, with_grip(rot_target(hold, nrm, -55.0, top), loose)),
                          (t + 0.65, hold)]
                 t += 0.65
-            keys += [(t + 0.2, with_grip(moved(hold, Y * 3), "open")), (t + 0.9, R[side])]
+            keys += [(t + 0.2, with_grip(moved(hold, nrm * 3), "open")), (t + 0.9, R[side])]
             dur = t + 0.95
             hands = {side: keys}
             if br is not None:
                 hands["l"] = [(0.0, R["l"]), (0.9, br), (t, br), (t + 0.8, R["l"])]
             fr = K.keyed(dur, hands=hands, look=[(0.0, p0), (1.3, p0), (1.9, P), (dur, P)], label="hand start")
-            Rk = np.eye(3) if kind == "nut" else np.eye(3)
-            Tseat = lambda h, ang: T_pos(P + Y * h, rot_axis(Y, ang) @ Rk)   # noqa: E731
+            Tseat = lambda h, ang: T_pos(P + nrm * h, rot_axis(nrm, ang) @ Rn)   # noqa: E731
             off = np.linalg.inv(_frame_of(pin)) @ T0
             off_h = None
             ph = [(0.9, "reach"), (1.2, "grasp"), (2.45, "move"), (t, "thread"), (99, "return")]
@@ -598,7 +790,7 @@ class Task:
                 self.set_part(f, q, T)
             self._add(fr, spot, sid)
             self.parts[q].update(home=f"{step['on']}#{k_}", seat=self.points(step["on"])[k_], parent=None,
-                                 rise=rise, angle=-55.0 * twists)
+                                 rise=rise, angle=-55.0 * twists, axis=self.axis_of(step["on"]))
             self.commit(q, spot, Tseat(rise, -55.0 * twists))
 
     def do_fasten(self, step, sid):
@@ -620,10 +812,13 @@ class Task:
         Ps = [self.loc(spot, p) for p in on]
         br = self._brace_on(spot, step)
         tk, hk, part_keys, look = [], [], [], []
+        nrm = self.locd(spot, self.axis_of(step["on"]))
+        Rn = R_up(nrm)
+        e1 = Rn[:, 0]
         if tool == "screwdriver":
             def T_work(P, h, ang):
-                x = rot_axis(-Y, ang) @ X
-                return K.T_at(P + Y * h, x, Y)                             # tip on the screw, handle straight up
+                x = rot_axis(-nrm, ang) @ e1
+                return K.T_at(P + nrm * h, x, nrm)                         # tip on the screw, handle out along it
 
             def rh(Td):
                 T = Td["t"]
@@ -632,8 +827,8 @@ class Task:
             strokes, per, step_ang = int(step.get("strokes", 5)), 0.75, 60.0
         else:                                                            # ratchet on the nuts
             def T_work(P, h, ang):
-                d = rot_axis(-Y, ang) @ K.unit(np.array([-1.0, 0.0, -0.45]))
-                return K.T_at(P + Y * (h + 2.0), d, Y)
+                d = rot_axis(-nrm, ang) @ K.unit(perp(np.array([-1.0, 0.0, -0.45]), nrm))
+                return K.T_at(P + nrm * (h + 2.0), d, nrm)
 
             def rh(Td):
                 T = Td["t"]
@@ -677,10 +872,10 @@ class Task:
                 if tool == "screwdriver":                                 # the hand rolls with the tool, loosens, rolls back
                     last = s_ == strokes - 1
                     hk += [(t + 0.08, h0 if s_ == 0 else with_grip(h0, "power:1.6")),
-                           (t + per * 0.62, with_grip(rot_target(h0, -Y, step_ang, P), "power:1.6")),
-                           (t + per * 0.72, with_grip(rot_target(h0, -Y, step_ang, P), "power:2.3" if not last else "power:1.6")),
+                           (t + per * 0.62, with_grip(rot_target(h0, -nrm, step_ang, P), "power:1.6")),
+                           (t + per * 0.72, with_grip(rot_target(h0, -nrm, step_ang, P), "power:2.3" if not last else "power:1.6")),
                            (t + per, with_grip(h0, "power:2.3" if not last else "power:1.6"))]
-                    h0 = moved(h0, -Y * rise / strokes)
+                    h0 = moved(h0, -nrm * rise / strokes)
                 else:
                     hk.append((t + per * 0.62, rh))
                 t += per
@@ -729,14 +924,14 @@ class Task:
                         if tt < pk[1]:
                             h_, ang_ = pk[3], pk[6] - step_ang
                             break
-                self.set_part(f, q, T_pos(P + Y * h_, rot_axis(Y, a0_ - ang_)))
+                self.set_part(f, q, T_pos(P + nrm * h_, rot_axis(nrm, a0_ - ang_) @ Rn))
         self._add(fr, spot, sid)
         self.commit(tid, spot, T_rest)
         for q in [s_ for s_ in seated if s_]:
             P = Ps[seated.index(q)]
             a_end = self.parts[q]["angle"] - step_ang * strokes
             self.parts[q].update(rise=0.0, angle=a_end, fastened=True)
-            self.commit(q, spot, T_pos(P, rot_axis(Y, a_end)))
+            self.commit(q, spot, T_pos(P, rot_axis(nrm, a_end) @ Rn))
 
     @staticmethod
     def _held_back(hk, tk, rh, T_first, t_end, t_back, held):
@@ -851,6 +1046,57 @@ class Task:
         self.parts[lat]["rel"] = rel @ T_pos(np.zeros(3), rot_axis(Z, -turn))
         self.commit(did, spot, Td)
 
+    def do_connect(self, step, sid):
+        """For each socket: bring the connector half up, push it home to the click, tug test, let go (it stays)."""
+        from .motion_more import connector
+        ref = step["on"]
+        aid = ref.split(".")[0]
+        spot = self.spot_of(step, aid)
+        self.go(spot, sid)
+        nrm = self.locd(spot, self.axis_of(ref))
+        for k_, p in enumerate(self.points(ref)[:int(step.get("count", 99))]):
+            P = self.loc(spot, p)
+            side = step.get("hand", "r" if P[0] <= 10 else "l")
+            with self.generator_posture():
+                fr = connector(self.S, P, -nrm, side)
+            # the free hand rests flat on the panel beside the socket (nothing to hold on a panel-mounted socket)
+            other = "l" if side == "r" else "r"
+            sx = 1.0 if other == "l" else -1.0
+            brace = K.brace(self.sk, other, P + np.array([sx * 12.0, 0.0, 0.0]) - nrm * 0.0, nrm, weight=0.5)
+            nr = int(0.8 * FPS)
+            for i, f in enumerate(fr):
+                w = min(1.0, (i + 1) / nr, (len(fr) - i) / nr)
+                f.targets = [t for t in f.targets if t.side != other] + [lerp_target(self.rest[other], brace, ease(w))]
+            pid = f"conn_{aid}_{k_ + 1}"
+            self.parts[pid] = dict(spec="tool:connector", W=np.eye(4), kind="connector")
+            for f in fr:
+                if "connector" in f.tools:
+                    self.set_part(f, pid, f.tools.pop("connector")[1])
+            last = next(f.tools[f"part:{pid}"][1] for f in reversed(fr) if f"part:{pid}" in f.tools)
+            self._add(fr, spot, sid)
+            self.commit(pid, spot, last)
+
+    def do_cable_tie(self, step, sid):
+        """For each tie point on a harness: the free hand holds the harness, the other wraps the tie round, threads
+        it and pulls it tight. '<points>_dir' gives the harness direction (asset frame)."""
+        ref = step["on"]
+        aid, _, name = ref.partition(".")
+        spot = self.spot_of(step, aid)
+        self.go(spot, sid)
+        d = self.assets[aid].get("points", {}).get(f"{name}_dir", (1, 0, 0))
+        dl = K.unit(self.locd(spot, self.asset_T(aid)[:3, :3] @ np.asarray(d, float)))
+        up = Y if abs(dl[1]) < 0.9 else Z
+        if np.cross(dl, K.unit(perp(up, dl)))[2] > 0:        # either way along the harness is the same harness: pick
+            dl = -dl                                          # the one that has the fingers pointing away from the body
+        for k_, p in enumerate(self.points(ref)[:int(step.get("count", 99))]):
+            pid = f"tie_{aid}_{k_ + 1}"
+            with self.generator_posture():
+                fr = C.cable_tie(self.S, self.loc(spot, p), dl, "r", pid)
+            self.parts[pid] = dict(spec="ring:1.6:0.18:plastic_black", W=np.eye(4), kind="tie")
+            last = next(f.tools[f"part:{pid}"][1] for f in reversed(fr) if f"part:{pid}" in f.tools)
+            self._add(fr, spot, sid)
+            self.commit(pid, spot, last)
+
     def do_inspect(self, step, sid):
         ref = step["on"]
         aid = ref.split(".")[0]
@@ -858,7 +1104,8 @@ class Task:
         self.go(spot, sid)
         pts = [self.loc(spot, p) for p in self.points(ref)]
         P = np.mean(pts, axis=0)
-        fr = inspect_motion(self.S, P, float(step.get("seconds", 2.0)))
+        with self.generator_posture():
+            fr = inspect_motion(self.S, P, float(step.get("seconds", 2.0)))
         self._add(fr, spot, sid)
 
     def do_wait(self, step, sid):

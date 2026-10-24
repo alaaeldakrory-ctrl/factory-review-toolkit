@@ -112,20 +112,27 @@ def cable_tie(solver, at, axis=(1, 0, 0), side="r", part="tie"):
         frames.append(Frame([lerp_target(rest[side], start, u), lerp_target(rest[other], hold, u)], tuple(P),
                             label="tie"))
     nw = int(0.8 * FPS)
-    for k in range(nw):                                      # wrap: the fingers go round the harness
-        th = 2 * np.pi * ease((k + 1) / nw) * 0.9
+    for k in range(nw):                  # wrap: the fingertips feed the tie under the harness (half a turn of the
+        th = 2 * np.pi * ease((k + 1) / nw) * 0.45      # hand - the forearm can roll that far, not a full circle)
         q = P + (e1 * np.cos(th) + e2 * np.sin(th)) * R
-        tang = -e1 * np.sin(th) + e2 * np.cos(th)
-        nrm = e1 * np.cos(th) + e2 * np.sin(th)
-        frames.append(Frame([HandTarget(side, tuple(q), fingers=tuple(-tang), palm=tuple(-nrm), grip="pinch"), hold],
+        tho = th * 0.2                    # the hand rolls only a little about the harness; the fingers do the rest
+        fng = -e2 * np.cos(tho) + e1 * np.sin(tho)
+        plm = -e1 * np.cos(tho) - e2 * np.sin(tho)
+        frames.append(Frame([HandTarget(side, tuple(q), fingers=tuple(fng), palm=tuple(plm), grip="pinch"), hold],
                             tuple(P), label="tie"))
     tail0 = P + e1 * R
+    last = frames[-1].targets[0]
+    grab = HandTarget(side, tuple(tail0), fingers=tuple(-e2), palm=tuple(-e1), grip="pinch")   # pinch from above
+    nb = int(0.35 * FPS)
+    for k in range(nb):                                      # back over the top to the tie head: thread the tail
+        u = ease((k + 1) / nb)
+        frames.append(Frame([lerp_target(last, grab, u), hold], tuple(P), label="tie"))
     for k in range(int(0.5 * FPS)):                          # pull the tail: slow, then a short jerk
         u = (k + 1) / (0.5 * FPS)
         d = 5.0 * ease(min(1.0, u / 0.7)) + (2.0 * (u - 0.7) / 0.3 if u > 0.7 else 0.0)
-        frames.append(Frame([HandTarget(side, tuple(tail0 + e1 * d), fingers=tuple(e1), palm=tuple(-e2), grip="pinch"),
+        frames.append(Frame([HandTarget(side, tuple(tail0 + e1 * d), fingers=tuple(-e2), palm=tuple(-e1), grip="pinch"),
                              hold], tuple(P), {name: (spec, ring)}, label="tie pull"))
-    end = HandTarget(side, tuple(tail0 + e1 * 7.0), fingers=tuple(e1), palm=tuple(-e2), grip="pinch")
+    end = HandTarget(side, tuple(tail0 + e1 * 7.0), fingers=tuple(-e2), palm=tuple(-e1), grip="pinch")
     for k in range(nr):
         u = ease((k + 1) / nr)
         frames.append(Frame([lerp_target(end, rest[side], u), lerp_target(hold, rest[other], u)], tuple(P),
