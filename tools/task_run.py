@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(ROOT, "exts", "frt.core"))
 os.environ.setdefault("PXR_USDC_EMIT_DEPRECATION_WARNINGS", "0")
 
 _T = None
+_TS = {}                                                             # (--motion=best: both versions)
 
 
 def _load(path, worker=None):
@@ -30,8 +31,12 @@ def _load(path, worker=None):
 
 def _init(path, worker=None, motion=None):
     global _T
-    _T = _load(path, worker).compile(log=lambda *a: None)
-    _motion(_T, motion, log=lambda *a: None)
+    keys = ("solver", "andy") if motion == "best" else (motion or "solver",)
+    for k in keys:
+        T = _load(path, worker).compile(log=lambda *a: None)
+        _motion(T, k if motion == "best" else motion, log=lambda *a: None)   # (best: the solver one stays plain)
+        _TS[k] = T
+    _T = _TS[keys[0]]
 
 
 def _motion(T, motion, log=print):
@@ -41,10 +46,11 @@ def _motion(T, motion, log=print):
         apply(T, log=log)
 
 
-def _solve(rng):
+def _solve(job):
     from frt_core.people.bake import solve_frames
-    a, b = rng
-    return a, solve_frames(_T.S, _T.frames[a:b + 1], log=lambda *a: None)
+    k, a, b = job
+    T = _TS[k]
+    return k, a, solve_frames(T.S, T.frames[a:b + 1], log=lambda *a: None)
 
 
 def _apart(p, q):
@@ -58,17 +64,105 @@ def _join(job):
     """Carry on from the frame before a piece until the motion meets the piece's own solution (a piece warm-started
     from rest can have the elbow on the other side: handing over after a fixed number of frames was a snap)."""
     from frt_core.people.bake import solve_frames
-    a, prev, own = job
-    n = len(_T.frames)
-    out, k = [], a
-    while k < n and k - a < len(own):
-        hi = min(n, k + 10, a + len(own))
-        fix = solve_frames(_T.S, _T.frames[k:hi], log=lambda *a: None, prev=prev)
+    k, a, prev, own = job
+    T = _TS[k]
+    n = len(T.frames)
+    out, i = [], a
+    while i < n and i - a < len(own):
+        hi = min(n, i + 10, a + len(own))
+        fix = solve_frames(T.S, T.frames[i:hi], log=lambda *a: None, prev=prev)
         out += fix
-        prev, k = fix[-1], hi
+        prev, i = fix[-1], hi
         if _apart(fix[-1], own[hi - 1 - a]) < 8.0:
             break
     return a, out
+
+
+def solve_set(pool, k, rngs, n, say, p0=0.05, p1=0.75):
+    """Every frame of one version (k: a key of _TS) solved in pieces, then the joins between them."""
+    sols = [None] * n
+    done = 0
+    for _, a, s in pool.imap_unordered(_solve, [(k,) + r for r in rngs]):
+        sols[a:a + len(s)] = s
+        done += len(s)
+        say(f"solving {done}/{n} frames" + (f" ({k})" if k != "solver" else ""), progress=p0 + (p1 - p0) * done / n)
+    # the joins between pieces, each carried on from the frame before it (all at once: they are independent)
+    say("joining the pieces", progress=p1)
+    jobs = [(k, a, sols[a - 1], sols[a:b + 1]) for a, b in rngs[1:]]
+    own = {a: o for _, a, _, o in jobs}
+    ran = {}
+    for a, s in pool.imap_unordered(_join, jobs):
+        sols[a:a + len(s)] = s
+        ran[a] = len(s) == len(own[a])
+    # a join that ran through its whole piece changed that piece's last frame: the next join started from the
+    # old one (a wrong-branch arm carried on) - redo it from the new end, in order
+    for (a, _), (a2, _) in zip(rngs[1:], rngs[2:]):
+        if ran.get(a):
+            _, s = pool.apply(_join, ((k, a2, sols[a2 - 1], own[a2]),))
+            sols[a2:a2 + len(s)] = s
+            ran[a2] = len(s) == len(own[a2])
+    return sols
+
+
+def _badness(iss):
+    """One number per step to compare two versions: every issue counts, the far-over ones more."""
+    return sum(1.0 + min(_severity(i), 40.0) / 10.0 for i in iss)
+
+
+def _fold(T, sols, a, b, over=60.0):
+    """How far past `over` the trunk bends (pelvis -> neck from upright), summed over the step's frames / 10: the
+    checks don't see a body folded double over the work, a person wouldn't work like that."""
+    import numpy as np
+
+    from frt_core.people.kinematics import fk
+    tot = 0.0
+    for i in range(a, b + 1):
+        _, P = fk(T.sk, sols[i].pose, ["neck_01"])
+        v = P["neck_01"] - P["pelvis"]
+        ang = np.degrees(np.arccos(np.clip(v[1] / max(np.linalg.norm(v), 1e-9), -1.0, 1.0)))
+        tot += max(0.0, ang - over) / 10.0
+    return tot
+
+
+def best_of_both(T, TA, pool, rngs, n, say, usd):
+    """--motion=best: the task solved twice (solver only / recorded bodies), each step kept from the version with
+    fewer and smaller check issues, the hand-over into a switched step re-solved from the kept frame before it."""
+    from frt_core.people.bake import _rootT
+    from frt_core.people.check import check_frames
+    S0 = solve_set(pool, "solver", rngs, n, say, 0.05, 0.40)
+    SA = solve_set(pool, "andy", rngs, n, say, 0.40, 0.72)
+    bake_scene(T, T.smooth_solutions(S0), usd)                        # (the equipment is the same in both)
+    field = T.field or equipment_field(T, usd)
+    for f in TA.frames:
+        f.world = _rootT(f.root)
+    s0, sA = T.smooth_solutions(S0), TA.smooth_solutions(SA)
+    r0 = check_frames(T.sk, T.frames, s0, field=field)
+    rA = check_frames(TA.sk, TA.frames, sA, field=field)
+    pick, sols = {}, list(S0)
+    for s in T.steps:
+        a, b = s["start"], s["end"]
+        b0 = _badness([i for i in r0["issues"] if a <= i[0] <= b]) + _fold(T, s0, a, b)
+        bA = _badness([i for i in rA["issues"] if a <= i[0] <= b]) + _fold(TA, sA, a, b)
+        any_base = any(TA.frames[i].base is not None and T.frames[i].base is None for i in range(a, b + 1))
+        k = "andy" if any_base and bA < 0.8 * b0 else "solver"
+        pick[s["id"]] = {"from": k, "solver": round(b0, 1), "andy": round(bA, 1)}
+        say(f"  {s['id']}: solver {b0:.0f} / recorded {bA:.0f} -> {k}")
+        if k == "andy":
+            sols[a:b + 1] = SA[a:b + 1]
+            T.frames[a:b + 1] = TA.frames[a:b + 1]
+    # where the source switches, carry on from the kept frame before (both ways), in order
+    say("joining the switches", progress=0.76)
+    keys = [pick[s["id"]]["from"] for s in T.steps]
+    for j in range(1, len(T.steps)):
+        if keys[j] != keys[j - 1]:
+            s = T.steps[j]
+            a, b = s["start"], s["end"]
+            own = (SA if keys[j] == "andy" else S0)[a:b + 1]
+            _, fix = pool.apply(_join, ((keys[j], a, sols[a - 1], own),))
+            sols[a:a + len(fix)] = fix
+    if "andy" in keys:
+        T.S.base_correct = True
+    return sols, pick
 
 
 def chunks(steps, n_frames, size=160):
@@ -123,28 +217,14 @@ def main():
     say(f"compiled {len(T.steps)} steps, {n} frames ({n / 24:.1f} s); solving", progress=0.05)
     nw = int(opt.get("workers", min(11, os.cpu_count() or 4)))
     rngs = chunks(T.steps, n, size=max(24, min(160, -(-n // nw))))    # short tasks: small pieces, every core busy
-    sols = [None] * n
+    pick = None
     with mp.Pool(nw, initializer=_init, initargs=(path, worker, opt.get("motion"))) as pool:
-        done = 0
-        for a, s in pool.imap_unordered(_solve, rngs):
-            sols[a:a + len(s)] = s
-            done += len(s)
-            say(f"solving {done}/{n} frames", progress=0.05 + 0.70 * done / n)
-        # the joins between pieces, each carried on from the frame before it (all at once: they are independent)
-        say("joining the pieces", progress=0.76)
-        jobs = [(a, sols[a - 1], sols[a:b + 1]) for a, b in rngs[1:]]
-        own = {a: o for a, _, o in jobs}
-        ran = {}
-        for a, s in pool.imap_unordered(_join, jobs):
-            sols[a:a + len(s)] = s
-            ran[a] = len(s) == len(own[a])
-        # a join that ran through its whole piece changed that piece's last frame: the next join started from the
-        # old one (a wrong-branch arm carried on) - redo it from the new end, in order
-        for (a, _), (a2, _) in zip(rngs[1:], rngs[2:]):
-            if ran.get(a):
-                _, s = pool.apply(_join, ((a2, sols[a2 - 1], own[a2]),))
-                sols[a2:a2 + len(s)] = s
-                ran[a2] = len(s) == len(own[a2])
+        if opt.get("motion") == "best":
+            TA = _load(path, worker).compile(log=lambda *a: None)
+            _motion(TA, "andy")
+            sols, pick = best_of_both(T, TA, pool, rngs, n, say, os.path.join(out, "task.usda"))
+        else:
+            sols = solve_set(pool, opt.get("motion") or "solver", rngs, n, say)
     if os.environ.get("FRT_DUMP_SOLS"):                             # (debugging: the solved poses, before smoothing)
         import pickle
         pickle.dump({"sols": sols, "rngs": rngs}, open(os.environ["FRT_DUMP_SOLS"], "wb"))
@@ -183,7 +263,7 @@ def main():
                                           key=lambda kv: -kv[1])},
                       "issues": [list(i) for i in sorted(iss, key=lambda i: -_severity(i))[:12]]})
     res = {"task": T.name, "file": path, "usd": usd, "frames": n, "fps": 24, "steps": steps,
-           "counts": rep["counts"], "notes": T.notes, "solve_s": round(time.time() - t0, 1)}
+           "counts": rep["counts"], "notes": T.notes, "motion": pick, "solve_s": round(time.time() - t0, 1)}
     json.dump(res, open(os.path.join(out, "result.json"), "w"), indent=1)
     say(f"done in {time.time() - t0:.0f} s: {rep['counts'] or 'clean'}", progress=1.0, done=True, usd=usd)
 

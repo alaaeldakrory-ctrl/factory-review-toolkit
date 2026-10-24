@@ -289,9 +289,7 @@ class PostureSolver:
             Rh = frame_rot(np.array([sx, 0, 0]), DOWN, fingers, palm)
             pa = (prev_arm or {}).get(s)
             ref = None
-            if base is not None and s == "r" and getattr(stance, "free", False) is False and wgt >= 0.9:
-                # the recorded person's working elbow: where this one goes (not a bracing hand - in the clip that
-                # arm did something else)
+            if base is not None:                               # the recorded person's elbow: where this one goes
                 Rb, Pb = fk(sk, pose, [f"lowerarm_{s}"])
                 ref = unit(Pb[f"lowerarm_{s}"] - Pb[f"upperarm_{s}"])
             Ru, Rf, wsw, tau, elbow, sw = self._arm(s, sx, S, u, a, h, dd, trunk, Rh, True, pa, torso, ref)
