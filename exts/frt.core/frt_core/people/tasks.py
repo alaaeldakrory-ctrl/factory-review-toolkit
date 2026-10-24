@@ -974,9 +974,16 @@ class Task:
     def _brace_on(self, spot, step):
         if "brace" not in step:
             return None
-        b = self.loc(spot, self.points(step["brace"])[0])
         side = "l"
         if self.holding and self.holding[1] == side:
+            return None
+        # the free (left) hand braces on its own side: of the points given, the one furthest left; a point right of
+        # the body's middle would put the arm across the chest - nobody braces like that, so then no brace
+        b = max((self.loc(spot, p) for p in self.points(step["brace"])), key=lambda q: float(q[0]))
+        if float(b[0]) < -5.0:
+            self.notes.append(f"{step.get('do')} on {step.get('on')}: brace {step['brace']} is on the worker's "
+                              f"right ({-float(b[0]):.0f} cm) - the left hand can't brace there without crossing "
+                              f"the body; it stays free")
             return None
         return K.brace(self.sk, side, b, self.locd(spot, self.axis_of(step["brace"])), weight=0.6)
 

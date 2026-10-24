@@ -342,10 +342,17 @@ class PostureSolver:
             wdev = wsw
             angles.update({f"shoulder_{s}": elev, f"elbow_{s}": eflex, f"wrist_{s}": wdev})
             if t is not None:
+                wr = S + u * dd                                # the arm in the body: the trunk makes room too (the
+                pen = max(self.torso_pen(S + (elbow - S) * f_ if f_ <= 1.0 else elbow + (wr - elbow) * (f_ - 1.0),
+                                         r_, torso) for f_, r_ in self.ARM_SAMPLES)   # elbow search alone can't)
+                if pen > 0.0:                                  # (bounded: never worth a squat or a missed reach)
+                    terms[f"arm_body_{s}"] = ((min(pen, 6.0) / 1.5) ** 2 + max(0.0, pen - 6.0)) * 0.8 * wgt
                 terms[f"shoulder_{s}"] = (max(0.0, elev - 20.0) / 45.0) ** 2 * wgt
                 terms[f"elbow_{s}"] = ((eflex - 80.0) / 55.0) ** 2 * 0.3 * wgt
                 terms[f"wrist_{s}"] = (wdev / 30.0) ** 2 * 0.6 * wgt + (max(0.0, abs(tau) - 70.0) / 20.0) ** 2 * wgt
             self._grip(pose, s, gname)
+            if t is None:                                      # a hanging arm under a bent-over chest: swung clear
+                self._clear_free_arm(pose, s, sx, torso)
         # head and neck: look at the work
         if look is not None:
             R3, P3 = fk(sk, pose, ["head"])
