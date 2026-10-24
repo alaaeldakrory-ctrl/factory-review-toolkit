@@ -510,6 +510,10 @@ class TaskWindow:
         self.save()
         out = self._out_dir()
         os.makedirs(out, exist_ok=True)
+        ctx = omni.usd.get_context()                     # the last result open here would block writing the new one
+        cur = os.path.normcase(os.path.abspath(ctx.get_stage_url() or "")) if ctx.get_stage() else ""
+        if cur.startswith(os.path.normcase(os.path.abspath(out))):
+            ctx.new_stage()
         args = [_python(), "-u", os.path.join(REPO, "tools", "task_run.py"), self.path, f"--out={out}"]
         if scene_only:
             args.append("--scene-only")
