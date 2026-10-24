@@ -39,6 +39,30 @@ def _solve(rng):
     return a, solve_frames(_T.S, _T.frames[a:b + 1], log=lambda *a: None)
 
 
+def _apart(p, q):
+    """The biggest joint difference between two solved poses, deg."""
+    from frt_core.people.check import rot_angle
+    from frt_core.people.skeleton import NAMES
+    return max(rot_angle(p.pose.local(j).T @ q.pose.local(j)) for j in NAMES if j != "root")
+
+
+def _join(job):
+    """Carry on from the frame before a piece until the motion meets the piece's own solution (a piece warm-started
+    from rest can have the elbow on the other side: handing over after a fixed number of frames was a snap)."""
+    from frt_core.people.bake import solve_frames
+    a, prev, own = job
+    n = len(_T.frames)
+    out, k = [], a
+    while k < n and k - a < len(own):
+        hi = min(n, k + 10, a + len(own))
+        fix = solve_frames(_T.S, _T.frames[k:hi], log=lambda *a: None, prev=prev)
+        out += fix
+        prev, k = fix[-1], hi
+        if _apart(fix[-1], own[hi - 1 - a]) < 8.0:
+            break
+    return a, out
+
+
 def chunks(steps, n_frames, size=160):
     """Solve ranges: whole steps, long steps split (each piece warm-starts from rest, joins are re-solved below)."""
     out = []
@@ -96,26 +120,12 @@ def main():
         for a, s in pool.imap_unordered(_solve, rngs):
             sols[a:a + len(s)] = s
             done += len(s)
-            say(f"solving {done}/{n} frames", progress=0.05 + 0.75 * done / n)
-    # re-solve the joins between pieces warm-started from the frame before (no jumps where pieces meet)
-    from frt_core.people.bake import solve_frames
-    from frt_core.people.check import rot_angle
-    from frt_core.people.skeleton import NAMES
-
-    def apart(p, q):                                   # the biggest joint difference between two solved poses, deg
-        return max(rot_angle(p.pose.local(j).T @ q.pose.local(j)) for j in NAMES if j != "root")
-    for a, _ in rngs[1:]:
-        # carry on from the frame before the piece until it meets the piece's own solution (a piece warm-started
-        # from rest can have the elbow on the other side: handing over after a fixed 10 frames was a snap)
-        k, prev = a, sols[max(0, a - 1)]
-        while k < n:
-            hi = min(n, k + 10)
-            fix = solve_frames(T.S, T.frames[k:hi], log=lambda *a: None, prev=prev)
-            met = apart(fix[-1], sols[hi - 1]) < 8.0
-            sols[k:hi] = fix
-            prev, k = fix[-1], hi
-            if met or k - a >= 160:
-                break
+            say(f"solving {done}/{n} frames", progress=0.05 + 0.70 * done / n)
+        # the joins between pieces, each carried on from the frame before it (all at once: they are independent)
+        say("joining the pieces", progress=0.76)
+        jobs = [(a, sols[a - 1], sols[a:b + 1]) for a, b in rngs[1:]]
+        for a, s in pool.imap_unordered(_join, jobs):
+            sols[a:a + len(s)] = s
     sols = T.smooth_solutions(sols)
     say("checking", progress=0.82)
     import numpy as np
@@ -149,7 +159,7 @@ def main():
                       "by_joint": {f"{k[0]} {k[1]}": v for k, v in
                                    sorted(__import__("collections").Counter((i[1], i[2]) for i in iss).items(),
                                           key=lambda kv: -kv[1])},
-                      "issues": [list(i) for i in iss[:12]]})
+                      "issues": [list(i) for i in sorted(iss, key=lambda i: -_severity(i))[:12]]})
     res = {"task": T.name, "file": path, "usd": usd, "frames": n, "fps": 24, "steps": steps,
            "counts": rep["counts"], "notes": T.notes, "solve_s": round(time.time() - t0, 1)}
     json.dump(res, open(os.path.join(out, "result.json"), "w"), indent=1)
@@ -174,6 +184,14 @@ def equipment_field(T, usd):
     except Exception as e:                                           # no field: the other checks still run
         print(f"(no equipment check: {e})")
         return None
+
+
+def _severity(i):
+    """How far past its threshold an issue is (to keep the worst ones)."""
+    try:
+        return float(i[3]) - float(i[4] or 0.0)
+    except (TypeError, ValueError, IndexError):
+        return 0.0
 
 
 def bake_scene(T, sols, usd):

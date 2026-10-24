@@ -61,10 +61,10 @@ def scene_boxes(stage):
 
 
 def blocked(eye, at, boxes):
-    """Whether the segment eye -> at passes through any box (slab test), ignoring the last 35 cm near the target."""
+    """Whether the segment eye -> at passes through any box (slab test), ignoring the last 8 cm at the target."""
     d = [at[i] - eye[i] for i in range(3)]
     L = math.sqrt(sum(x * x for x in d)) or 1.0
-    t_end = max(0.0, 1.0 - 35.0 / L)
+    t_end = max(0.0, 1.0 - 8.0 / L)
     for lo, hi in boxes:
         t0, t1 = 0.0, t_end
         for i in range(3):

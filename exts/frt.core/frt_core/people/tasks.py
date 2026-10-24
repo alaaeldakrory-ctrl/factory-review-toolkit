@@ -573,13 +573,13 @@ class Task:
         Tm = lerp4(Ta, Tb, 0.5)
         Tm[:3, 3] += np.array([0.0, 8.0, 10.0])
         ga, gb = self.grip_fn(tool, a), self.grip_fn(tool, b)
-        tk = [(0.0, Ta), (0.55, Tm), (0.9, Tm), (1.45, Tb)]
+        tk = [(0.0, Ta), (0.55, Tm), (1.0, Tm), (1.55, Tb)]
         base = self._rest_base
         meet = with_grip(held(gb, Tb)({"t": Tm}), "open")
         way = moved(lerp_target(base[b], meet, 0.5), np.array([0.0, 0.0, 12.0]))   # round the belly, not through it
-        hands = {a: [(0.0, held(ga, Ta)), (0.85, held(ga, Ta)), (1.45, base[a])],
-                 b: [(0.0, base[b]), (0.28, way), (0.5, meet), (0.7, held(gb, Tb)), (1.45, held(gb, Tb))]}
-        fr = K.keyed(1.5, hands=hands, tools={"t": (tool, tk)}, look=tuple(Tm[:3, 3]), label="swap hands")
+        hands = {a: [(0.0, held(ga, Ta)), (0.95, held(ga, Ta)), (1.55, base[a])],     # lets go once b has it
+                 b: [(0.0, base[b]), (0.28, way), (0.5, meet), (0.85, held(gb, Tb)), (1.55, held(gb, Tb))]}
+        fr = K.keyed(1.6, hands=hands, tools={"t": (tool, tk)}, look=tuple(Tm[:3, 3]), label="swap hands")
         for f in fr:
             self.set_part(f, tid, f.tools.pop("t")[1])
         self.holding = None                                  # (the frames carry both hands themselves)
