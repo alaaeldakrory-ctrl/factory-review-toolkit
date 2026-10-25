@@ -1,0 +1,72 @@
+# Demo: automotive final assembly - mount a road wheel: five lug nuts started by hand, then run down with a ratchet.
+[task]
+name = "Automotive: wheel mounting, five lug nuts"
+worker = "C:/Nvidia_Assets/Characters_NVD/Assets/Characters/Reallusion/ActorCore/Uniform_M_0001/uniform_m_0001.usd"
+start = [-60, -60, 0]
+
+[[spot]]
+id = "hub"
+at = [0, 75]
+yaw = 0
+
+[[asset]]
+id = "vehicle_body"
+kind = "fixture"
+at = [0, 0, 175]
+size = [200, 115, 40]
+look = "powder_dark"
+
+[[asset]]
+id = "wheel"
+kind = "wheel"
+at = [0, 62, 120]
+radius = 55
+axis = [0, 0, -1]
+spot = "hub"
+[asset.points]
+studs = [[11, 0, -0.2], [3.4, 10.46, -0.2], [-8.9, 6.47, -0.2], [-8.9, -6.47, -0.2], [3.4, -10.46, -0.2]]
+studs_axis = [0, 0, -1]
+rest = [30, 25, -6]
+
+[[asset]]
+id = "parts_cart"
+kind = "cart"
+at = [-62, 0, 95]
+size = [36, 78, 30]
+
+[[asset]]
+id = "nut_bin"
+kind = "bin"
+at = [-62, 78, 86]
+size = [20, 11, 20]
+holds = "nut"
+count = 6
+spot = "hub"
+[asset.points]
+grab = [0, 2.0, 2.0]
+
+[[asset]]
+id = "ratchet"
+kind = "tool"
+tool = "ratchet_38"
+at = [-62, 79.2, 104]
+x_axis = [1, 0, 0]
+y_axis = [0, 1, 0]
+spot = "hub"
+
+[[step]]
+do = "hand_start"
+what = "nut"
+from = "nut_bin"
+on = "wheel.studs"
+brace = "wheel.rest"
+
+[[step]]
+do = "fasten"
+tool = "ratchet"
+on = "wheel.studs"
+
+[[step]]
+do = "inspect"
+on = "wheel.studs"
+seconds = 1.5

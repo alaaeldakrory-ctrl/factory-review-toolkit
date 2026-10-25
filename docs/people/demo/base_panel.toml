@@ -1,0 +1,76 @@
+# Demo: appliance assembly - a service panel low on the cabinet side, worked kneeling: four screws and a plug.
+[task]
+name = "Appliances: base service panel, kneeling"
+worker = "C:/Nvidia_Assets/Characters_NVD/Assets/Characters/Reallusion/ActorCore/Uniform_M_0001/uniform_m_0001.usd"
+start = [0, -60, 0]
+
+[[spot]]
+id = "panel"
+at = [0, 40]
+yaw = 0
+
+[[asset]]
+id = "cabinet_body"
+kind = "fixture"
+at = [0, 0, 110]
+size = [120, 100, 40]
+look = "powder_lightgrey"
+
+[[asset]]
+id = "service_panel"
+kind = "fixture"
+at = [0, 52, 88]
+size = [36, 28, 4]
+look = "plastic_grey"
+spot = "panel"
+[asset.points]
+holes = [[-15, 25, -2.2], [15, 25, -2.2], [-15, 3, -2.2], [15, 3, -2.2]]
+holes_axis = [0, 0, -1]
+plug = [[21, 14, 0]]
+plug_axis = [1, 0, 0]
+side = [20, 14, -1]
+
+[[asset]]
+id = "parts_cart"
+kind = "cart"
+at = [-65, 0, 72]
+size = [36, 70, 30]
+
+[[asset]]
+id = "screw_bin"
+kind = "bin"
+at = [-65, 70, 66]
+size = [16, 11, 20]
+holds = "screw"
+count = 5
+spot = "panel"
+[asset.points]
+grab = [0, 2.2, 2.0]
+
+[[asset]]
+id = "screwdriver"
+kind = "tool"
+tool = "screwdriver"
+at = [-77, 71.6, 80]
+x_axis = [0, 0, -1]
+y_axis = [1, 0, 0]
+spot = "panel"
+
+[[step]]
+do = "hand_start"
+what = "screw"
+from = "screw_bin"
+on = "service_panel.holes"
+brace = "service_panel.side"
+posture = "kneel"
+
+[[step]]
+do = "fasten"
+tool = "screwdriver"
+on = "service_panel.holes"
+posture = "kneel"
+
+[[step]]
+do = "connect"
+on = "service_panel.plug"
+posture = "kneel"

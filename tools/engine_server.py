@@ -5,7 +5,7 @@ with task_run.py and serves the result files the web viewer plays.
 
     GET  /api/health                      {"ok": true, "queue": n}
     GET  /api/samples                     the sample jobs a request can start from
-    POST /api/solve                       {"base": "boom", "assets": {id: [x, z]}, "spots": {id: [x, z, yaw]},
+    POST /api/solve                       {"base": "wheel_mounting", "assets": {id: [x, z]}, "spots": {id: [x, z, yaw]},
                                            "steps": [indices into the base job's steps]}   -> {"id": ...}
     GET  /api/job/<id>                    {"state": queued|running|done|error, "msg", "progress", "ahead"}
     GET  /api/job/<id>/<job.json|motion.bin|scene.glb>
@@ -30,10 +30,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 WORK = os.path.join(ROOT, "out", "web_jobs")
 SAMPLES = {
-    "boom": ("docs/people/validation/boom.toml", "Boom lift platform"),
-    "manifold": ("docs/people/validation/manifold.toml", "Scissor chassis: valve manifold"),
-    "control_box": ("docs/people/validation/control_box.toml", "Ground control box"),
-    "battery_box": ("docs/people/practice/reference_task.toml", "Battery box sub-assembly"),
+    "wheel_mounting": ("docs/people/demo/wheel_mounting.toml", "Automotive: wheel mounting"),
+    "control_cabinet": ("docs/people/demo/control_cabinet.toml", "Electrical: control cabinet wiring"),
+    "overhead_bracket": ("docs/people/demo/overhead_bracket.toml", "Aerospace: overhead bracket"),
+    "valve_block": ("docs/people/demo/valve_block.toml", "Hydraulics: valve block into a housing"),
+    "base_panel": ("docs/people/demo/base_panel.toml", "Appliances: base service panel"),
+    "battery_module": ("docs/people/demo/battery_module.toml", "Energy storage: battery module"),
 }
 MAX_MOVE = 1000.0                                                    # cm an asset or spot may move from its place
 FILES = {"job.json": "application/json", "motion.bin": "application/octet-stream", "scene.glb": "model/gltf-binary"}

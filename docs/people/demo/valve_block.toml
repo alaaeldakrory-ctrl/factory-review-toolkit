@@ -1,0 +1,102 @@
+# Demo: hydraulics - an 11 kg valve block carried from a cart into a pump housing, bolted, run down and torqued.
+[task]
+name = "Hydraulics: valve block into a housing"
+worker = "C:/Nvidia_Assets/Characters_NVD/Assets/Characters/Reallusion/ActorCore/Uniform_M_0001/uniform_m_0001.usd"
+start = [-60, -40, 0]
+
+[[spot]]
+id = "housing"
+at = [0, 42]
+yaw = 0
+
+[[spot]]
+id = "block_cart"
+at = [-110, 34]
+yaw = 0
+
+[[asset]]
+id = "housing_front"
+kind = "fixture"
+at = [0, 0, 76]
+size = [110, 62, 6]
+look = "powder_dark"
+
+[[asset]]
+id = "housing"
+kind = "fixture"
+at = [0, 0, 106]
+size = [110, 46, 54]
+look = "powder_dark"
+spot = "housing"
+[asset.points]
+seat = [0, 46, -6]
+rest = [40, 62, -27]
+
+[[asset]]
+id = "block_cart"
+kind = "cart"
+at = [-110, 0, 74]
+size = [56, 76, 40]
+
+[[asset]]
+id = "valve_block"
+kind = "plate"
+at = [-118, 76, 72]
+size = [26, 12, 16]
+look = "aluminium"
+spot = "block_cart"
+[asset.points]
+holes = [[-10, 6, -5], [10, 6, -5], [0, 6, 5]]
+
+[[asset]]
+id = "bolt_bin"
+kind = "bin"
+at = [-92, 76, 70]
+size = [16, 11, 20]
+holds = "screw"
+count = 4
+spot = "housing"
+[asset.points]
+grab = [0, 2.2, 2.0]
+
+[[asset]]
+id = "ratchet"
+kind = "tool"
+tool = "ratchet_38"
+at = [42, 62.8, 77]
+x_axis = [0, 0, -1]
+y_axis = [0, 1, 0]
+spot = "housing"
+
+[[asset]]
+id = "torque_wrench"
+kind = "tool"
+tool = "torque_wrench"
+at = [30, 62.8, 77]
+x_axis = [0, 0, -1]
+y_axis = [0, 1, 0]
+spot = "housing"
+
+[[step]]
+do = "carry"
+what = "valve_block"
+to = "housing.seat"
+
+[[step]]
+do = "hand_start"
+what = "screw"
+from = "bolt_bin"
+on = "valve_block.holes"
+brace = "housing.rest"
+
+[[step]]
+do = "fasten"
+tool = "ratchet"
+on = "valve_block.holes"
+brace = "housing.rest"
+
+[[step]]
+do = "fasten"
+tool = "torque_wrench"
+on = "valve_block.holes"
+brace = "housing.rest"

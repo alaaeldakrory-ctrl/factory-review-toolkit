@@ -1,0 +1,94 @@
+# Demo: electrical panel building - DIN-rail screws, three plugged connectors and cable ties on a cabinet back plate.
+[task]
+name = "Electrical: control cabinet wiring"
+worker = "C:/Nvidia_Assets/Characters_NVD/Assets/Characters/Reallusion/ActorCore/Uniform_M_0001/uniform_m_0001.usd"
+start = [-70, -60, 0]
+
+[[spot]]
+id = "cabinet"
+at = [0, 58]
+yaw = 0
+
+[[asset]]
+id = "plinth"
+kind = "fixture"
+at = [0, 0, 110]
+size = [104, 40, 40]
+look = "powder_dark"
+
+[[asset]]
+id = "back_plate"
+kind = "fixture"
+at = [0, 40, 108]
+size = [96, 112, 6]
+look = "powder_lightgrey"
+spot = "cabinet"
+[asset.points]
+holes = [[-30, 72, -3.2], [-10, 72, -3.2], [10, 72, -3.2], [30, 72, -3.2]]
+holes_axis = [0, 0, -1]
+sockets = [[-16, 52, -3.4], [0, 52, -3.4], [16, 52, -3.4]]
+sockets_axis = [0, 0, -1]
+ties = [[-22, 34, -5.5], [0, 34, -5.5], [22, 34, -5.5]]
+ties_dir = [1, 0, 0]
+side = [50, 56, -1]
+side_axis = [1, 0, 0]
+
+[[asset]]
+id = "side_left"
+kind = "fixture"
+at = [52, 40, 100]
+size = [4, 112, 22]
+look = "powder_lightgrey"
+
+[[asset]]
+id = "side_right"
+kind = "fixture"
+at = [-52, 40, 100]
+size = [4, 112, 22]
+look = "powder_lightgrey"
+
+[[asset]]
+id = "parts_cart"
+kind = "cart"
+at = [-60, 0, 58]
+size = [36, 78, 30]
+
+[[asset]]
+id = "screw_bin"
+kind = "bin"
+at = [-60, 78, 52]
+size = [20, 11, 20]
+holds = "screw"
+count = 6
+spot = "cabinet"
+[asset.points]
+grab = [0, 2.2, 2.0]
+
+[[asset]]
+id = "screwdriver"
+kind = "tool"
+tool = "screwdriver"
+at = [-70, 77.6, 66]
+x_axis = [0, 0, -1]
+y_axis = [1, 0, 0]
+spot = "cabinet"
+
+[[step]]
+do = "hand_start"
+what = "screw"
+from = "screw_bin"
+on = "back_plate.holes"
+brace = "back_plate.side"
+
+[[step]]
+do = "fasten"
+tool = "screwdriver"
+on = "back_plate.holes"
+
+[[step]]
+do = "connect"
+on = "back_plate.sockets"
+
+[[step]]
+do = "cable_tie"
+on = "back_plate.ties"

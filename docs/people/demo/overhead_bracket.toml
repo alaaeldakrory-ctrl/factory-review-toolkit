@@ -1,0 +1,79 @@
+# Demo: aerospace structures - a bracket under an overhead panel: nuts started by hand above the head, then ratcheted.
+[task]
+name = "Aerospace: overhead bracket"
+worker = "C:/Nvidia_Assets/Characters_NVD/Assets/Characters/Reallusion/ActorCore/Uniform_M_0001/uniform_m_0001.usd"
+start = [-60, -40, 0]
+
+[[spot]]
+id = "bracket"
+at = [0, 90]
+yaw = 0
+
+[[asset]]
+id = "column_left"
+kind = "fixture"
+at = [125, 0, 112]
+size = [10, 186, 10]
+look = "powder_dark"
+
+[[asset]]
+id = "column_right"
+kind = "fixture"
+at = [-125, 0, 112]
+size = [10, 186, 10]
+look = "powder_dark"
+
+[[asset]]
+id = "overhead_panel"
+kind = "fixture"
+at = [0, 186, 112]
+size = [260, 6, 110]
+look = "powder_lightgrey"
+
+[[asset]]
+id = "bracket"
+kind = "fixture"
+at = [0, 172, 112]
+size = [70, 12, 24]
+look = "steel_machined"
+spot = "bracket"
+[asset.points]
+studs = [[-10, 0, -5], [10, 0, -5]]
+studs_axis = [0, -1, 0]
+
+[[asset]]
+id = "parts_cart"
+kind = "cart"
+at = [-55, 0, 85]
+size = [36, 78, 30]
+
+[[asset]]
+id = "nut_bin"
+kind = "bin"
+at = [-55, 78, 78]
+size = [20, 11, 20]
+holds = "nut"
+count = 4
+spot = "bracket"
+[asset.points]
+grab = [0, 2.0, 2.0]
+
+[[asset]]
+id = "ratchet"
+kind = "tool"
+tool = "ratchet_38"
+at = [-55, 79.2, 96]
+x_axis = [1, 0, 0]
+y_axis = [0, 1, 0]
+spot = "bracket"
+
+[[step]]
+do = "hand_start"
+what = "nut"
+from = "nut_bin"
+on = "bracket.studs"
+
+[[step]]
+do = "fasten"
+tool = "ratchet"
+on = "bracket.studs"
