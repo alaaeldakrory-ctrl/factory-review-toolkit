@@ -49,6 +49,11 @@ def bone_map():
     return m
 
 
+# bones standing the same way in both rest poses: no direction matching (only the arms differ, T-pose vs arms down)
+UPRIGHT = ("pelvis", "spine_01", "spine_02", "spine_03", "neck_01", "head")
+UPRIGHT_PRE = ("thigh_", "calf_", "foot_", "ball_")
+
+
 # ---------------------------------------------------------------------------------------------- small maths
 def _q2m(q):
     x, y, z, w = q
@@ -67,6 +72,20 @@ def _m2q(R):
 def _orth(M):
     u, _, vt = np.linalg.svd(M)
     return u @ vt
+
+
+def _swing(a, b):
+    """The smallest rotation taking unit vector a to unit vector b."""
+    v = np.cross(a, b)
+    c = float(np.dot(a, b))
+    if c < -0.9999:
+        ax = np.cross(a, [1.0, 0.0, 0.0])
+        if np.linalg.norm(ax) < 1e-6:
+            ax = np.cross(a, [0.0, 1.0, 0.0])
+        ax = ax / np.linalg.norm(ax)
+        return 2 * np.outer(ax, ax) - np.eye(3)
+    K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    return np.eye(3) + K + K @ K / (1.0 + c)
 
 
 def _frame(d, ref):
@@ -148,52 +167,108 @@ class Retarget:
             ref = np.array([0.0, 1.0, 0.0]) if abs(df[2]) > 0.7 * np.linalg.norm(df) else np.array([0.0, 0.0, 1.0])
             Rm, Rf = _frame(np.asarray(dm, float), ref), _frame(np.asarray(df, float), ref)
             self.align[j] = Rf @ Rm.T                                   # Mixamo bone direction -> frt direction
+            if j in UPRIGHT or j.startswith(UPRIGHT_PRE):                # upright in both rests (the head bone
+                self.align[j] = np.eye(3)                                # points at the face): taken as it is
         # whole-character scale: the character's head-top height to the frt body's
         top = rest.get("head_top", rest["head"] + np.array([0, 18.0, 0]))
         floor = min(self.rig.pos(f"{S}ToeBase")[1] for S in _SIDE.values())
         self.scale = float(top[1]) / float(self.rig.pos("HeadTop_End")[1] - floor)
         self.floor = floor
         self.hips_parent = self.rig.parent.get(self.rig.idx[PRE + "Hips"])
-        # bones to the frt body's proportions (the character's differ by a few cm: the hands would miss the work):
-        # each mapped bone's offset from its (mapped) parent set from the frt skeleton
-        inv = {v[0]: j for j, v in self.map.items()}
-        self.offset = {}
-        for j, (b, _, _) in self.map.items():
-            i = self.rig.idx[PRE + b]
-            p = self.rig.parent.get(i)
-            pb = self.rig.name[p][len(PRE):] if p is not None and self.rig.name[p].startswith(PRE) else None
-            if pb not in inv or b == "Hips":
-                continue
-            # posed, the parent's world rotation is R[parent] @ align @ rest rotation: the offset that puts this
-            # joint where the frt skeleton has it (direction and length), in the parent's local (scaled) frame
-            jp = inv[pb]
-            Wp = self.rig.world[p][:3, :3]
-            sp = float(np.linalg.norm(Wp[:, 0]))
-            d = (rest[j] - rest[jp]) / self.scale
-            self.offset[b] = (self.align[jp] @ self.rig.rot(pb)).T @ d / sp
+        self.offset = {}                                              # (the character keeps its own bones)
+        self.node_scale = {i: float(np.linalg.norm(self.rig.world[i][:3, 0])) for i in range(len(self.rig.world))}
+        self.seg = {}
+        for b in ("ForeArm", "Hand", "Leg", "Foot"):
+            for S in _SIDE.values():
+                n = f"{S}{b}"
+                self.seg[n] = float(np.linalg.norm(self.rig.pos(n) - self.rig.pos(self._up(n))))
+        # the character's legs are not the frt body's: lift the hips by the difference so the feet reach the floor
+        self.hip_lift = float(self.rig.pos("Hips")[1] - self.floor) - float(rest["pelvis"][1]) / self.scale
+
+    @staticmethod
+    def _up(n):
+        return n.replace("ForeArm", "Arm").replace("Hand", "ForeArm") if "Arm" in n or "Hand" in n else             n.replace("Leg", "UpLeg").replace("Foot", "Leg") if n.endswith(("Leg", "Foot")) and "Up" not in n else n
 
     def _parent(self, j):
         from frt_core.people.skeleton import PARENT
         return PARENT.get(j)
 
     def pose(self, pose):
-        """One solved pose -> ({bone: local quaternion xyzw}, hips local position in the character's units)."""
+        """One solved pose -> ({bone: local quaternion xyzw}, hips local position in the character's units).
+
+        The character keeps its own proportions (moving its joints would stretch the skinned mesh): the trunk, neck,
+        head, hands and fingers take the solved rotations, the hips the solved pelvis position (lifted by the
+        difference in leg length), and the arms and legs are re-solved for the character's own segment lengths so
+        that the wrists and ankles land where the solved ones are, the elbows and knees pointing the same way."""
         from frt_core.people.kinematics import fk
         R, P = fk(self.sk, pose)
+        rig = self.rig
         W = {}                                                         # posed world rotation per Mixamo node index
+        for j, (b, _, _) in self.map.items():
+            W[rig.idx[PRE + b]] = R[j] @ self.align[j] @ rig.rot(b)
+        to_rig = lambda v: np.asarray(v, float) / self.scale + np.array([0.0, self.floor, 0.0])   # frt cm -> rig
+        hips_w = to_rig(P["pelvis"]) + np.array([0.0, self.hip_lift, 0.0])
+        drop = 0.0                                                     # a foot the shorter leg can't reach: hips down
+        for S in _SIDE.values():
+            s_ = "l" if S == "Left" else "r"
+            A = self.positions(W, hips_w, f"{S}UpLeg")
+            over = float(np.linalg.norm(to_rig(P[f"foot_{s_}"]) - A)) - (self.seg[f"{S}Leg"] + self.seg[f"{S}Foot"]) * 0.995
+            drop = max(drop, over)
+        hips_w[1] -= drop
+        for S in _SIDE.values():
+            s_ = "l" if S == "Left" else "r"
+            self._limb(W, hips_w, f"{S}Arm", f"{S}ForeArm", f"{S}Hand", to_rig(P[f"hand_{s_}"]), to_rig(P[f"lowerarm_{s_}"]),
+                       to_rig(P[f"upperarm_{s_}"]))
+            self._limb(W, hips_w, f"{S}UpLeg", f"{S}Leg", f"{S}Foot", to_rig(P[f"foot_{s_}"]), to_rig(P[f"calf_{s_}"]),
+                       to_rig(P[f"thigh_{s_}"]))
         out = {}
-        for j, (b, _, _) in self.map.items():                          # (bone_map is parents-first)
-            i = self.rig.idx[PRE + b]
-            W[i] = R[j] @ self.align[j] @ self.rig.rot(b)
-            p = self.rig.parent.get(i)
-            Pw = W[p] if p in W else (_orth(self.rig.world[p][:3, :3]) if p is not None else np.eye(3))
+        for j, (b, _, _) in self.map.items():
+            i = rig.idx[PRE + b]
+            p = rig.parent.get(i)
+            Pw = W[p] if p in W else (_orth(rig.world[p][:3, :3]) if p is not None else np.eye(3))
             out[b] = _m2q(Pw.T @ W[i])
-        # hips: the frt pelvis position, in the hips' parent space (character units, feet on the floor)
-        pel = np.asarray(P["pelvis"], float) / self.scale + np.array([0.0, self.floor, 0.0])
-        M = self.rig.world[self.hips_parent] if self.hips_parent is not None else np.eye(4)
-        hip = (np.linalg.inv(M) @ np.append(pel, 1.0))[:3]
+        M = rig.world[self.hips_parent] if self.hips_parent is not None else np.eye(4)
+        hip = (np.linalg.inv(M) @ np.append(hips_w, 1.0))[:3]
         return out, hip
 
+    def positions(self, W, hips_w, upto):
+        """World position of `upto` (a Mixamo bone) for posed world rotations W, the hips at hips_w (rig units)."""
+        rig = self.rig
+        chain, i = [], rig.idx[PRE + upto]
+        while rig.name[i] != PRE + "Hips":
+            chain.append(i)
+            i = rig.parent[i]
+        p, cur = hips_w.copy(), i
+        for c in reversed(chain):
+            Rp = W.get(cur, _orth(rig.world[cur][:3, :3]))
+            p = p + Rp @ (rig.local[c][:3, 3] * self.node_scale[cur])
+            cur = c
+        return p
+
+    def _limb(self, W, hips_w, b0, b1, b2, target, mid, root):
+        """Two-bone IK on the character's own lengths: b2 to `target`, the b1 joint on the side the solved one is."""
+        rig = self.rig
+        i0, i1, i2 = (rig.idx[PRE + b] for b in (b0, b1, b2))
+        A = self.positions(W, hips_w, b0)
+        L1, L2 = self.seg[b1], self.seg[b2]
+        d = target - A
+        D = float(np.linalg.norm(d))
+        if D < 1e-6:
+            return
+        u = d / D
+        D = min(D, (L1 + L2) * 0.9995)
+        pole = (mid - root) - u * np.dot(mid - root, u)               # the solved knee / elbow side
+        if np.linalg.norm(pole) < 1e-6:
+            pole = np.cross(u, [1.0, 0.0, 0.0])
+        pole = pole / np.linalg.norm(pole)
+        a = (L1 * L1 - L2 * L2 + D * D) / (2 * D)
+        h = math.sqrt(max(L1 * L1 - a * a, 0.0))
+        E = A + u * a + pole * h
+        Tg = A + u * D
+        for i, j, frm, to in ((i0, i1, A, E), (i1, i2, E, Tg)):
+            cur = W[i] @ (rig.local[j][:3, 3] / (np.linalg.norm(rig.local[j][:3, 3]) + 1e-12))
+            want = (to - frm) / (np.linalg.norm(to - frm) + 1e-12)
+            W[i] = _swing(cur, want) @ W[i]
 
 # ---------------------------------------------------------------------------------------------- the scene
 ROUGH = (("chrome", 0.12), ("polished", 0.15), ("steel", 0.38), ("galv", 0.42), ("bolt", 0.35), ("powder", 0.5),
