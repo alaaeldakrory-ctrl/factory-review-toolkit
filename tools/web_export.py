@@ -52,6 +52,7 @@ def bone_map():
 # bones standing the same way in both rest poses: no direction matching (only the arms differ, T-pose vs arms down)
 UPRIGHT = ("pelvis", "spine_01", "spine_02", "spine_03", "neck_01", "head")
 UPRIGHT_PRE = ("thigh_", "calf_", "foot_", "ball_")
+SPINE = ("pelvis", "spine_01", "spine_02", "spine_03", "neck_01")
 
 
 # ---------------------------------------------------------------------------------------------- small maths
@@ -176,6 +177,8 @@ class Retarget:
         self.floor = floor
         self.hips_parent = self.rig.parent.get(self.rig.idx[PRE + "Hips"])
         self.offset = {}                                              # (the character keeps its own bones)
+        self.mix_spine = {b: float(np.linalg.norm(self.rig.pos(b) - self.rig.pos(a))) for a, b in
+                          (("Hips", "Spine"), ("Spine", "Spine1"), ("Spine1", "Spine2"), ("Spine2", "Neck"))}
         self.node_scale = {i: float(np.linalg.norm(self.rig.world[i][:3, 0])) for i in range(len(self.rig.world))}
         self.seg = {}
         for b in ("ForeArm", "Hand", "Leg", "Foot"):
@@ -208,6 +211,7 @@ class Retarget:
             W[rig.idx[PRE + b]] = R[j] @ self.align[j] @ rig.rot(b)
         to_rig = lambda v: np.asarray(v, float) / self.scale + np.array([0.0, self.floor, 0.0])   # frt cm -> rig
         hips_w = to_rig(P["pelvis"]) + np.array([0.0, self.hip_lift, 0.0])
+        self._spine(W, hips_w, R, {j: to_rig(P[j]) + np.array([0.0, self.hip_lift, 0.0]) for j in SPINE})
         drop = 0.0                                                     # a foot the shorter leg can't reach: hips down
         for S in _SIDE.values():
             s_ = "l" if S == "Left" else "r"
@@ -230,6 +234,38 @@ class Retarget:
         M = rig.world[self.hips_parent] if self.hips_parent is not None else np.eye(4)
         hip = (np.linalg.inv(M) @ np.append(hips_w, 1.0))[:3]
         return out, hip
+
+    def _spine(self, W, hips_w, R, pts):
+        """The character's spine on the solved spine's curve: the two skeletons split the back very differently
+        (frt: 8 + 4 + 15 + 28 cm, Mixamo: 11 + 12 + 14 + 16), so copying each joint's rotation bent the wrong part of
+        the back. Each Mixamo spine joint goes to the point the same fraction of the way along the solved curve; its
+        twist comes from the solved segment there."""
+        rig = self.rig
+        poly = [pts[j] for j in SPINE]
+        seg = [float(np.linalg.norm(b - a)) for a, b in zip(poly, poly[1:])]
+        tot = sum(seg)
+
+        def at(f):                                                    # point and frt joint at a fraction of the curve
+            d = f * tot
+            for k, L in enumerate(seg):
+                if d <= L or k == len(seg) - 1:
+                    u = min(1.0, d / L) if L > 1e-9 else 0.0
+                    return poly[k] + (poly[k + 1] - poly[k]) * u, SPINE[k]
+                d -= L
+        chain = ("Spine", "Spine1", "Spine2", "Neck")
+        lens = [self.mix_spine[b] for b in chain[1:]]
+        f0 = self.mix_spine["Spine"] / (self.mix_spine["Spine"] + sum(lens))
+        acc = self.mix_spine["Spine"]
+        for b, child, L in zip(chain[:-1], chain[1:], lens):
+            acc += L
+            tgt, j = at(acc / (self.mix_spine["Spine"] + sum(lens)))
+            i, ic = rig.idx[PRE + b], rig.idx[PRE + child]
+            W[i] = R[j] @ rig.rot(b) if j in R else W[i]
+            frm = self.positions(W, hips_w, b)
+            cur = W[i] @ (rig.local[ic][:3, 3] / (np.linalg.norm(rig.local[ic][:3, 3]) + 1e-12))
+            want = (tgt - frm) / (np.linalg.norm(tgt - frm) + 1e-12)
+            W[i] = _swing(cur, want) @ W[i]
+        _ = f0
 
     def positions(self, W, hips_w, upto):
         """World position of `upto` (a Mixamo bone) for posed world rotations W, the hips at hips_w (rig units)."""
