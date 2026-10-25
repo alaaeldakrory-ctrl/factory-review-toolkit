@@ -208,13 +208,37 @@ def tags(T, sols, s, a, b, rt):
     return out
 
 
+PART = {"nut": "nuts", "screw": "screws"}
+
+
+def clip_name(s, tg):
+    """'Start nuts by hand, overhead', 'Tighten with a ratchet, kneeling', 'Carry a valve block', 'Walk'."""
+    d = s["do"]
+    ctx = {"kneeling": "kneeling", "bent over": "bent over"}.get(tg["posture"]) or         {"overhead": "overhead", "shoulder": "at shoulder height", "low": "low"}.get(tg["height"], "")
+    if d == "walk":
+        return "Walk to the station"
+    if d == "hand_start":
+        n = f"Start {PART.get(tg.get('part'), 'fasteners')} by hand"
+    elif d == "fasten":
+        t = tg.get("tool", "tool")
+        n = f"Tighten with a {t}"
+    elif d in ("carry", "transfer"):
+        part = tg.get("part")
+        n = (f"Carry a {part}" if part else "Carry parts") if d == "carry" else f"Pick and place {PART.get(part, 'parts')}"
+    else:
+        n = tg["action"]
+    return f"{n}, {ctx}" if ctx else n
+
+
 def export_clips(T, sols, res, scores, out, job_id, industry=""):
     """Every step of the job (and its first walk) as a library clip into `out`; returns the clips' index entries."""
     os.makedirs(out, exist_ok=True)
     rt = W.Retarget(T.sk)
     entries = []
     cuts = []
+    raw = T.data.get("step", [])
     for k, s in enumerate(res["steps"]):
+        s = {**(raw[k] if k < len(raw) else {}), **s}              # (the step as written: tool, part, posture)
         a, b = s["start"], s["end"]
         fr = [i for i in range(a, b + 1) if not T.frames[i].label.endswith(":walk")]
         if len(fr) > 12:
@@ -233,16 +257,7 @@ def export_clips(T, sols, res, scores, out, job_id, industry=""):
         write_bvh(os.path.join(out, cid + ".bvh"), rt, Wall, hips_w)
         tg = tags(T, sols, s, a, b, rt) if s["do"] != "walk" else {"action": "Walk", "height": "-", "posture": "walking"}
         rula = [v for v in (scores or [])[a:b + 1] if v]
-        name = tg["action"]
-        if tg.get("tool"):
-            name += f" · {tg['tool']}"
-        elif tg.get("part") and s["do"] != "hand_start":
-            name += f" · {tg['part']}"
-        if s["do"] == "hand_start":
-            name += f" · {tg.get('part', 'parts')}s"
-        ctx = tg["height"] if tg["posture"] == "standing" else tg["posture"]
-        if s["do"] != "walk":
-            name += f", {ctx}"
+        name = clip_name(s, tg)
         # the preview: the clip's frames as int16 (same layout as motion.bin's bone part + hips)
         rows = np.concatenate([np.concatenate([q_all[k] for k in rt.bones], axis=1) * 32767.0, hips_l * 10.0], axis=1)
         np.clip(np.round(rows), -32768, 32767).astype("<i2").tofile(os.path.join(out, cid + ".bin"))
@@ -258,10 +273,17 @@ def export_clips(T, sols, res, scores, out, job_id, industry=""):
 
 def rebuild_index(out, rt=None):
     """library/index.json: every clip's entry (and the bone order the preview files use)."""
-    clips = []
+    clips, seen = [], {}
     for f in sorted(os.listdir(out)):
         if f.endswith(".json") and f != "index.json":
-            clips.append(json.load(open(os.path.join(out, f))))
+            c = json.load(open(os.path.join(out, f)))
+            if c["name"] in seen:                                     # one clip per distinct motion: the first
+                for x in (".glb", ".bvh", ".bin", ".json", ".fbx"):
+                    if os.path.isfile(os.path.join(out, c["id"] + x)):
+                        os.remove(os.path.join(out, c["id"] + x))
+                continue
+            seen[c["name"]] = c["id"]
+            clips.append(c)
     idx = {"bones": rt.bones if rt else [], "fps": FPS, "character_scale": rt.scale * 0.01 if rt else 1.0, "clips": clips}
     if rt is None and os.path.isfile(os.path.join(out, "index.json")):
         idx["bones"] = json.load(open(os.path.join(out, "index.json"))).get("bones", [])
