@@ -71,7 +71,7 @@ def solved(jid, ch, out, d=None):
         so, se = KJ.generate([KJ.prepare(jid, src=src)])
         if "ok (" not in so:
             raise RuntimeError(f"Kimodo failed on {vid}: {se[-1500:]}")
-        print(f"  {vid}: {KJ.finalize(jid, src, keep_out=move_rules(r.job.keep_out_rules(), r.M))}", flush=True)
+        print(f"  {vid}: {KJ.finalize(jid, src, keep_out=move_rules(r.job.keep_out_rules(), r.M), M=r.M)}", flush=True)
         np.save(os.path.join(vout, "M.npy"), r.M)
     k = pickle.load(open(p, "rb"))
     return k["frames"], k["sols"], np.load(os.path.join(vout, "M.npy"))

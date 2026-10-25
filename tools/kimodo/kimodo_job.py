@@ -206,9 +206,11 @@ def upright(sk, frames, sols):
     return u
 
 
-def finalize(jid, src=None, keep_out=None):
+def finalize(jid, src=None, keep_out=None, M=None):
     """Kimodo result -> our worker, final pass (Kimodo's body, our hands), checks -> summary dict. keep_out: the
-    keep-out rules when the work was moved (api.move_rules; default: the job's own)."""
+    keep-out rules when the work was moved (api.move_rules; default: the job's own); M: that move (the fixture
+    the body keeps out of moves with it)."""
+    from frt_core.people.collide import fixture_field
     from frt_core.people.bake import solve_frames
     from frt_core.people.check import check_frames
     from frt_core.people.jobs import BY_ID
@@ -239,16 +241,18 @@ def finalize(jid, src=None, keep_out=None):
         pose.pelvis = J["pelvis"] - sk.world["pelvis"]
         # the job's own stance (feet exactly where authored; legs solved to them), Kimodo's body on top
         new.append(type(f)(f.targets, f.look, dict(f.tools), root=f.root, stance=f.stance, base=pose, label=f.label))
+        new[-1].world = getattr(f, "world", None)
     upright(sk, new, sols)
     if os.environ.get("KIMODO_PIN", "all") == "work":          # measured: pinning on every frame passes 26/50, work-only 7/50
         pin_hands(sk, new)                    # pinned while working, Kimodo's arms in between
     # KIMODO_PIN=all: the job's hand targets on every frame (Kimodo gives only the body)
     S = PostureSolver(sk, w)
     S.keep_out = job.keep_out_rules() if keep_out is None else keep_out
+    S.field = fixture_field(job, M)                 # legs and feet out of the fixture too
     S.base_correct = True                     # Kimodo's body, corrected for keep-outs / reach / the planted feet
     ks = solve_frames(S, new, log=lambda *a: None)
-    rep_k = check_frames(sk, new, ks, jid + " kimodo", keep_out=S.keep_out)
-    rep_r = check_frames(sk, frames, sols, jid + " rules", keep_out=S.keep_out)
+    rep_k = check_frames(sk, new, ks, jid + " kimodo", keep_out=S.keep_out, field=S.field)
+    rep_r = check_frames(sk, frames, sols, jid + " rules", keep_out=S.keep_out, field=S.field)
     with open(os.path.join(out, "kimodo.pkl"), "wb") as f:
         pickle.dump({"frames": new, "sols": ks, "worker": w.id}, f)
     summary = {"job": jid, "kimodo": {"ok": rep_k["ok"], "counts": rep_k["counts"],

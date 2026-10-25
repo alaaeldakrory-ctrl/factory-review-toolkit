@@ -392,6 +392,15 @@ class PostureSolver:
             terms["keep_out"] = keep_out_cost(Pall, self.keep_out)
         if self.field is not None:
             terms["collide"] = self.field.cost(Pall, self._world)
+        # the floor: a kneeling knee rests ON it (the joint a kneecap above it), never through it
+        sink = sum(max(0.0, self.KNEE_FLOOR - float(Pall[j][1])) for j in ("calf_l", "calf_r", "pelvis"))
+        if sink > 0.0:
+            terms["floor"] = (sink / 2.0) ** 2 * 3.0
+        for s in ("l", "r"):                         # and a kneeling knee (its toes tucked under) stays down on it
+            if getattr(stance, f"lift_{s}", 0.0) < -20.0 and stance.drop:
+                up = float(Pall[f"calf_{s}"][1]) - self.KNEE_FLOOR - 3.0
+                if up > 0.0:
+                    terms["kneel"] = (up / 3.0) ** 2 * 2.0
         # knees: a deep knee bend is real effort too (so squatting is chosen over stooping, not for free)
         terms["knees"] = (max(0.0, drop - 6.0) / 60.0) ** 2 * 0.5
         c = com(Pall)
@@ -401,6 +410,10 @@ class PostureSolver:
             for ox, oz in ((-5, -6), (5, -6), (-5, 18), (5, 18)):
                 q = a + ry(stance.foot_yaw(s)) @ np.array([ox, 0, oz])
                 feet.append((q[0], q[2]))
+        for s in ("l", "r"):                                       # a knee resting on the floor carries weight too:
+            k = Pall[f"calf_{s}"]                                  # kneeling, the base is the knee and both feet
+            if float(k[1]) < self.KNEE_FLOOR + 6.0:
+                feet += [(float(k[0]) + ox, float(k[2]) + oz) for ox, oz in ((-5, -5), (5, -5), (-5, 5), (5, 5))]
         terms["balance"] = (_outside((c[0], c[2]), _hull(feet)) / 1.5) ** 2 * (20.0 if not swing else 2.0)
         angles.update({"trunk_flexion": angle(Rall["spine_03"] @ UP, UP), "trunk_side": lat, "trunk_twist": twist,
                        "knee_l": angle(Pall["calf_l"] - Pall["thigh_l"], Pall["foot_l"] - Pall["calf_l"]),
@@ -411,6 +424,7 @@ class PostureSolver:
     # wrist behind the shoulder line. Measured on the reviewed library clips: elbows up to 17 cm back, wrists in front
     BEHIND_ELBOW = 16.0
     BEHIND_WRIST = 2.0
+    KNEE_FLOOR = 5.0                # cm: lowest a knee joint goes (a kneecap's thickness above the floor it rests on)
     HANDLE_DEPTH = 0.7              # cm from the palm centre's surface to a held handle's skin (the authored grips)
     FINGER_HALF = 0.9               # cm from a finger's bone line to its palm-side skin
 

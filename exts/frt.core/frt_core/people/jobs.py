@@ -129,7 +129,7 @@ def held(hand_fn, T_ref, key="t"):
     return f
 
 
-def carried(sk, hand_fn, T_ref, key="t", at=None):
+def carried(sk, hand_fn, T_ref, key="t", at=None, body=None, tool=None):
     """Tool pose at the hip that puts the holding hand (rigid grip as at T_ref) hanging naturally: fingers down, palm
     towards the thigh, by the hip. The hand then turns the shortest way between hanging and working."""
     h = hand_fn({key: T_ref})
@@ -147,15 +147,84 @@ def carried(sk, hand_fn, T_ref, key="t", at=None):
     T0 = np.eye(4)
     T0[:3, :3] = Rm @ T_ref[:3, :3]
     T0[:3, 3] = q_h - Rm @ (np.asarray(h.point) - T_ref[:3, 3])
-    return T0
+    if body is None or tool is None:
+        return T0
+    return clear_carry(T0, q_h, body, tool, K.unit(np.cross(f_h, p_h)))
 
 
-def tool_track(sk, hand_fn, tk, key="t", reach=1.0, at=None):
+def clear_carry(T0, q, body, tool, thumb, via=False):
+    """A carried tool turned in the hand (about the grip point q) until it is clear of the body and the floor: a
+    long wrench hanging forward at the hip runs through the front thigh of a kneeling worker, so it is carried
+    turned out to the side or tipped down instead. Turns: the forearm rolling (about vertical, +-90 deg) and the
+    wrist tipping the tool (about the thumb, +-45 deg); the smallest turn that clears wins.
+    body: joint positions (dict) of the posture the tool is carried in; tool: tools.TOOLS key. via: a pose on the
+    way between hip and work (it may also lift / swing out a little to get past a knee)."""
+    from .collide import tool_in_body, tool_points
+    pts0 = tool_points(tool)
+
+    def at(a, b):
+        Rr = _axis_rot(np.array([0.0, 1.0, 0.0]), a) @ _axis_rot(thumb, b)
+        T = np.eye(4)
+        T[:3, :3] = Rr @ T0[:3, :3]
+        T[:3, 3] = q + Rr @ (T0[:3, 3] - q)
+        return T
+
+    def cost(a, b):
+        T = at(a, b)
+        pts = (T[:3, :3] @ pts0.T).T + T[:3, 3]
+        pen = sum(v * v for v in tool_in_body(body, pts).values())
+        floor = float(np.sum(np.maximum(0.0, 1.0 - pts[:, 1]) ** 2))
+        return pen * 4.0 + floor + (a / 90.0) ** 2 * 3.0 + (b / 45.0) ** 2 * 3.0
+    if not via:
+        best = min((cost(a, b), a, b) for a in range(-90, 91, 15) for b in range(-45, 46, 15))
+        return at(best[1], best[2])
+    if cost(0, 0) < 0.5:                                # on its way: already clear - left as it is
+        return T0
+    best = None                                         # else lifted / swung out a little, and turned
+    for dy in (0.0, 6.0, 12.0, 18.0):
+        for dx in (-10.0, 0.0, 10.0):
+            for a in range(-60, 61, 20):
+                for b in (-30, 0, 30):
+                    T = at(a, b)
+                    T[:3, 3] += (dx, dy, 0.0)
+                    pts = (T[:3, :3] @ pts0.T).T + T[:3, 3]
+                    c = sum(v * v for v in tool_in_body(body, pts).values()) * 4.0 +                         float(np.sum(np.maximum(0.0, 1.0 - pts[:, 1]) ** 2)) + (a / 90.0) ** 2 * 3.0 +                         (b / 45.0) ** 2 * 3.0 + (dy / 12.0) ** 2 + (dx / 10.0) ** 2
+                    if best is None or c < best[0]:
+                        best = (c, T)
+    return best[1]
+
+
+def _mid(Ta, Tb):
+    """The pose halfway between two 4x4 poses (position lerp, rotation slerp)."""
+    from .bake import _R, _q, _slerp
+    T = np.eye(4)
+    T[:3, :3] = _R(_slerp(_q(Ta[:3, :3]), _q(Tb[:3, :3]), 0.5))
+    T[:3, 3] = (Ta[:3, 3] + Tb[:3, 3]) / 2
+    return T
+
+
+def _axis_rot(ax, deg):
+    ax = np.asarray(ax, float) / np.linalg.norm(ax)
+    a = math.radians(deg)
+    Kx = np.array([[0, -ax[2], ax[1]], [ax[2], 0, -ax[0]], [-ax[1], ax[0], 0]])
+    return np.eye(3) + math.sin(a) * Kx + (1 - math.cos(a)) * Kx @ Kx
+
+
+def tool_track(sk, hand_fn, tk, key="t", reach=1.0, at=None, body=None, tool=None):
     """Tool keys [(0, None), (t1, T_first), ..., (tn, T_last), (tn + reach, None)]: the None ends become carry
-    poses at the hip; returns (tool keys, hand keys) with the hand rigid on the tool while carrying it."""
+    poses at the hip; returns (tool keys, hand keys) with the hand rigid on the tool while carrying it.
+    body / tool: the posture's joint positions and the tool's key - the carry pose then keeps the tool out of the
+    body and the floor (clear_carry)."""
     t1, Tf = tk[1]
     tn, Tl = tk[-2]
-    tk = [(tk[0][0], carried(sk, hand_fn, Tf, key, at))] + tk[1:-1] + [(tk[-1][0], carried(sk, hand_fn, Tl, key, at))]
+    tk = [(tk[0][0], carried(sk, hand_fn, Tf, key, at, body, tool))] + tk[1:-1] +         [(tk[-1][0], carried(sk, hand_fn, Tl, key, at, body, tool))]
+    if body is not None and tool is not None:          # the way between hip and work clear of the body too
+        g = hand_fn({key: Tf}).point
+        lp = Tf[:3, :3].T @ (np.asarray(g, float) - Tf[:3, 3])
+        for a, b in ((len(tk) - 2, len(tk) - 1), (0, 1)):  # (the end first: inserting shifts what follows)
+            (ta, Ta), (tb, Tb) = tk[a], tk[b]
+            M = _mid(Ta, Tb)
+            tk.insert(b, ((ta + tb) / 2, clear_carry(M, M[:3, :3] @ lp + M[:3, 3], body, tool, M[:3, 2], via=True)))
     e = 1e-3
     hk = [(0.0, held(hand_fn, Tf, key)), (t1 - e, held(hand_fn, Tf, key)), (t1, hand_fn),
           (tn, hand_fn), (tn + e, held(hand_fn, Tl, key))]

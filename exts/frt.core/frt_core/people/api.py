@@ -173,6 +173,34 @@ def solve_job(job_id, worker=None, work=None, step=True, cache=True):
     return res
 
 
+def clear_feet(sk, frames, field, step=1.0, most=24.0):
+    """Planted feet placed (by a job's stance) with the toes in the fixture are drawn back until they are clear:
+    the feet are fixed in the solve, so a foot in a panel would otherwise hold the whole body against it."""
+    from .collide import TOL
+    from .solver import ry
+    done = set()
+    for f in frames:
+        st = f.stance
+        if st is None or id(st) in done or getattr(st, "free", False):
+            continue
+        done.add(id(st))
+        for s_ in ("l", "r"):
+            a = getattr(st, "left" if s_ == "l" else "right")
+            if a is None:
+                continue
+            a = np.asarray(a, float)
+            Rf = ry(st.foot_yaw(s_))
+            toe = Rf @ (sk.world[f"ball_{s_}"] - sk.world[f"foot_{s_}"])
+            fwd = Rf @ np.array([0.0, 0.0, 1.0])
+            pts = np.array([a, a + toe * 0.5, a + toe, a + toe + fwd * 5.0])
+            pts[:, 1] = np.maximum(pts[:, 1], 3.0)
+            back = 0.0
+            while back < most and np.any(4.0 - field.distance(pts - fwd * back) - TOL > 0.0):
+                back += step
+            if back > 0.0:
+                setattr(st, "left" if s_ == "l" else "right", tuple(a - fwd * back))
+
+
 def _solve(job, w, sk, S, M, step):
     from .bake import solve_frames
     from .check import check_frames
@@ -186,12 +214,16 @@ def _solve(job, w, sk, S, M, step):
     if not np.allclose(M, np.eye(4)):
         frames = move_work(frames, M)
         rules = move_rules(rules, M)
+    from .collide import fixture_field
+    S.field = fixture_field(job, M)                               # the body (legs and feet too) out of the fixture
+    if S.field is not None:
+        clear_feet(sk, frames, S.field)
     if step:
         frames, sols, rep, spot, _ = solve_placed(S, frames, rules)
     else:
         S.keep_out = rules
         sols = solve_frames(S, frames, log=lambda *a: None)
-        rep = check_frames(sk, frames, sols, job_id, keep_out=S.keep_out)
+        rep = check_frames(sk, frames, sols, job_id, keep_out=S.keep_out, field=S.field)
         spot = (0.0, 0.0)
     findings = diagnose(S, frames, rep, sols) if rep["counts"] else []
     partner = None

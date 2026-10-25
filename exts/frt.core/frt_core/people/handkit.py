@@ -138,20 +138,22 @@ def _interp(keys, t, kind):
     return keys[-1][1]
 
 
-def kneel_stance(sk, knee_down="r", forward=34.0, width=None):
+def kneel_stance(sk, knee_down="r", forward=34.0, width=None, out=0.0):
     """One knee on the floor (toes tucked), the other foot planted in front: the pelvis about a thigh length above
-    the floor. knee_down: which knee is on the floor."""
+    the floor. knee_down: which knee is on the floor; out: the front foot that much further out to the side (cm) -
+    kneeling close to a wall or panel, where a foot straight ahead would be in it."""
     from .solver import Stance
     ank = float(sk.world["foot_l"][1])
     hw = abs(sk.world["thigh_l"][0] - sk.world["thigh_r"][0]) / 2 + (width or 3.0)
     thigh = sk.length("thigh_l", "calf_l")
     shin = sk.length("calf_l", "foot_l")
     pel = float(sk.world["pelvis"][1])
-    hip_y = thigh * 0.93 + 6.0                                  # knee pad on the floor, thigh near vertical
+    hip_off = pel - float(sk.world["thigh_l"][1])               # pelvis joint above the hip joints (8 cm on Mixamo)
+    hip_y = thigh * 0.97 + 6.0 + hip_off                        # knee pad on the floor, thigh near vertical
     st = Stance()
     up = knee_down == "l"
     front, back = ("r", "l") if up else ("l", "r")
-    fx = hw if front == "l" else -hw
+    fx = (hw + out) if front == "l" else -(hw + out)
     bx = hw if back == "l" else -hw
     setattr(st, "left" if front == "l" else "right", (fx, ank, forward))
     # toes tucked under, heel up: the foot nearly upright with the ball of the foot on it - from this

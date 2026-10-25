@@ -13,7 +13,13 @@ import math
 import numpy as np
 
 from .kinematics import fk
+from .collide import tool_in_body, tool_points
 from .solver import keep_out_over
+from .tools import TOOLS
+
+FLOOR_TOL = 2.0            # cm a knee joint may sit below the solver's floor line before it is through the floor
+TOOL_WORK_END = 5.0        # cm around a tool's origin (bit tip, socket, jaws) that works ON the fixture
+TOOL_TOL = 2.0             # cm a held tool may press into the body's outline (clothing) before it is through it
 from .skeleton import NAMES
 
 # max rotation from rest (deg) per joint family
@@ -96,6 +102,16 @@ def check_frames(sk, frames, sols, name="", keep_out=None, field=None):
                     worst[q] = max(worst.get(q, 0.0), float(p_))
             for q, p_ in worst.items():
                 issues.append((i, "inside equipment", q, round(p_, 1), 2.0))
+            for name, (key, T) in (getattr(f, "tools", None) or {}).items():   # a tool's body through the fixture
+                if name.startswith("part:") or key not in TOOLS:          # (its work end - the origin - touches it)
+                    continue
+                tp = tool_points(key)
+                tp = tp[np.linalg.norm(tp, axis=1) > TOOL_WORK_END]
+                W = T if M is None else M @ T
+                d = fld.distance((W[:3, :3] @ tp.T).T + W[:3, 3])
+                n_in = int(np.sum(d < 1.0))
+                if n_in >= 3:
+                    issues.append((i, "tool in fixture", key, n_in, 3))
         for s, pen in zip(("l", "r"), PostureSolver.arm_in_body(R, P, prof)):   # arms never through the body
             if pen > 1.5:
                 issues.append((i, "arm in body", f"arm_{s}", round(pen, 1), 1.5))
@@ -107,6 +123,17 @@ def check_frames(sk, frames, sols, name="", keep_out=None, field=None):
             lim_e, lim_w = BEHIND[0], BEHIND[1] if s in working else BEHIND[2]
             if be > lim_e or bw > lim_w:
                 issues.append((i, "behind back", f"arm_{s}", round(max(be - lim_e, bw - lim_w), 1), 0))
+        for j in ("calf_l", "calf_r", "pelvis"):             # nothing through the floor (a knee rests on it)
+            sink = PostureSolver.KNEE_FLOOR - float(P[j][1])
+            if sink > FLOOR_TOL:
+                issues.append((i, "through floor", j, round(sink, 1), FLOOR_TOL))
+        for name, (key, T) in (getattr(f, "tools", None) or {}).items():   # a held tool never through the body
+            if name.startswith("part:") or key not in TOOLS:
+                continue
+            pts = (T[:3, :3] @ tool_points(key).T).T + T[:3, 3]
+            for q, pen in tool_in_body(P, pts).items():
+                if pen > TOOL_TOL:
+                    issues.append((i, "tool in body", f"{key}/{q}", round(pen, 1), TOOL_TOL))
         for s in ("l", "r"):                                 # elbows / knees never the wrong way
             ua, fa = P[f"lowerarm_{s}"] - P[f"upperarm_{s}"], P[f"hand_{s}"] - P[f"lowerarm_{s}"]
             th, ca = P[f"calf_{s}"] - P[f"thigh_{s}"], P[f"foot_{s}"] - P[f"calf_{s}"]

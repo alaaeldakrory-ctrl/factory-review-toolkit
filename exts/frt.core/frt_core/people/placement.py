@@ -94,6 +94,15 @@ def _badness(rep):
             rep["worst_limit_over"] + rep["worst_pop"] * 0.2)
 
 
+def _in_field(frames, M):
+    """Frames whose work moved by M: the solver's field (S.field, built where the work was) seen from the moved
+    worker (frame.world maps the worker frame into the field's)."""
+    W = np.linalg.inv(M)
+    for f in frames:
+        f.world = W if getattr(f, "world", None) is None else f.world @ W
+    return frames
+
+
 def solve_placed(S, frames, keep_out=(), log=None):
     """(frames, sols, report, offset (dx, dz) of the worker, report at the authored spot) - the authored spot when
     it passes the checks, otherwise the best standing spot found."""
@@ -101,7 +110,7 @@ def solve_placed(S, frames, keep_out=(), log=None):
     from .check import check_frames
     S.keep_out = list(keep_out)
     sols = solve_frames(S, frames, log=lambda *a: None)
-    rep = check_frames(S.sk, frames, sols, keep_out=S.keep_out)
+    rep = check_frames(S.sk, frames, sols, keep_out=S.keep_out, field=S.field)
     raw = rep
     if rep["ok"]:
         return frames, sols, rep, (0.0, 0.0), raw
@@ -109,7 +118,7 @@ def solve_placed(S, frames, keep_out=(), log=None):
     scored = []
     for dx, dz in SPOTS:                         # the worker steps by (dx, dz): the work moves the other way
         M = translation(-dx, -dz)
-        fr = move_work([frames[i] for i in [0] + keys + [len(frames) - 1]], M)[1:-1]
+        fr = _in_field(move_work([frames[i] for i in [0] + keys + [len(frames) - 1]], M)[1:-1], M)
         S.keep_out = move_rules(keep_out, M)
         cost = sum(S.solve(f.targets, look=f.look, stance=f.stance, base=f.base).cost for f in fr)
         scored.append((cost, dx, dz))
@@ -117,10 +126,10 @@ def solve_placed(S, frames, keep_out=(), log=None):
     best = (_badness(rep), frames, sols, rep, (0.0, 0.0))
     for cost, dx, dz in scored[:2]:
         M = translation(-dx, -dz)
-        fr = move_work(frames, M)
+        fr = _in_field(move_work(frames, M), M)
         S.keep_out = move_rules(keep_out, M)
         so = solve_frames(S, fr, log=lambda *a: None)
-        rp = check_frames(S.sk, fr, so, keep_out=S.keep_out)
+        rp = check_frames(S.sk, fr, so, keep_out=S.keep_out, field=S.field)
         if log:
             log(f"  spot ({dx:+.0f}, {dz:+.0f}): {'ok' if rp['ok'] else rp['counts']}")
         cand = (_badness(rp), fr, so, rp, (dx, dz))

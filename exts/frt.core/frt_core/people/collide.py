@@ -22,7 +22,8 @@ CAPSULES = [("pelvis", "spine_02", 13.0, 3, 1.0), ("spine_02", "spine_03", 13.0,
             ("upperarm_l", "lowerarm_l", 5.5, 3, 1.0), ("upperarm_r", "lowerarm_r", 5.5, 3, 1.0),
             ("lowerarm_l", "hand_l", 4.5, 2, 0.6), ("lowerarm_r", "hand_r", 4.5, 2, 0.6),
             ("thigh_l", "calf_l", 7.0, 3, 1.0), ("thigh_r", "calf_r", 7.0, 3, 1.0),
-            ("calf_l", "foot_l", 5.5, 3, 0.85), ("calf_r", "foot_r", 5.5, 3, 0.85)]
+            ("calf_l", "foot_l", 5.5, 3, 0.85), ("calf_r", "foot_r", 5.5, 3, 0.85),
+            ("foot_l", "ball_l", 4.0, 2, 1.0), ("foot_r", "ball_r", 4.0, 2, 1.0)]          # the foot to the toes
 HEAD_UP = 8.0               # the head sphere sits this far above the head joint
 
 
@@ -275,3 +276,72 @@ def region_around(points, margin=150.0, height=(0.0, 260.0)):
     P = np.asarray(points, float)
     return ((float(P[:, 0].min() - margin), float(P[:, 0].max() + margin)), height,
             (float(P[:, 2].min() - margin), float(P[:, 2].max() + margin)))
+
+
+def shape_triangles(shapes, M=None):
+    """(m, 3, 3) triangles of a geom.Shapes (fixture, tool), moved by 4x4 M."""
+    out = []
+    for P, C, I, _ in shapes.groups.values():
+        P = np.asarray(P, float)
+        if M is not None and len(P):
+            P = (M[:3, :3] @ P.T).T + M[:3, 3]
+        k = 0
+        for c in C:
+            f = I[k:k + c]
+            out += [(P[f[0]], P[f[j]], P[f[j + 1]]) for j in range(1, c - 1)]
+            k += c
+    return np.array(out, float).reshape(-1, 3, 3)
+
+
+def fixture_field(job, M=None):
+    """A job's own fixture (moved with the work by M) as a field in the worker frame: the body keeps out of the
+    panel / bench / chassis it works at, legs and feet as much as the chest (a knee through a board is as wrong
+    as a chest through it). None for a job without fixture geometry."""
+    from ..geom import Shapes
+    s = Shapes()
+    job.fixture(s)
+    T = shape_triangles(s, M)
+    if not len(T):
+        return None
+    lo, hi = T.reshape(-1, 3).min(0), T.reshape(-1, 3).max(0)
+    region = ((float(lo[0]) - 50.0, float(hi[0]) + 50.0), (0.0, max(220.0, float(hi[1]) + 30.0)),
+              (float(lo[2]) - 90.0, float(hi[2]) + 50.0))
+    return SceneField.from_triangles(T, region)
+
+
+_TOOL_PTS = {}
+TOOL_BODY = ("pelvis", "spine_02", "spine_03", "head", "thigh_l", "thigh_r", "calf_l", "calf_r", "foot_l", "foot_r")
+
+
+def tool_points(key, step=2.0):
+    """Surface samples of a hand tool (tools.TOOLS key) in its own frame, about `step` cm apart."""
+    if key not in _TOOL_PTS:
+        from .tools import TOOLS
+        T = shape_triangles(TOOLS[key].shapes())
+        pts = T.reshape(-1, 3)
+        if len(pts):
+            q = np.unique(np.floor(pts / step).astype(int), axis=0, return_index=True)[1]
+            pts = pts[np.sort(q)]
+        _TOOL_PTS[key] = pts
+    return _TOOL_PTS[key]
+
+
+def tool_in_body(P, pts, parts=TOOL_BODY):
+    """{body part: cm} a tool's points (in the frame of joint positions P) reach into the trunk, head and legs -
+    not the arms, whose hand holds it."""
+    out = {}
+    if not len(pts):
+        return out
+    for a, b, r, n, frac in CAPSULES:
+        if a not in parts or a not in P or b not in P:
+            continue
+        pa, pb = np.asarray(P[a], float), np.asarray(P[b], float)
+        if a == b:
+            pa = pb = pa + np.array([0.0, HEAD_UP, 0.0])
+        ab = (pb - pa) * frac
+        u = np.clip(((pts - pa) @ ab) / max(float(ab @ ab), 1e-9), 0.0, 1.0)
+        pen = r - float(np.min(np.linalg.norm(pts - (pa + np.outer(u, ab)), axis=1)))
+        if pen > 0.0:
+            q = a.rsplit("_", 1)[0] if a.endswith(("_l", "_r")) else a
+            out[q] = max(out.get(q, 0.0), pen)
+    return out

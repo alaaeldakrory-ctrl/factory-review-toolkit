@@ -23,6 +23,7 @@ wpt, wdir = J.wpt, J.wdir
 
 
 _POSTURE_REST = {}
+_POSTURE_BODY = {}
 
 
 def posture_rest(S, st):
@@ -44,7 +45,14 @@ def posture_rest(S, st):
         pt = P[f"hand_{side}"] + f * hl * 0.40 + pm * 1.6
         out[side] = HandTarget(side, tuple(pt), tuple(f), tuple(pm), "relaxed", 0.0)
     _POSTURE_REST[key] = out
+    _POSTURE_BODY[key] = P
     return out
+
+
+def posture_body(S, st):
+    """Joint positions of the relaxed posture (kneel / squat): what a tool carried in it has to stay clear of."""
+    posture_rest(S, st)
+    return _POSTURE_BODY[(id(S.sk), st.drop, st.left, st.right)]
 
 
 def knee_rest(sk, side="l", st=None, fwd=30.0, y=None):
@@ -202,10 +210,14 @@ def b_overhead(s):
     s.lathe((-4.0, BEAM_Y - 7.0, 40.0), (-4.0, BEAM_Y - 9.0, 40.0), [(0, 1.2), (1, 1.2)], "bolt_zinc", sides=6)
 
 
+KZ = 42.0                       # kneel_drive: the chassis side's face (the driver's hand ~28 cm in front of the chest)
+KY = 66.0                       # and the fastener's height: a kneeling fitter's elbow (forearm in line with the driver)
+
+
 def b_kneel_plate(s):
-    s.rbox((0.0, 40.0, 44.0), (120.0, 80.0, 2.0), 0.6, "powder_grey", seg=2)                       # chassis side
-    s.rbox((0.0, 2.0, 50.0), (120.0, 4.0, 14.0), 0.4, "powder_dark", seg=1)
-    s.rbox((-6.0, 46.0, 42.6), (10.0, 10.0, 1.0), 0.4, "powder_dark", seg=1)
+    s.rbox((0.0, 40.0, KZ + 1.0), (120.0, 80.0, 2.0), 0.6, "powder_grey", seg=2)                    # chassis side
+    s.rbox((0.0, 2.0, KZ + 7.0), (120.0, 4.0, 14.0), 0.4, "powder_dark", seg=1)
+    s.rbox((-6.0, KY, KZ - 0.4), (10.0, 10.0, 1.0), 0.4, "powder_dark", seg=1)
 
 
 def b_under(s):
@@ -501,9 +513,10 @@ def j_overhead(S, sk):
 
 def j_kneel_drive(S, sk):
     """Kneel on one knee and drive a bolt into the chassis side low down with an impact driver."""
-    st = K.kneel_stance(sk, knee_down="r")
+    st = K.kneel_stance(sk, knee_down="r", forward=26.0, out=16.0)   # close to the chassis: front foot out to the side,
+    st.yaw_l = 40.0                                                   # toes turned out along the panel
     R = posture_rest(S, st)
-    P = np.array([-6.0, 46.0, 52.0])
+    P = np.array([-6.0, KY, KZ - 0.9])                               # the bolt head on the plate (bit tip on it)
 
     def T_at(push=0.0):
         return K.T_at(P - Z * (0.0 - push), Z, Y)
@@ -512,7 +525,7 @@ def j_kneel_drive(S, sk):
         return lambda Td: K.power(sk, "r", wpt(Td["t"], (-12.8, -7.0, 0.0)), wdir(Td["t"], Y),
                                   grip=f"trigger:1.7:{pull}", lean=wdir(Td["t"], X))
     br = knee_rest(sk, "l", st, fwd=st.left[2] - 4.0, y=sk.length("calf_l", "foot_l") + 9.0)
-    T0 = K.T_at(np.array([-26.0, 40.0, 14.0]), (0.0, -0.2, 1.0), Y)
+    T0 = J.carried(sk, rh(0.0), T_at(-3.0), "t", at=R["r"].point, body=posture_body(S, st), tool="impact_driver")
     tk = [(0.0, T0), (1.1, T_at(-3.0)), (1.5, T_at(0.0))]
     t = 1.5
     for k in range(8):
@@ -673,7 +686,7 @@ def j_lug_torque(S, sk):
     lh = lambda Td: K.power(sk, "l", wpt(Td["t"], (50.0, 0.8, 0.0)), -wdir(Td["t"], X), grip="power:1.1",
                             lean=(0.0, -0.2, 1.0), weight=0.8)
     tk = [(0.0, None), (1.5, T_th(0.0)), (3.2, T_th(30.0)), (3.28, T_th(32.0)), (3.9, T_th(32.0))]
-    tk, hk = J.tool_track(sk, rh, tk + [(5.1, None)], at=R["r"].point)
+    tk, hk = J.tool_track(sk, rh, tk + [(5.1, None)], at=R["r"].point, body=posture_body(S, st), tool="torque_long")
     return K.keyed(5.2, hands={"r": hk, "l": [(0.0, R["l"]), (1.6, lh), (3.9, lh), (4.6, R["l"])]},
                    tools={"t": ("torque_long", tk)}, look=tuple(N), label="lug torque", stance=st)
 
@@ -926,7 +939,8 @@ def j_inspect(S, sk):
     for p in seam[1:]:
         tk += [(t + 1.0, T_light(p))]
         t += 1.0
-    tk, hk = J.tool_track(sk, rh, tk + [(t + 1.1, None)], at=R["r"].point)
+    tk, hk = J.tool_track(sk, rh, tk + [(t + 1.1, None)], at=R["r"].point, body=posture_body(S, st),
+                          tool="flashlight")
     br = knee_rest(sk, "l", st, fwd=26.0, y=sk.length("calf_l", "foot_l") * 0.9 + 10.0)
     return K.keyed(t + 1.2, hands={"r": hk, "l": [(0.0, R["l"]), (1.0, br), (t, br), (t + 1.0, R["l"])]},
                    tools={"t": ("flashlight", tk)}, look=[(0.0, seam[0])] + [(1.3 + k * 1.0, p) for k, p in enumerate(seam)],
@@ -969,8 +983,8 @@ JOBS_AWP = [
     Job("cap_ports", "Cap open ports", "hydraulics", "W95M", j_cap_ports, fx(b_cap_ports), (-4, TOP + 9, 42)),
     Job("overhead", "Overhead ratchet", "overhead / low", "W50M", j_overhead, fx(b_overhead, kind="free"), (-4, 165, 36),
         camera=(-150.0, -40.0, -120.0)),
-    Job("kneel_drive", "Kneel and drive", "overhead / low", "W95M", j_kneel_drive, fx(b_kneel_plate, kind="panel", z=43.0),
-        (-6, 50, 36), camera=(-150.0, 30.0, -70.0)),
+    Job("kneel_drive", "Kneel and drive", "overhead / low", "W95M", j_kneel_drive, fx(b_kneel_plate, kind="panel", z=KZ),
+        (-6, KY + 4, KZ - 7), camera=(-150.0, 30.0, -70.0)),
     Job("squat_connect", "Under-frame connector", "overhead / low", "W05F", j_squat_connect, fx(b_under, kind="free"),
         (-4, 66, 30), camera=(-130.0, 10.0, -90.0)),
     Job("lean_in", "Lean in to ratchet", "overhead / low", "W50M", j_lean_in, fx(b_lean_in), (-4, 100, 60),
