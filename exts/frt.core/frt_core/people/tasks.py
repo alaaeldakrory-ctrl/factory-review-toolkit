@@ -1495,7 +1495,38 @@ class Task:
                     c_ = c_ or self.rest[side]
                     out.append(lerp_target(a_, c_, u))
                 f.targets = out
+        self._level_walk_pelvis()
         self._walk_blends()
+
+    def _level_walk_pelvis(self):
+        """The captured walks carry the recording skeleton's pelvis tilted back ~20 deg with the lower back bent forward
+        to make up for it (the chest is upright): on a character's body that is a tucked-under seat. Per walk, the
+        clip's mean tilt is taken off the pelvis and given back to the spine and the thighs, so the chest, the legs and
+        the feet stay exactly where they were."""
+        from .kinematics import axis_angle
+        F = self.frames
+        i = 0
+        while i < len(F):
+            if F[i].base is None:
+                i += 1
+                continue
+            j = i
+            while j + 1 < len(F) and F[j + 1].base is not None:
+                j += 1
+            run = [F[k].base for k in range(i, j + 1)]
+            ups = [b.local("pelvis") @ np.array([0.0, 1.0, 0.0]) for b in run]
+            tilt = float(np.mean([math.atan2(u[2], u[1]) for u in ups]))       # + forward, - back (rad)
+            if abs(tilt) > math.radians(4.0):
+                for b in run:
+                    Rp = b.local("pelvis")
+                    side = Rp @ np.array([1.0, 0.0, 0.0])                         # the pelvis' own left-right axis
+                    C = axis_angle(side, -tilt)                                   # level it
+                    Rn = C @ Rp
+                    fix = Rn.T @ Rp                                               # children keep their world turn
+                    for c in ("spine_01", "thigh_l", "thigh_r"):
+                        b.rot[c] = fix @ b.local(c)
+                    b.rot["pelvis"] = Rn
+            i = j + 1
 
     def _walk_blends(self, n=10):
         """Standing still <-> walking: the first / last frames of a walk blend the captured body from / back to

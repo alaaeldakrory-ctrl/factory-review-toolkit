@@ -25,6 +25,7 @@ DOWN = -UP
 FWD = np.array([0.0, 0.0, 1.0])
 SPINE = (("spine_01", 0.30, 0.34, 0.30), ("spine_02", 0.35, 0.33, 0.30), ("spine_03", 0.35, 0.33, 0.40))
 VARS = ("dx", "drop", "dz", "yaw", "hinge", "flex", "lat", "twist")
+LUMBAR_SHARE = 0.45         # of a forward bend, the part the spine takes (the rest: the pelvis tilting at the hips)
 LO = np.array([-15.0, -2.0, -25.0, -45.0, -2.0, -3.0, -25.0, -40.0])         # no back arching / pelvis tilted back
 HI = np.array([15.0, 70.0, 25.0, 45.0, 75.0, 50.0, 25.0, 40.0])
 SCALE = np.array([4.0, 8.0, 5.0, 10.0, 8.0, 8.0, 6.0, 8.0])        # simplex size and smoothness scale per variable
@@ -377,7 +378,10 @@ class PostureSolver:
                 if v_[2] > 0 and v_[1] < 5.0:                       # forward and not above the shoulder
                     lean = max(lean, min(1.0, max(0.0, (frac - 0.55) / 0.4)) * 14.0)
         hinge_eff = hinge + flex - lean
-        terms["trunk"] = (hinge_eff / 28.0) ** 2 + (min(0.0, hinge) / 2.0) ** 2 + (flex / 35.0) ** 2 * 0.5 + (lat / 10.0) ** 2 + (twist / 14.0) ** 2             + (min(0.0, hinge + flex) / 6.0) ** 2                       # leaning back is rare and costly
+        # a forward bend is shared by the pelvis and the lower back (lumbo-pelvic rhythm, about 55 : 45 through the
+        # working range): all of it at the hips is a stiff, hinged back, all of it in the spine a hunch
+        split = (flex - LUMBAR_SHARE * max(0.0, hinge + flex)) / 12.0
+        terms["trunk"] = (hinge_eff / 28.0) ** 2 + (min(0.0, hinge) / 2.0) ** 2 + split ** 2 * 0.5 + (lat / 10.0) ** 2 + (twist / 14.0) ** 2             + (min(0.0, hinge + flex) / 6.0) ** 2                       # leaning back is rare and costly
         terms["pelvis"] = (dx / 8.0) ** 2 * 0.3 + (dz / 10.0) ** 2 * 0.3 + (yaw / 25.0) ** 2 * 0.4
         Rall, Pall = fk(sk, pose)
         if self.keep_out:

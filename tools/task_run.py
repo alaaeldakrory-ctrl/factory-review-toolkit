@@ -6,6 +6,7 @@
                            phase's first and last - and blends between them, several times faster)
         [--motion=andy|best]   (recorded bodies under the work / per step the better of with and without)
         [--web=<dir>]     (also the files the website's viewer plays: tools/web_export.py)
+        [--clips=<dir>]   (each step as a motion-library clip: GLB + BVH, tools/clip_export.py)
     -> <out>/task.usda (scene + worker + parts), result.json (per step: frames, checks, RULA), log
 
 Steps that did not change since the last run in the same --out (same frames, scene, body, code, quality) are
@@ -442,6 +443,11 @@ def main():
         say("writing the web files", progress=0.98)
         from web_export import export
         export(T, sols, res, usd, os.path.abspath(opt["web"]), scores)
+    if opt.get("clips"):                                             # motion-library clips (tools/clip_export.py)
+        say("writing the library clips", progress=0.99)
+        from clip_export import export_clips
+        export_clips(T, sols, res, scores, os.path.abspath(opt["clips"]), name,
+                     T.name.split(":")[0] if ":" in T.name else "")
     say(f"done in {time.time() - t0:.0f} s: {rep['counts'] or 'clean'}", progress=1.0, done=True, usd=usd)
 
 
