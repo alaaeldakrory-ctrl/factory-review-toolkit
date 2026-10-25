@@ -144,7 +144,10 @@ def _source(jid, src=None):
     return c["frames"], c["sols"], Skeleton.for_worker(w), w, out
 
 
-def prepare(jid, every=4, steps=100, seed=0, full_every=3, force_full=False, src=None):
+PROMPTS = json.load(open(os.path.join(HERE, "cloud", "prompts.json"), encoding="utf-8"))   # (encoded once: cloud/)
+
+
+def prepare(jid, every=4, steps=100, seed=0, full_every=3, force_full=False, src=None, prompt=None):
     """Keyframes of a solved job for Kimodo -> (keys.npz path, generated npz path)."""
     from frt_core.people.motion_gen import FPS
     frames, sols, sk, w, out = _source(jid, src)
@@ -158,7 +161,7 @@ def prepare(jid, every=4, steps=100, seed=0, full_every=3, force_full=False, src
     src = os.path.join(out, "keys.npz")
     np.savez(src, seconds=len(frames) / FPS, fps_in=FPS, frames=np.array(idx), t=np.array(idx) / FPS,
              names=np.array(names), P=P, R=R, use_r=ur, use_l=ul, use_feet=feet, use_full=full, scale=s, steps=steps,
-             seed=seed)
+             seed=seed, prompt=PROMPTS.get(jid, "") if prompt is None else prompt)
     return src, os.path.join(out, "kimodo.npz")
 
 

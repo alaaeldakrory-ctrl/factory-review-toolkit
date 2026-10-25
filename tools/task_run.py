@@ -7,6 +7,7 @@
         [--motion=andy|best]   (recorded bodies under the work / per step the better of with and without)
         [--web=<dir>]     (also the files the website's viewer plays: tools/web_export.py)
         [--clips=<dir>]   (each step as a motion-library clip: GLB + BVH, tools/clip_export.py)
+        [--kimodo]        (the body from Kimodo, our hands and footing on top: tools/kimodo/task_pass.py)
     -> <out>/task.usda (scene + worker + parts), result.json (per step: frames, checks, RULA), log
 
 Steps that did not change since the last run in the same --out (same frames, scene, body, code, quality) are
@@ -403,6 +404,13 @@ def main():
     if npop:
         say(f"{npop} snaps eased", progress=0.81)
     sols = T.smooth_solutions(sols)
+    if "--kimodo" in sys.argv:                                       # the body from Kimodo (tools/kimodo/task_pass.py)
+        say("Kimodo: generating the body", progress=0.815)
+        sys.path.insert(0, os.path.join(HERE, "kimodo"))
+        from task_pass import kimodo_pass
+        sols = kimodo_pass(T, sols, os.path.join(out, "kimodo"), log=lambda m: say(m, progress=0.818))
+        sols, _ = depop(sols)
+        sols = T.smooth_solutions(sols)
     say("checking", progress=0.82)
     import numpy as np
 

@@ -1,0 +1,106 @@
+"""Kimodo's text features for our prompts, on a rented GPU (24 GB or more), once.
+
+On the rented machine (JupyterLab terminal):
+    hf auth login                       (your own Hugging Face token: Llama 3 access is on your account)
+    python encode_prompts.py            (~10 min: installs, downloads the 16 GB encoder, encodes)
+then download kimodo_text.npz and put it in C:/OmniverseData/kimodo/runs/text/.
+
+The encoder is exactly Kimodo's own (its LLM2Vec wrapper and preset, from its public repository), so the features
+match what Kimodo would compute itself.
+"""
+import json
+import os
+import subprocess
+import sys
+
+PROMPTS = {
+ "hand_nut": "A worker stands at a workbench and threads a nut onto a bolt with his fingers.",
+ "ratchet": "A worker stands at a workbench and tightens a bolt with a ratchet, steadying the head with his other hand.",
+ "torque": "A worker stands at a workbench and pulls a torque wrench until it clicks.",
+ "screwdriver": "A worker stands at a panel and drives a screw with a screwdriver.",
+ "impact": "A worker stands at a panel and drives a bolt with a cordless impact driver.",
+ "hex_key": "A worker stands at a workbench and turns a hex key to tighten a screw.",
+ "wrench": "A worker stands at a workbench and tightens a nut with a combination wrench.",
+ "connector": "A worker stands at a panel and pushes an electrical connector together until it clicks.",
+ "unplug": "A worker stands at a panel and pulls an electrical connector apart.",
+ "plug": "A worker stands at a wall panel and pushes a mains plug into a socket.",
+ "cable_tie": "A worker stands at a panel and wraps a cable tie around a bundle of wires and pulls it tight.",
+ "cut_tie": "A worker stands at a panel and snips the tail of a cable tie with side cutters.",
+ "strip": "A worker stands at a workbench and strips the insulation off a wire with a stripping tool.",
+ "crimp": "A worker stands at a workbench and squeezes a crimping tool onto a wire terminal.",
+ "route": "A worker stands at a panel and presses a cable into a row of clips, moving along the panel.",
+ "hammer": "A worker stands at a workbench and taps a pin into a hole with a hammer.",
+ "mallet": "A worker stands at a workbench and taps a cover into place with a rubber mallet.",
+ "insert_pin": "A worker stands at a workbench and pushes a pin into a hole with his fingers.",
+ "box": "A worker picks up a cardboard box from a table with both hands and sets it down again.",
+ "caulk": "A worker stands at a workbench and runs a bead of sealant along a seam with a caulking gun.",
+ "buttons": "A worker stands at a control panel and presses a few buttons with one finger.",
+ "handwheel": "A worker stands at a machine and turns a handwheel with both hands.",
+ "scan": "A worker stands at a table and scans a barcode on a box with a handheld scanner.",
+ "label": "A worker stands at a table and sticks a label onto the side of a box.",
+ "wipe": "A worker stands at a workbench and wipes the surface with a cloth.",
+ "checklist": "A worker stands at a table and signs a checklist with a pen.",
+ "fitting_start": "A worker stands at a workbench and threads a hose fitting onto a port by hand.",
+ "two_wrench": "A worker stands at a workbench and tightens a hose fitting with two wrenches.",
+ "hose_clip": "A worker stands at a rail and clips a hose into a holder.",
+ "coupler": "A worker stands at a machine and connects a quick coupler, pulling back the collar.",
+ "cap_ports": "A worker stands at a workbench and presses small plastic caps onto open ports.",
+ "overhead": "A worker stands under a panel and tightens a bolt above his head with a ratchet.",
+ "kneel_drive": "A worker kneels on one knee in front of a panel and drives a screw low down.",
+ "squat_connect": "A worker crouches under a frame and connects a cable connector.",
+ "lean_in": "A worker leans into an enclosure on a workbench and tightens a bolt with a ratchet.",
+ "pivot_pin": "A worker stands at a machine and drives a pivot pin in with a hammer.",
+ "wheel": "A worker lifts a wheel and slides it onto a hub.",
+ "lug_torque": "A worker kneels beside a wheel and tightens the lug nuts with a long torque wrench.",
+ "guide_hoist": "A worker guides a hanging load down onto a stand with both hands.",
+ "circlip": "A worker stands at a workbench and fits a circlip onto a shaft with pliers.",
+ "control_box": "A worker holds a box against a panel and fixes it in place.",
+ "deutsch": "A worker stands at a panel and pushes a sealed connector together and inserts the wedge.",
+ "joystick": "A worker stands at a console and fits a joystick into its mount.",
+ "battery": "A worker lifts a heavy battery from a crate and sets it down on a table.",
+ "decal": "A worker stands at a panel and smooths a sticker onto it with his hand.",
+ "torque_stripe": "A worker stands at a workbench and draws paint marks across bolt heads with a marker.",
+ "grease": "A worker stands at a workbench and pumps a grease gun onto a fitting.",
+ "inspect": "A worker crouches and looks closely at a weld under a beam.",
+ "walk": "A worker walks to his work station.",
+ "walk_carry": "A worker walks while carrying a part in both hands.",
+ "pick_bin": "A worker reaches into a parts bin beside him and picks up a small part.",
+ "get_tool": "A worker picks up a tool from a cart beside him.",
+ "put_tool": "A worker puts a tool back on a cart beside him.",
+ "hand_start_overhead": "A worker reaches up above his head and threads a nut onto a bolt with his fingers.",
+ "hand_start_low": "A worker kneels and threads a nut onto a bolt low down with his fingers.",
+ "fasten_kneel": "A worker kneels on one knee and tightens bolts with a ratchet.",
+ "carry": "A worker carries a heavy part with both hands and places it on a fixture.",
+ "transfer": "A worker picks parts from a bin and places them one by one on a fixture.",
+ "push_door": "A worker pushes a cabinet door shut with one hand.",
+ "latch": "A worker closes a latch on a box with one hand.",
+ "idle": "A worker stands still and waits, relaxed."
+}
+
+
+def sh(cmd):
+    print("+", cmd, flush=True)
+    subprocess.check_call(cmd, shell=True)
+
+
+def main():
+    if not os.path.isdir("kimodo"):
+        sh("git clone --depth 1 https://github.com/nv-tlabs/kimodo.git")
+    sh(f"{sys.executable} -m pip install -q transformers==5.1.0 peft einops omegaconf hydra-core accelerate safetensors")
+    sys.path.insert(0, os.path.abspath("kimodo"))
+    import numpy as np
+    from kimodo.model.llm2vec.llm2vec_wrapper import LLM2VecEncoder
+    enc = LLM2VecEncoder("McGill-NLP/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp",
+                         "McGill-NLP/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp-supervised", "bfloat16", 4096, "cuda")
+    out = {}
+    for k, text in PROMPTS.items():
+        e, _ = enc([text])
+        out[k] = e.float().cpu().numpy()
+        print(f"{k:22s} {text[:60]}", flush=True)
+    out["__texts__"] = np.array(json.dumps(PROMPTS))
+    np.savez("kimodo_text.npz", **out)
+    print("done: kimodo_text.npz -", len(PROMPTS), "prompts")
+
+
+if __name__ == "__main__":
+    main()

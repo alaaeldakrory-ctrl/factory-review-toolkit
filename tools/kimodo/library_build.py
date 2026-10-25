@@ -100,6 +100,7 @@ def export_all(ids, out):
     from clip_audit import audit
     from clip_export import export_job_clip
     from web_export import export_job
+    os.makedirs(out, exist_ok=True)
     ch = character()
     for jid in ids:
         p = os.path.join(OUT, jid, "kimodo.pkl")

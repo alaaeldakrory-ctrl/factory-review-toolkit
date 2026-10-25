@@ -44,13 +44,13 @@ studs_axis = [0, -1, 0]
 [[asset]]
 id = "parts_cart"
 kind = "cart"
-at = [-55, 0, 85]
+at = [-42, 0, 118]
 size = [36, 78, 30]
 
 [[asset]]
 id = "nut_bin"
 kind = "bin"
-at = [-55, 78, 78]
+at = [-42, 78, 110]
 size = [20, 11, 20]
 holds = "nut"
 count = 4
@@ -62,7 +62,7 @@ grab = [0, 2.0, 2.0]
 id = "ratchet"
 kind = "tool"
 tool = "ratchet_38"
-at = [-55, 79.2, 96]
+at = [-42, 79.2, 127]
 x_axis = [1, 0, 0]
 y_axis = [0, 1, 0]
 spot = "bracket"

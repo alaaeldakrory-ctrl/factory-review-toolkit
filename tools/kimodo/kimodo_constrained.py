@@ -27,6 +27,35 @@ for _s, _S in (("l", "Left"), ("r", "Right")):
                     f"foot_{_s}": f"{_S}Foot", f"ball_{_s}": f"{_S}ToeBase"})
 
 
+TEXT = os.environ.get("KIMODO_TEXT", r"C:/OmniverseData/kimodo/runs/text/kimodo_text.npz")
+
+
+class Cached:
+    """Kimodo's text encoder from features computed once elsewhere (tools/kimodo/cloud/encode_prompts.py: the 8B
+    encoder does not fit this machine): a prompt in the cache gets its features, any other text (and "") none -
+    Kimodo's own handling of an empty prompt."""
+
+    def __init__(self, dim, device):
+        import json
+        self.dim, self.device, self.feat = dim, device, {}
+        if os.path.isfile(TEXT):
+            d = np.load(TEXT)
+            texts = json.loads(str(d["__texts__"]))
+            self.feat = {t.strip(): d[k].reshape(1, -1) for k, t in texts.items() if k in d}
+        self.used = 0
+
+    def __call__(self, texts):
+        out = []
+        for t in texts:
+            f = self.feat.get((t or "").strip())
+            self.used += f is not None
+            out.append(torch.tensor(f, dtype=torch.float32) if f is not None else torch.zeros((1, self.dim)))
+        return torch.stack(out).to(self.device), [1 if (t or "").strip() in self.feat else 0 for t in texts]
+
+    def to(self, *a, **k):
+        return self
+
+
 def main():
     from kimodo import load_model
     from kimodo.constraints import EndEffectorConstraintSet
@@ -36,7 +65,7 @@ def main():
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     name = "kimodo-soma-rp-v1.2"
     path = _resolve_hf_model_path(name)
-    model = load_model(name, device=device, text_encoder=NoText(text_dim(str(path)), device))
+    model = load_model(name, device=device, text_encoder=Cached(text_dim(str(path)), device))
     pairs = list(zip(sys.argv[1::2], sys.argv[2::2]))       # several jobs per call: the model loads once
     for src, out in pairs:
         try:
@@ -127,7 +156,8 @@ def generate(model, device, src, out):
     seg = int(round(6.0 * fps))                            # long motions: ~6 s segments, blended by Kimodo
     k_ = max(1, int(np.ceil(n / seg)))
     lens = [n // k_ + (1 if i < n % k_ else 0) for i in range(k_)]
-    res = model([""] * k_, lens, constraint_lst=cons, num_denoising_steps=int(d["steps"]) if "steps" in d else 100,
+    prompt = str(d["prompt"]) if "prompt" in d else ""                # (a prompt in the text cache, else none)
+    res = model([prompt] * k_, lens, constraint_lst=cons, num_denoising_steps=int(d["steps"]) if "steps" in d else 100,
                 num_samples=1, multi_prompt=True, post_processing=False, return_numpy=True)
     pj = res["posed_joints"][0]
     names77 = [nm for nm, _ in build_skeleton(77).bone_order_names_with_parents]
