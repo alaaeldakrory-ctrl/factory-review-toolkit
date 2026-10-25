@@ -71,7 +71,21 @@ def pinch(sk, side, tip_point, approach=None, palm=None, grip="pinch", weight=1.
     pn = unit(_perp(palm if palm is not None else (0.0, -1.0, 0.0), a))
     if np.linalg.norm(pn) < 1e-6:
         pn = unit(_perp((0.0, 0.0, 1.0), a))
-    return HandTarget(side, tuple(tp - a * 7.5 - pn * 1.0), tuple(a), tuple(pn), grip, weight)
+    of, op, os_ = _solver(sk).contact_offset(side, grip)                # this hand's real pinch point
+    sx = 1.0 if side == "l" else -1.0
+    th = unit(-sx * np.cross(a, pn))                                     # the thumb side (hand frame +Z)
+    return HandTarget(side, tuple(tp - a * of - pn * op - th * os_), tuple(a), tuple(pn), grip, weight)
+
+
+_SOLVERS = {}
+
+
+def _solver(sk):
+    """A PostureSolver for this skeleton's hand model (finger lengths, thumb), one per skeleton."""
+    from .solver import PostureSolver
+    if id(sk) not in _SOLVERS:
+        _SOLVERS[id(sk)] = PostureSolver(sk)
+    return _SOLVERS[id(sk)]
 
 
 def brace(sk, side, point, normal=(0.0, 1.0, 0.0), toward=None, weight=0.6, grip="flat"):

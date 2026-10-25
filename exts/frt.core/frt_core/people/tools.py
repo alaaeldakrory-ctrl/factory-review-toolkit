@@ -16,6 +16,10 @@ from ..geom import Shapes
 from .solver import HandTarget
 
 
+TIP_GRIPS = ("pinch", "tripod")
+HAND = None                          # PostureSolver whose hand model places fingertip grips (see Tool.hand_target)
+
+
 @dataclass
 class Grip:
     point: tuple
@@ -40,14 +44,26 @@ class Tool:
         return s
 
     def hand_target(self, T, side, which="grip", weight=1.0):
-        """HandTarget for the hand holding this tool when the tool frame is placed by T (4x4, tool -> worker)."""
+        """HandTarget for the hand holding this tool when the tool frame is placed by T (4x4, tool -> worker).
+        Fingertip grips (pinch, tripod, lateral): the grip point is where the fingertips hold (a pen 3 cm up its
+        barrel), set back to the palm centre by this hand's own finger geometry (HAND: the solver of the body
+        being built, set by Task.compile / Job.frames)."""
         g = self.grip if which == "grip" else self.grip2
         R, t = T[:3, :3], T[:3, 3]
         m = np.array([1.0, 1.0, -1.0]) if side == "l" else np.ones(3)       # grips are written for the right hand
-        return HandTarget(side, tuple(R @ (np.asarray(g.point, float) * m) + t),
-                          fingers=tuple(R @ (np.asarray(g.fingers, float) * m)),
-                          palm=tuple(R @ (np.asarray(g.palm, float) * m)), grip=f"{g.kind}:{g.radius}" if g.radius else g.kind,
-                          weight=weight)
+        p = R @ (np.asarray(g.point, float) * m) + t
+        f = R @ (np.asarray(g.fingers, float) * m)
+        pm = R @ (np.asarray(g.palm, float) * m)
+        if g.kind in TIP_GRIPS and HAND is not None:
+            f_ = f / (np.linalg.norm(f) + 1e-12)
+            pm_ = pm - f_ * float(np.dot(pm, f_))
+            pm_ = pm_ / (np.linalg.norm(pm_) + 1e-12)
+            sx = 1.0 if side == "l" else -1.0
+            th = -sx * np.cross(f_, pm_)
+            of, op, os_ = HAND.contact_offset(side, g.kind)
+            p = p - f_ * of - pm_ * op - th * os_
+        return HandTarget(side, tuple(p), fingers=tuple(f), palm=tuple(pm),
+                          grip=f"{g.kind}:{g.radius}" if g.radius else g.kind, weight=weight)
 
 
 def _ratchet(s, length=25.0):

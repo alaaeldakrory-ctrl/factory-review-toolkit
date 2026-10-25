@@ -48,6 +48,8 @@ class Job:
     keep_out: tuple = None      # [(joint names, max z)] - default from the fixture (panel face / bench front)
 
     def frames(self, S):
+        from . import tools
+        tools.HAND = S                             # (fingertip grips placed by this body's own hand)
         return self.build(S, S.sk)
 
     def keep_out_rules(self):

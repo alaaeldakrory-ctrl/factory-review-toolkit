@@ -585,6 +585,27 @@ class PostureSolver:
         out["thumb"] = self.thumb(s, mode, out, 1.5)
         return out
 
+    def contact_offset(self, s, grip):
+        """Where a fingertip grip holds, from the palm centre (the point a HandTarget places), in the hand's own
+        (fingers, palm, thumb side) axes, cm - from this hand's finger lengths and the grip's curl. A fixed set-back
+        put the pinch of a long- or short-fingered character several cm off the nut it was meant to hold."""
+        key = ("contact", s, str(grip))
+        if key in self._thumb_cache:
+            return self._thumb_cache[key]
+        sx = 1.0 if s == "l" else -1.0
+        ang = self.finger_angles(s, grip)
+        kind = str(grip).split(":")[0]
+        ix = self._finger_pts(s, "index", ang["index"])[3]
+        th, _ = self._thumb_tip(s, ang["thumb"])
+        pt = (ix + th) / 2.0
+        if kind == "tripod":
+            pt = (ix + self._finger_pts(s, "middle", ang["middle"])[3] + th) / 3.0
+        hl = self.hand_len
+        rel = pt - np.array([sx * hl * 0.40, -1.6, 0.0])
+        out = (float(rel[0] * sx), float(-rel[1]), float(rel[2]))      # along the fingers, towards the palm, thumb side
+        self._thumb_cache[key] = out
+        return out
+
     # ------------------------------------------------------------------ thumb
     def _finger_pts(self, s, f, curl):
         """Hand-frame (rest hand orientation, origin at the wrist) joint points of a curled finger: base, mid, end, tip."""

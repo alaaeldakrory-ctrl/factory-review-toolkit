@@ -417,6 +417,8 @@ class Task:
         self.w, self.sk, self.character = self.worker()
         from .solver import PostureSolver
         self.S = PostureSolver(self.sk, self.w)
+        from . import tools as _tools
+        _tools.HAND = self.S                                  # (fingertip grips placed by this body's own hand)
         self.field = self.equipment() if field else None    # the body keeps out of the scene's equipment
         self.S.field = self.field
         self.holding = None                      # (tool part id, hand) while a tool stays in hand between steps
