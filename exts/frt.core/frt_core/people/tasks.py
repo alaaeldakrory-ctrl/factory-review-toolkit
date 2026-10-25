@@ -321,6 +321,10 @@ class Task:
         if w.lower().endswith((".usd", ".usda", ".usdc")):
             ch = load_character(w)
             return ch.worker, ch.skeleton, ch
+        if w.lower().endswith(".glb"):                                 # a Mixamo character (the website's)
+            from .mixamo import load as load_mixamo
+            ch = load_mixamo(w)
+            return ch.worker, ch.skeleton, ch
         return WORKERS[w], Skeleton.for_worker(WORKERS[w]), None
 
     # ------------------------------------------------------------------ points

@@ -134,8 +134,15 @@ def kneel_stance(sk, knee_down="r", forward=34.0, width=None):
     fx = hw if front == "l" else -hw
     bx = hw if back == "l" else -hw
     setattr(st, "left" if front == "l" else "right", (fx, ank, forward))
-    setattr(st, "left" if back == "l" else "right", (bx, 11.0, -shin * 0.92))
-    setattr(st, f"lift_{back}", -58.0)                         # toes tucked under, heel up
+    # toes tucked under, heel up: the foot nearly upright with the ball of the foot on it - from this
+    # body's own foot (ankle height and the ankle -> ball line differ a lot between characters: a fixed ankle height
+    # and tilt put the toes 6 cm through the floor on a high-ankled one)
+    a, b = sk.world[f"foot_{back}"], sk.world[f"ball_{back}"]
+    rest = math.degrees(math.atan2(float(a[1] - b[1]), float(abs(b[2] - a[2])) + 1e-9))
+    L = float(np.linalg.norm(b - a))
+    tuck = 86.0                                                 # (near vertical: the ankle stays in its range)
+    setattr(st, "left" if back == "l" else "right", (bx, float(b[1]) + L * math.sin(math.radians(tuck)), -shin * 0.92))
+    setattr(st, f"lift_{back}", -(tuck - rest))
     st.drop = pel - hip_y
     st.hinge = (-2.0, 25.0)
     return st

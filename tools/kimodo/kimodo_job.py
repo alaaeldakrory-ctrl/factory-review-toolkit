@@ -129,17 +129,25 @@ def pin_hands(sk, frames, ramp=6):
     return frames
 
 
-def prepare(jid, every=4, steps=100, seed=0, full_every=3, force_full=False):
-    """Keyframes of a solved job for Kimodo -> (keys.npz path, generated npz path)."""
-    from frt_core.people.motion_gen import FPS
+def _source(jid, src=None):
+    """(frames, rule-based solutions, skeleton, worker, out dir) of a job: the jobs_run.py cache, or src = a dict
+    {"frames", "sols", "sk", "worker", "out"} (a job solved on another body, e.g. tools/kimodo/library_build.py)."""
+    if src is not None:
+        os.makedirs(src["out"], exist_ok=True)
+        return src["frames"], src["sols"], src["sk"], src["worker"], src["out"]
     from frt_core.people.skeleton import Skeleton
     from frt_core.people.workers import WORKERS
     out = os.path.join(ROOT, "out", "people", "kimodo", jid)
     os.makedirs(out, exist_ok=True)
     c = pickle.load(open(os.path.join(ROOT, "out", "people", "jobs", "cache", jid + ".pkl"), "rb"))
     w = WORKERS[c["worker"]]
-    sk = Skeleton.for_worker(w)
-    frames, sols = c["frames"], c["sols"]
+    return c["frames"], c["sols"], Skeleton.for_worker(w), w, out
+
+
+def prepare(jid, every=4, steps=100, seed=0, full_every=3, force_full=False, src=None):
+    """Keyframes of a solved job for Kimodo -> (keys.npz path, generated npz path)."""
+    from frt_core.people.motion_gen import FPS
+    frames, sols, sk, w, out = _source(jid, src)
     s = KIMODO_HIP_M / float(sk.world["pelvis"][1])              # cm -> Kimodo metres
     idx, P, R, ur, ul, names = keyframes(sk, frames, sols, every)
     feet = np.ones(len(idx), bool)
@@ -163,22 +171,16 @@ def generate(pairs):
     return r.stdout, r.stderr
 
 
-def finalize(jid):
+def finalize(jid, src=None):
     """Kimodo result -> our worker, final pass (Kimodo's body, our hands), checks -> summary dict."""
     from frt_core.people.bake import solve_frames
     from frt_core.people.check import check_frames
     from frt_core.people.jobs import BY_ID
     from frt_core.people.mocap import retarget
     from frt_core.people.motion_gen import FPS
-    from frt_core.people.skeleton import Skeleton
     from frt_core.people.solver import PostureSolver
-    from frt_core.people.workers import WORKERS
-    out = os.path.join(ROOT, "out", "people", "kimodo", jid)
-    c = pickle.load(open(os.path.join(ROOT, "out", "people", "jobs", "cache", jid + ".pkl"), "rb"))
     job = BY_ID[jid]
-    w = WORKERS[c["worker"]]
-    sk = Skeleton.for_worker(w)
-    frames, sols = c["frames"], c["sols"]
+    frames, sols, sk, w, out = _source(jid, src)
     s = KIMODO_HIP_M / float(sk.world["pelvis"][1])
     gen = os.path.join(out, "kimodo.npz")
     if not os.path.isfile(gen):
@@ -211,7 +213,7 @@ def finalize(jid):
     rep_k = check_frames(sk, new, ks, jid + " kimodo", keep_out=S.keep_out)
     rep_r = check_frames(sk, frames, sols, jid + " rules", keep_out=S.keep_out)
     with open(os.path.join(out, "kimodo.pkl"), "wb") as f:
-        pickle.dump({"frames": new, "sols": ks, "worker": c["worker"]}, f)
+        pickle.dump({"frames": new, "sols": ks, "worker": w.id}, f)
     summary = {"job": jid, "kimodo": {"ok": rep_k["ok"], "counts": rep_k["counts"],
                                       "worst_contact_cm": rep_k["worst_contact_cm"]},
                "rules": {"ok": rep_r["ok"], "counts": rep_r["counts"]}}

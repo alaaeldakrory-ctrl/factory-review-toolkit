@@ -436,6 +436,8 @@ def main():
                                    sorted(__import__("collections").Counter((i[1], i[2]) for i in iss).items(),
                                           key=lambda kv: -kv[1])},
                       "issues": [list(i) for i in sorted(iss, key=lambda i: -_severity(i))[:12]]})
+    if os.environ.get("FRT_DUMP_POST"):                             # (auditing: the task and the final poses)
+        pickle.dump({"T": T, "sols": sols, "scores": scores}, open(os.environ["FRT_DUMP_POST"], "wb"), protocol=4)
     res = {"task": T.name, "file": path, "usd": usd, "frames": n, "fps": 24, "steps": steps,
            "counts": rep["counts"], "notes": T.notes, "motion": pick, "quality": "final" if step == 1 else "preview", "solve_s": round(time.time() - t0, 1)}
     json.dump(res, open(os.path.join(out, "result.json"), "w"), indent=1)

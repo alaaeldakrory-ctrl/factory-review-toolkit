@@ -288,3 +288,38 @@ def rebuild_index(out, rt=None):
     if rt is None and os.path.isfile(os.path.join(out, "index.json")):
         idx["bones"] = json.load(open(os.path.join(out, "index.json"))).get("bones", [])
     json.dump(idx, open(os.path.join(out, "index.json"), "w"), separators=(",", ":"))
+
+
+SKIP_JOBS = ("guardrail", "cylinder")                                  # (not for the public library)
+
+
+def export_job_clip(jid, frames, sols, sk, out, scores=None):
+    """One job of the job library (people/jobs.py) as a library clip: the whole job, at the origin."""
+    from types import SimpleNamespace
+
+    from frt_core.people.jobs import BY_ID
+    if jid in SKIP_JOBS:
+        return None
+    job = BY_ID[jid]
+    T = SimpleNamespace(frames=frames, sk=sk, parts={})
+    rt = W.Retarget(sk)
+    a, b = 0, len(frames) - 1
+    cid = f"job__{jid}"
+    q_all, hips_l, Wall, hips_w, _ = clip_frames(T, sols, rt, a, b)
+    write_glb(os.path.join(out, cid + ".glb"), rt, q_all, hips_l)
+    write_bvh(os.path.join(out, cid + ".bvh"), rt, Wall, hips_w)
+    tg = tags(T, sols, {"do": jid}, a, b, rt)
+    tg["action"] = job.title
+    rows = np.concatenate([np.concatenate([q_all[k] for k in rt.bones], axis=1) * 32767.0, hips_l * 10.0], axis=1)
+    np.clip(np.round(rows), -32768, 32767).astype("<i2").tofile(os.path.join(out, cid + ".bin"))
+    rula = [v for v in (scores or []) if v]
+    ctx = {"kneeling": "kneeling", "bent over": "bent over"}.get(tg["posture"]) or \
+        {"overhead": "overhead", "low": "low"}.get(tg["height"], "")
+    name = job.title if not ctx or ctx in job.title.lower() else f"{job.title}, {ctx}"
+    e = {"id": cid, "name": name, "industry": job.group.replace("_", " ").capitalize(), "job": jid,
+         "frames": b - a + 1, "seconds": round((b - a + 1) / FPS, 1), "tags": tg,
+         "rula_max": max(rula) if rula else None, "rula_mean": round(sum(rula) / len(rula), 1) if rula else None,
+         "files": {"glb": cid + ".glb", "bvh": cid + ".bvh"}, "motion": "kimodo"}
+    json.dump(e, open(os.path.join(out, cid + ".json"), "w"))
+    rebuild_index(out, rt)
+    return e

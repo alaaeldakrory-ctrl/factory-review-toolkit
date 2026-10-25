@@ -109,6 +109,7 @@ class Rig:
     """The Mixamo character's node tree at rest: world rotations and positions (its own units) per node name."""
 
     def __init__(self, path=CHARACTER):
+        self.path = path
         J = read_glb(path)
         nodes = J["nodes"]
         self.parent = {}
@@ -175,6 +176,11 @@ class Retarget:
         floor = min(self.rig.pos(f"{S}ToeBase")[1] for S in _SIDE.values())
         self.scale = float(top[1]) / float(self.rig.pos("HeadTop_End")[1] - floor)
         self.floor = floor
+        self.shift = np.zeros(3)
+        own = getattr(sk, "rig", None)                                # a skeleton built from this very rig
+        if own and os.path.abspath(own[0]) == os.path.abspath(getattr(self.rig, "path", CHARACTER)):
+            self.scale, self.floor = 100.0, float(own[1])             # (metres -> cm, its own floor: exact)
+            self.shift = np.asarray(own[2], float)                    # (and its pelvis, centred in the skeleton)
         self.hips_parent = self.rig.parent.get(self.rig.idx[PRE + "Hips"])
         self.offset = {}                                              # (the character keeps its own bones)
         self.mix_spine = {b: float(np.linalg.norm(self.rig.pos(b) - self.rig.pos(a))) for a, b in
@@ -209,7 +215,7 @@ class Retarget:
         W = {}                                                         # posed world rotation per Mixamo node index
         for j, (b, _, _) in self.map.items():
             W[rig.idx[PRE + b]] = R[j] @ self.align[j] @ rig.rot(b)
-        to_rig = lambda v: np.asarray(v, float) / self.scale + np.array([0.0, self.floor, 0.0])   # frt cm -> rig
+        to_rig = lambda v: np.asarray(v, float) / self.scale + np.array([0.0, self.floor, 0.0]) + self.shift  # frt cm -> rig
         hips_w = to_rig(P["pelvis"]) + np.array([0.0, self.hip_lift, 0.0])
         self._spine(W, hips_w, R, {j: to_rig(P[j]) + np.array([0.0, self.hip_lift, 0.0]) for j in SPINE})
         drop = 0.0                                                     # a foot the shorter leg can't reach: hips down
@@ -225,6 +231,7 @@ class Retarget:
                        to_rig(P[f"upperarm_{s_}"]))
             self._limb(W, hips_w, f"{S}UpLeg", f"{S}Leg", f"{S}Foot", to_rig(P[f"foot_{s_}"]), to_rig(P[f"calf_{s_}"]),
                        to_rig(P[f"thigh_{s_}"]))
+        self._last = (W, hips_w)                                      # (auditing: tools/motion_audit.py)
         out = {}
         for j, (b, _, _) in self.map.items():
             i = rig.idx[PRE + b]
@@ -421,15 +428,16 @@ def _pq(M):
     return A[:3, 3] * 0.01, _m2q(_orth(A[:3, :3]))
 
 
-def export_scene(usd, path, n_frames, origins=None):
+def export_scene(usd, path, n_frames, origins=None, scene="/World/Asset/Scene", parts_roots=("/World/Asset/Parts",)):
     """scene.glb (one node per asset, at its floor position: the demo page drags them) + the moving parts'
-    per-frame (position, quaternion). origins: asset id -> (x, z) cm."""
+    per-frame (position, quaternion). origins: asset id -> (x, z) cm. scene / parts_roots: where the equipment and
+    the moving things are (a task's layout by default; a job: its fixture, its parts and the worker's tools)."""
     from pxr import Usd, UsdGeom
     st = Usd.Stage.Open(usd)
     g = Glb()
     xc = UsdGeom.XformCache(0)
-    scene = st.GetPrimAtPath("/World/Asset/Scene")
-    for a in scene.GetChildren():
+    scene = st.GetPrimAtPath(scene)
+    for a in (scene.GetChildren() if scene else []):
         o = (origins or {}).get(a.GetName(), (0.0, 0.0))
         M0 = np.eye(4)
         M0[3, 0], M0[3, 2] = -o[0], -o[1]                            # (row vectors: world -> asset floor origin)
@@ -446,8 +454,8 @@ def export_scene(usd, path, n_frames, origins=None):
             g.node(a.GetName(), g.mesh([(g.material(k, v[0]), np.concatenate(v[1]), np.concatenate(v[2]))
                                         for k, v in by_mat.items()]), ((o[0] * 0.01, 0.0, o[1] * 0.01), (0, 0, 0, 1)))
     parts, moving = [], []
-    root = st.GetPrimAtPath("/World/Asset/Parts")
-    for p in (root.GetChildren() if root else []):
+    kids = [c for r in parts_roots if st.GetPrimAtPath(r) for c in st.GetPrimAtPath(r).GetChildren()]
+    for p in kids:
         W0 = np.asarray(xc.GetLocalToWorldTransform(p), float)
         inv = np.linalg.inv(W0)
         pr = []
@@ -548,3 +556,47 @@ def _label(s):
     v = VERB.get(s.get("do"), str(s.get("do", "")).replace("_", " ").capitalize())
     on = str(s.get("on", "") or s.get("what", "")).split(".")[0].replace("_", " ")
     return f"{v} - {on}" if on else v
+
+
+def export_job(jid, frames, sols, ch, out, scores=None):
+    """A job of the job library (people/jobs.py), solved on the character `ch` (mixamo.MixamoCharacter), as a
+    viewer job folder like export(): its fixture, the worker's tools and parts, the motion, per-frame RULA."""
+    from pxr import Tf
+
+    from frt_core.people.api import JobResult, write_job_usd
+    from frt_core.people.jobs import BY_ID
+    os.makedirs(out, exist_ok=True)
+    res = JobResult(BY_ID[jid], ch.worker, np.eye(4), frames, sols, {"ok": True, "counts": {}, "issues": []},
+                    (0.0, 0.0), [], None)
+    res.character = ch
+    usd = os.path.join(out, "job.usda")
+    write_job_usd(res, usd)
+    n = len(sols)
+    wid = Tf.MakeValidIdentifier(ch.worker.id)
+    parts, track = export_scene(usd, os.path.join(out, "scene.glb"), n, scene="/World/Job/Fixture",
+                                parts_roots=("/World/Job/Parts", f"/World/Job/{wid}/Tools"))
+    moving = sorted(track)
+    rt = Retarget(ch.skeleton)
+    rows = []
+    for i, s_ in enumerate(sols):
+        q, hip = rt.pose(s_.pose)
+        r = frames[i].root or (0.0, 0.0, 0.0)
+        row = [int(round(v * 32767)) for b in rt.bones for v in q[b]]
+        row += [int(round(v * 10)) for v in hip]
+        row += [int(round(r[0] * 10)), int(round(r[1] * 10)), int(round(((r[2] + 180) % 360 - 180) * 100))]
+        for m in moving:
+            p, qq = track[m][i]
+            row += [int(round(v * 1000)) for v in p] + [int(round(v * 32767)) for v in qq]
+        rows.append(row)
+    A = np.clip(np.array(rows, np.int64), -32768, 32767).astype("<i2")
+    A.tofile(os.path.join(out, "motion.bin"))
+    import shutil
+    os.remove(usd)
+    for d in ("materials", "textures"):                               # (the USD's own material files)
+        shutil.rmtree(os.path.join(out, d), ignore_errors=True)
+    job = {"title": BY_ID[jid].title, "fps": 24, "frames": n, "row": int(A.shape[1]), "bones": rt.bones, "offsets": {},
+           "character_scale": rt.scale * 0.01, "hips_units": 0.1, "parts": parts, "moving": moving, "steps": [],
+           "rula": [None if v is None else int(v) for v in (scores or [None] * n)][:n],
+           "phase": [f.label.split(":")[-1] for f in frames], "counts": {}, "notes": []}
+    json.dump(job, open(os.path.join(out, "job.json"), "w"), separators=(",", ":"))
+    return job

@@ -177,7 +177,7 @@ def bake(stage, path, worker, frames, lib, start=0, stance=None, solver=None, lo
     S = solver or PostureSolver(sk, worker)
     if sols is None:
         sols = solve_frames(S, frames, stance, step, log, f"{worker.id}: ")
-    if character is not None:
+    if character is not None and character.write is not None:
         UsdGeom.Xform.Define(stage, path)
         character.write(stage, f"{path}/Body", sols, start)
     else:
