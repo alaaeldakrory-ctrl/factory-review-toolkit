@@ -5,6 +5,7 @@
         [--final]         (every frame solved; the default preview solves key poses - every KEY-th frame and every
                            phase's first and last - and blends between them, several times faster)
         [--motion=andy|best]   (recorded bodies under the work / per step the better of with and without)
+        [--web=<dir>]     (also the files the website's viewer plays: tools/web_export.py)
     -> <out>/task.usda (scene + worker + parts), result.json (per step: frames, checks, RULA), log
 
 Steps that did not change since the last run in the same --out (same frames, scene, body, code, quality) are
@@ -437,6 +438,10 @@ def main():
     res = {"task": T.name, "file": path, "usd": usd, "frames": n, "fps": 24, "steps": steps,
            "counts": rep["counts"], "notes": T.notes, "motion": pick, "quality": "final" if step == 1 else "preview", "solve_s": round(time.time() - t0, 1)}
     json.dump(res, open(os.path.join(out, "result.json"), "w"), indent=1)
+    if opt.get("web"):                                               # the files the web viewer plays
+        say("writing the web files", progress=0.98)
+        from web_export import export
+        export(T, sols, res, usd, os.path.abspath(opt["web"]), scores)
     say(f"done in {time.time() - t0:.0f} s: {rep['counts'] or 'clean'}", progress=1.0, done=True, usd=usd)
 
 
