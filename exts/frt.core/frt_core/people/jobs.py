@@ -246,7 +246,7 @@ def j_screwdriver(S, sk):
     def rh(Td):
         T = Td["t"]
         g = K.power(sk, "r", wpt(T, (0.0, 18.0, 0.0)), wdir(T, (0, -1, 0)), grip="power:1.6", lean=(0.0, -1.0, 0.0))
-        return K.tilt(g, wdir(T, (0, -1, 0)), 60.0)                # handshake grip, handle diagonal in the palm
+        return K.tilt(g, wdir(T, (0, -1, 0)), 35.0)                # handshake grip: handle diagonal across the palm
     # drive strokes: the hand rolls the tool 60 deg (forearm supination), loosens, rolls back over the handle and
     # grips again - the screw only ever turns forward
     tk = [(0.0, None), (1.2, T_rot(0.0))]

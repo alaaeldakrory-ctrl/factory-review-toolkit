@@ -558,7 +558,7 @@ def _label(s):
     return f"{v} - {on}" if on else v
 
 
-def export_job(jid, frames, sols, ch, out, scores=None):
+def export_job(jid, frames, sols, ch, out, scores=None, M=None):
     """A job of the job library (people/jobs.py), solved on the character `ch` (mixamo.MixamoCharacter), as a
     viewer job folder like export(): its fixture, the worker's tools and parts, the motion, per-frame RULA."""
     from pxr import Tf
@@ -566,7 +566,8 @@ def export_job(jid, frames, sols, ch, out, scores=None):
     from frt_core.people.api import JobResult, write_job_usd
     from frt_core.people.jobs import BY_ID
     os.makedirs(out, exist_ok=True)
-    res = JobResult(BY_ID[jid], ch.worker, np.eye(4), frames, sols, {"ok": True, "counts": {}, "issues": []},
+    res = JobResult(BY_ID[jid], ch.worker, np.eye(4) if M is None else M, frames, sols,
+                    {"ok": True, "counts": {}, "issues": []},
                     (0.0, 0.0), [], None)
     res.character = ch
     usd = os.path.join(out, "job.usda")

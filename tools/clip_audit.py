@@ -9,6 +9,8 @@ the things the solver's own checks never looked at - whether the body is one a p
     foot slide   a planted foot moving more than 2.5 cm between frames
     floor        a foot more than 2 cm through the floor, or both feet off it (> 4 cm) while standing still
     retarget     the character's wrist more than 1 cm from the solved one (the body shown is not the one solved)
+    behind back  an elbow drawn back past 19 cm behind the shoulder, or a wrist behind it (4 cm working, 10 cm free),
+                 along the chest's own forward axis: no one works with the arms behind the back
 
     python tools/clip_audit.py <kimodo.pkl | rules.pkl> [...]      (frames + sols, on the website's character)
     -> per file: counts, worst values, frames; exit 1 if any issue
@@ -24,7 +26,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(HERE, "..", "exts", "frt.core")]
 
 LIMITS = {"shrug": 3.0, "arms cross": 7.0, "seat out": 14.0, "bent double": 50.0, "wrist": 55.0, "wrist side": 30.0,
-          "foot slide": 2.5, "floor": 2.0, "retarget": 1.0}
+          "foot slide": 2.5, "floor": 2.0, "retarget": 1.0, "behind elbow": 19.0, "behind wrist": 4.0,
+          "behind free wrist": 10.0}
 
 
 def _ang(a, b):
@@ -73,6 +76,13 @@ def audit(frames, sols, sk, rt=None):
             raised = float(M[f"{S}Hand"][1]) > float(M[f"{S}Arm"][1]) - 5.0   # (reaching up: the shoulder rises)
             if up > LIMITS["shrug"] and not raised:
                 hit("shrug", i, up)
+            fw = R["spine_03"] @ np.array([0.0, 0.0, 1.0])            # the chest's forward axis (solved body; the
+            be = -float(np.dot(M[f"{S}ForeArm"] - M[f"{S}Arm"], fw))  # rig's own bone axes are not anatomical)
+            bw = -float(np.dot(M[f"{S}Hand"] - M[f"{S}Arm"], fw))
+            works = any(t.side == s_ and t.weight >= 0.5 for t in f.targets)
+            lw = LIMITS["behind wrist"] if works else LIMITS["behind free wrist"]
+            if be > LIMITS["behind elbow"] or bw > lw:
+                hit("behind back", i, max(be - LIMITS["behind elbow"], bw - lw))
             e = float(np.linalg.norm(M[f"{S}Hand"] - P[f"hand_{s_}"]))
             if e > LIMITS["retarget"]:
                 hit("retarget", i, e)

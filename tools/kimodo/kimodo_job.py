@@ -7,6 +7,7 @@ body, solve the hands"); then the usual checks. Writes a side-by-side scene: rul
     -> out/people/kimodo/<job>/compare.usd, shots.json, check.json
 """
 import json
+import math
 import os
 import pickle
 import subprocess
@@ -174,8 +175,40 @@ def generate(pairs):
     return r.stdout, r.stderr
 
 
-def finalize(jid, src=None):
-    """Kimodo result -> our worker, final pass (Kimodo's body, our hands), checks -> summary dict."""
+TRUNK = ("pelvis", "spine_01", "spine_02", "spine_03", "neck_01", "head")
+STOOP_FREE = 6.0        # deg of extra trunk lean Kimodo may add over the solved body before it is pulled back
+STOOP_FULL = 8.0        # ... and over this much more, the solved trunk entirely
+
+
+def _lean(sk, pose):
+    from frt_core.people.kinematics import fk
+    _, P = fk(sk, pose, ["neck_01"])
+    v = P["neck_01"] - P["pelvis"]
+    return math.degrees(math.acos(max(-1.0, min(1.0, float(v[1] / (np.linalg.norm(v) + 1e-9))))))
+
+
+def upright(sk, frames, sols):
+    """Kimodo without text prompts stoops: 10-20 deg more trunk lean than the task needs, even standing at rest, and
+    a stooped chest leaves the hands behind it (arms back past the hips). Where its trunk leans more than the solved
+    body's at the same moment, the trunk, neck and head are eased back to the solved ones (smoothed over 0.4 s)."""
+    from frt_core.people.bake import blend
+    u = np.array([min(1.0, max(0.0, (_lean(sk, f.base) - _lean(sk, s_.pose) - STOOP_FREE) / STOOP_FULL))
+                  for f, s_ in zip(frames, sols)])
+    k = 5
+    u = np.array([u[max(0, i - k):i + k + 1].max() for i in range(len(u))])            # (no flicker at the edges)
+    u = np.convolve(np.pad(u, k, mode="edge"), np.ones(2 * k + 1) / (2 * k + 1), mode="valid")
+    for f, s_, w in zip(frames, sols, u):
+        if w <= 1e-3:
+            continue
+        b = blend(f.base, s_.pose, float(w))
+        for j in TRUNK:
+            f.base.rot[j] = b.rot[j]
+    return u
+
+
+def finalize(jid, src=None, keep_out=None):
+    """Kimodo result -> our worker, final pass (Kimodo's body, our hands), checks -> summary dict. keep_out: the
+    keep-out rules when the work was moved (api.move_rules; default: the job's own)."""
     from frt_core.people.bake import solve_frames
     from frt_core.people.check import check_frames
     from frt_core.people.jobs import BY_ID
@@ -206,11 +239,12 @@ def finalize(jid, src=None):
         pose.pelvis = J["pelvis"] - sk.world["pelvis"]
         # the job's own stance (feet exactly where authored; legs solved to them), Kimodo's body on top
         new.append(type(f)(f.targets, f.look, dict(f.tools), root=f.root, stance=f.stance, base=pose, label=f.label))
+    upright(sk, new, sols)
     if os.environ.get("KIMODO_PIN", "all") == "work":          # measured: pinning on every frame passes 26/50, work-only 7/50
         pin_hands(sk, new)                    # pinned while working, Kimodo's arms in between
     # KIMODO_PIN=all: the job's hand targets on every frame (Kimodo gives only the body)
     S = PostureSolver(sk, w)
-    S.keep_out = job.keep_out_rules()
+    S.keep_out = job.keep_out_rules() if keep_out is None else keep_out
     S.base_correct = True                     # Kimodo's body, corrected for keep-outs / reach / the planted feet
     ks = solve_frames(S, new, log=lambda *a: None)
     rep_k = check_frames(sk, new, ks, jid + " kimodo", keep_out=S.keep_out)

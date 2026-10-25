@@ -173,10 +173,15 @@ def b_hose_rail(s):
     s.rbox((-34.0, 102.5, 50.0), (10.0, 1.0, 6.0), 0.3, "plastic_blue", seg=1)                  # clip tray
 
 
+# the coupler's panel stands back at forearm reach, the fitting a little below the elbow: at the plain panel (42 cm,
+# 105 cm high) both hands worked a hand's width in front of the belly and the arms folded back past the hips
+CPZ, CPY = J.PZ + 12.0, 124.0
+
+
 def b_coupler(s):
-    J.panel(s)
-    s.rbox((-4.0, 105.0, PZ - 2.0), (8.0, 8.0, 4.0), 0.6, "cast_aluminium", seg=2)
-    s.lathe((-4.0, 105.0, PZ - 4.0), (-4.0, 105.0, PZ - 9.0), [(0, 1.9), (0.4, 2.1), (1, 2.0)], "steel_machined",
+    J.panel(s, z=CPZ)
+    s.rbox((-4.0, CPY, CPZ - 2.0), (8.0, 8.0, 4.0), 0.6, "cast_aluminium", seg=2)
+    s.lathe((-4.0, CPY, CPZ - 4.0), (-4.0, CPY, CPZ - 9.0), [(0, 1.9), (0.4, 2.1), (1, 2.0)], "steel_machined",
             sides=20)                                                                                  # female half
 
 
@@ -428,7 +433,7 @@ def j_coupler(S, sk):
     """Connect a quick-disconnect coupler: push the male half in, turn the locking sleeve; the off hand steadies
     the hose."""
     R, _ = rest_targets(S)
-    P = np.array([-4.0, 105.0, PZ - 9.0])                          # female mouth (axis -Z towards the worker)
+    P = np.array([-4.0, CPY, CPZ - 9.0])                           # female mouth (axis -Z towards the worker)
 
     def T_at(back, turn=0.0):
         T = K.T_at(P - Z * back, X, Y)
@@ -437,7 +442,7 @@ def j_coupler(S, sk):
                             lean=(0.0, -0.6, 1.0))
     lh = lambda Td: K.power(sk, "l", wpt(Td["t"], (0.3, -1.4, -15.0)), wdir(Td["t"], (0.0, 0.15, 1.0)),
                             grip="power:1.0", weight=0.7)
-    T0 = K.T_at(np.array([-26.0, 90.0, 16.0]), X, Y)
+    T0 = K.T_at(np.array([-24.0, 100.0, 26.0]), X, Y)
     tk = [(0.0, T0), (1.1, T_at(5.0)), (1.6, T_at(0.6)), (1.8, T_at(-0.3)), (1.95, T_at(0.0)), (2.5, T_at(0.0, -25.0)),
           (3.6, T_at(0.0, -25.0))]
     hand = [(0.0, rh), (2.6, rh), (3.1, R["r"]), (3.6, R["r"])]
@@ -960,7 +965,7 @@ JOBS_AWP = [
         camera=(-125.0, 35.0, -35.0)),
     Job("hose_clip", "Clip a hose to the rail", "hydraulics", "W05F", j_hose_clip, fx(b_hose_rail, kind="rail"), (-6, 99, 44),
         keep_out=_RAIL),
-    Job("coupler", "Quick coupler", "hydraulics", "W50M", j_coupler, fx(b_coupler, kind="panel"), (-4, 105, 32)),
+    Job("coupler", "Quick coupler", "hydraulics", "W50M", j_coupler, fx(b_coupler, kind="panel", z=CPZ), (-4, CPY, CPZ - 10)),
     Job("cap_ports", "Cap open ports", "hydraulics", "W95M", j_cap_ports, fx(b_cap_ports), (-4, TOP + 9, 42)),
     Job("overhead", "Overhead ratchet", "overhead / low", "W50M", j_overhead, fx(b_overhead, kind="free"), (-4, 165, 36),
         camera=(-150.0, -40.0, -120.0)),

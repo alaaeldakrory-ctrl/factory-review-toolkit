@@ -3,6 +3,10 @@ with task_run.py and serves the result files the web viewer plays.
 
     python tools/engine_server.py [--port=8765]
 
+In the cloud (deploy/engine: a container on Cloud Run behind the site's /api/** rewrite) it listens on $PORT on all
+interfaces, solves on the website's own character (FRT_ENGINE_WORKER, a Mixamo .glb) with FRT_ENGINE_SOLVERS
+processes, and forgets jobs older than an hour (their files live in the container's memory).
+
     GET  /api/health                      {"ok": true, "queue": n}
     GET  /api/samples                     the sample jobs a request can start from
     POST /api/solve                       {"base": "wheel_mounting", "assets": {id: [x, z]}, "spots": {id: [x, z, yaw]},
@@ -37,6 +41,9 @@ SAMPLES = {
     "base_panel": ("docs/people/demo/base_panel.toml", "Appliances: base service panel"),
     "battery_module": ("docs/people/demo/battery_module.toml", "Energy storage: battery module"),
 }
+WORKER = os.environ.get("FRT_ENGINE_WORKER")                         # the body solved on (default: the task's own)
+SOLVERS = os.environ.get("FRT_ENGINE_SOLVERS")                       # solver processes (default: task_run's)
+KEEP_S = 3600.0                                                      # a finished job's files are kept this long
 MAX_MOVE = 1000.0                                                    # cm an asset or spot may move from its place
 FILES = {"job.json": "application/json", "motion.bin": "application/octet-stream", "scene.glb": "model/gltf-binary"}
 
@@ -144,8 +151,11 @@ def worker():
         with open(task, "w", encoding="utf-8") as f:
             f.write(dump_toml(data))
         jobs[jid].update(state="running", msg="starting the engine", t=time.time())
-        p = subprocess.Popen([sys.executable, "-u", os.path.join(ROOT, "tools", "task_run.py"), task, f"--out={out}",
-                              f"--web={os.path.join(d, 'web')}"], cwd=ROOT, stdout=open(os.path.join(d, "log.txt"), "w"),
+        cmd = [sys.executable, "-u", os.path.join(ROOT, "tools", "task_run.py"), task, f"--out={out}",
+               f"--web={os.path.join(d, 'web')}"]
+        cmd += [f"--worker={WORKER}"] if WORKER else []
+        cmd += [f"--workers={SOLVERS}"] if SOLVERS else []
+        p = subprocess.Popen(cmd, cwd=ROOT, stdout=open(os.path.join(d, "log.txt"), "w"),
                              stderr=subprocess.STDOUT, env={**os.environ, "PXR_USDC_EMIT_DEPRECATION_WARNINGS": "0"})
         st = os.path.join(out, "status.json")
         while p.poll() is None:
@@ -167,6 +177,18 @@ def worker():
         jobs[jid].update(state="done" if ok else "error", msg="done" if ok else (err or "failed"), progress=1.0,
                          seconds=round(time.time() - jobs[jid]["t"], 1))
         todo.task_done()
+        forget_old()
+
+
+def forget_old():
+    """Jobs finished more than KEEP_S ago: state and files dropped (the cloud container keeps them in memory)."""
+    now = time.time()
+    with lock:
+        old = [k for k, j in jobs.items() if j["state"] in ("done", "error") and now - j["t"] > KEEP_S]
+        for k in old:
+            jobs.pop(k, None)
+    for k in old:
+        shutil.rmtree(os.path.join(WORK, k), ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------------------------- http
@@ -231,11 +253,12 @@ class Api(BaseHTTPRequestHandler):
 
 
 def main():
-    port = int(next((a.split("=")[1] for a in sys.argv[1:] if a.startswith("--port=")), 8765))
+    port = int(next((a.split("=")[1] for a in sys.argv[1:] if a.startswith("--port=")), os.environ.get("PORT", 8765)))
+    host = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"     # (Cloud Run sets PORT; locally: this PC only)
     os.makedirs(WORK, exist_ok=True)
     threading.Thread(target=worker, daemon=True).start()
-    print(f"engine on http://localhost:{port}", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", port), Api).serve_forever()
+    print(f"engine on http://{host}:{port}", flush=True)
+    ThreadingHTTPServer((host, port), Api).serve_forever()
 
 
 if __name__ == "__main__":

@@ -348,6 +348,10 @@ class PostureSolver:
                                          r_, torso) for f_, r_ in self.ARM_SAMPLES)   # elbow search alone can't)
                 if pen > 0.0:                                  # (bounded: never worth a squat or a missed reach)
                     terms[f"arm_body_{s}"] = ((min(pen, 6.0) / 1.5) ** 2 + max(0.0, pen - 6.0)) * 0.8 * wgt
+                back_e = -float((trunk.T @ (elbow - S))[2]) - self.BEHIND_ELBOW     # cm behind the chest's line
+                back_w = -float((trunk.T @ (wr - S))[2]) - self.BEHIND_WRIST
+                if back_e > 0.0 or back_w > 0.0:                # no one works with the arms behind the back
+                    terms[f"behind_{s}"] = ((max(0.0, back_e) / 3.0) ** 2 + (max(0.0, back_w) / 2.0) ** 2) * 4.0 * wgt
                 terms[f"shoulder_{s}"] = (max(0.0, elev - 20.0) / 45.0) ** 2 * wgt
                 terms[f"elbow_{s}"] = ((eflex - 80.0) / 55.0) ** 2 * 0.3 * wgt
                 terms[f"wrist_{s}"] = (wdev / 30.0) ** 2 * 0.6 * wgt + (max(0.0, abs(tau) - 70.0) / 20.0) ** 2 * wgt
@@ -403,20 +407,44 @@ class PostureSolver:
                        "knee_r": angle(Pall["calf_r"] - Pall["thigh_r"], Pall["foot_r"] - Pall["calf_r"])})
         return pose, terms, angles, (Rall, Pall)
 
+    # a working arm behind the back (trunk frame, from the shoulder joint, cm): elbows drawn back past this, or the
+    # wrist behind the shoulder line. Measured on the reviewed library clips: elbows up to 17 cm back, wrists in front
+    BEHIND_ELBOW = 16.0
+    BEHIND_WRIST = 2.0
+    HANDLE_DEPTH = 0.7              # cm from the palm centre's surface to a held handle's skin (the authored grips)
+    FINGER_HALF = 0.9               # cm from a finger's bone line to its palm-side skin
+
     def wrap(self, s, f, radius):
-        """Joint flexions (deg) that wrap finger f around a cylinder of `radius` cm: each phalanx is a chord of the
-        circle through the finger's mid-thickness, each joint bends by the arc its neighbouring chords subtend."""
+        """Joint flexions (deg) that close finger f onto a handle of `radius` cm held across the palm: the handle's
+        axis lies along the thumb direction, `radius + HANDLE_DEPTH` out from the palm centre (where a grip's
+        HandTarget puts it), and each joint bends, base first, just until the next joint of the finger reaches the
+        handle's skin plus the finger's half thickness - the fingers stop on the handle. (A curl from chord angles
+        alone closed them past a thin handle: it hung below the fingertips, held as if by the middle fingers.)"""
         key = (s, f, round(radius, 2))
         if key in self._wrap:
             return self._wrap[key]
-        sk = self.sk
-        pts = [sk.world[f"{f}_0{i}_{s}"] for i in (1, 2, 3)] + [sk.tips[f"{f}_tip_{s}"]]
-        lens = [float(norm3(b - a)) for a, b in zip(pts, pts[1:])]
-        R = radius + 0.9                                           # finger half thickness
-        th = [math.degrees(2 * math.asin(min(1.0, L / (2 * R)))) for L in lens]
-        out = (min(95.0, th[0] * 0.5 + 8.0), min(100.0, (th[0] + th[1]) * 0.5), min(85.0, (th[1] + th[2]) * 0.5))
-        self._wrap[key] = out
-        return out
+        sk, sx = self.sk, (1.0 if s == "l" else -1.0)
+        h = sk.world[f"hand_{s}"]
+        rest = [sk.world[f"{f}_0{i}_{s}"] - h for i in (1, 2, 3)] + [sk.tips[f"{f}_tip_{s}"] - h]
+        C = np.array([sx * self.hand_len * 0.40, -1.6 - radius - self.HANDLE_DEPTH])     # handle axis (x, y)
+        Rr = radius + self.FINGER_HALF
+        lim = (90.0, 105.0, 80.0)
+        pos, acc, out = rest[0][:2], 0.0, []
+        for i in range(3):
+            seg = (rest[i + 1] - rest[i])[:2]
+            best = lim[i]
+            for th in np.arange(0.0, lim[i] + 1e-6, 0.5):
+                a = math.radians(-sx * (acc + th))
+                q = pos + np.array([seg[0] * math.cos(a) - seg[1] * math.sin(a), seg[0] * math.sin(a) + seg[1] * math.cos(a)])
+                if float(np.linalg.norm(q - C)) <= Rr:
+                    best = th
+                    break
+            acc += best
+            a = math.radians(-sx * acc)
+            pos = pos + np.array([seg[0] * math.cos(a) - seg[1] * math.sin(a), seg[0] * math.sin(a) + seg[1] * math.cos(a)])
+            out.append(float(best))
+        self._wrap[key] = tuple(out)
+        return self._wrap[key]
 
     def torso_profile(self):
         return torso_profile_of(self.sk)

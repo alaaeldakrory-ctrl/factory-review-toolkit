@@ -41,16 +41,22 @@ def _perp(v, axis):
 
 
 def power(sk, side, point, handle_axis, grip="power:1.5", weight=1.0, lean=None):
-    """Power grip at `point` on a handle along `handle_axis` (pointing to the thumb side). `lean` tilts the hand
-    axis (e.g. downwards for a hammer)."""
+    """Power grip at `point` on a handle's axis along `handle_axis` (pointing to the thumb side). `lean` tilts the
+    hand axis (e.g. downwards for a hammer). The palm centre (the point a HandTarget places) is set back from the
+    axis by the handle's radius and the palm's soft tissue, so the handle lies on the palm and the fingers close
+    round it (solver.wrap); placed on the axis itself, the handle sat inside the hand."""
     p = np.asarray(point, float)
     h = unit(handle_axis)
     f = _perp((lean if lean is not None else (p - shoulder(sk, side))), h)
     if np.linalg.norm(f) < 1e-6:
         f = _perp(np.array([0.0, 0.0, 1.0]), h)
     f = unit(f)
-    palm = np.cross(h, f) if side == "r" else np.cross(f, h)
-    return HandTarget(side, tuple(p), tuple(f), tuple(unit(palm)), grip, weight)
+    palm = unit(np.cross(h, f) if side == "r" else np.cross(f, h))
+    kind, *a = str(grip).split(":")
+    if kind in ("power", "hook") and a:
+        from .solver import PostureSolver
+        p = p - palm * (float(a[0]) + PostureSolver.HANDLE_DEPTH)
+    return HandTarget(side, tuple(p), tuple(f), tuple(palm), grip, weight)
 
 
 def tilt(t, toward, deg):

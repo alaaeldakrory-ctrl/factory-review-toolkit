@@ -26,6 +26,8 @@ POP = {"default": 32.0, "finger": 55.0, "hand": 40.0}      # max change per fram
 AWKWARD = {"elbow_l": 150.0, "elbow_r": 150.0, "trunk_flexion": 32.0, "trunk_side": 20.0, "trunk_twist": 30.0,
            "neck_flexion": 50.0, "neck_twist": 60.0}
 AWKWARD_LOW_TRUNK = 50.0
+# arms behind the back (cm behind the shoulder joint, chest frame): the elbow, a working wrist, a free wrist
+BEHIND = (19.0, 4.0, 10.0)
 
 
 def _family(j):
@@ -97,6 +99,14 @@ def check_frames(sk, frames, sols, name="", keep_out=None, field=None):
         for s, pen in zip(("l", "r"), PostureSolver.arm_in_body(R, P, prof)):   # arms never through the body
             if pen > 1.5:
                 issues.append((i, "arm in body", f"arm_{s}", round(pen, 1), 1.5))
+        working = {t.side for t in f.targets if t.weight >= 0.5}
+        for s in ("l", "r"):                                 # arms never behind the back
+            Sh = P[f"upperarm_{s}"]
+            be = -float((R["spine_03"].T @ (P[f"lowerarm_{s}"] - Sh))[2])
+            bw = -float((R["spine_03"].T @ (P[f"hand_{s}"] - Sh))[2])
+            lim_e, lim_w = BEHIND[0], BEHIND[1] if s in working else BEHIND[2]
+            if be > lim_e or bw > lim_w:
+                issues.append((i, "behind back", f"arm_{s}", round(max(be - lim_e, bw - lim_w), 1), 0))
         for s in ("l", "r"):                                 # elbows / knees never the wrong way
             ua, fa = P[f"lowerarm_{s}"] - P[f"upperarm_{s}"], P[f"hand_{s}"] - P[f"lowerarm_{s}"]
             th, ca = P[f"calf_{s}"] - P[f"thigh_{s}"], P[f"foot_{s}"] - P[f"calf_{s}"]
