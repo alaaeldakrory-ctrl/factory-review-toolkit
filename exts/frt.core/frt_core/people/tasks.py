@@ -834,6 +834,67 @@ class Task:
         for c in self.children(pid):
             self.parts[c]["W"] = W @ self.parts[c]["rel"]
 
+    CLEAR = 28.0                 # cm a walking body keeps from the equipment (half the shoulders + a little)
+    HEIGHTS = (30.0, 70.0, 110.0)   # where it is checked: knee, hip, chest
+
+    def _blocked(self, pts, a, b):
+        """For floor points (x, z): too close to the equipment to walk past (not near the two ends - the work spots
+        are next to the equipment on purpose)."""
+        pts = np.asarray(pts, float).reshape(-1, 2)
+        P = np.array([[x, h, z] for x, z in pts for h in self.HEIGHTS])
+        d = self.field.distance(P).reshape(len(pts), len(self.HEIGHTS)).min(axis=1)
+        near = np.minimum(np.linalg.norm(pts - np.asarray(a), axis=1), np.linalg.norm(pts - np.asarray(b), axis=1))
+        return (d < self.CLEAR) & (near > 35.0)
+
+    def _clear(self, a, b):
+        n = max(2, int(math.dist(a, b) / 5.0))
+        return not self._blocked([np.asarray(a) + (np.asarray(b) - a) * k / n for k in range(n + 1)], a, b).any()
+
+    def route(self, a, b, h=10.0):
+        """Floor path a -> b round the equipment: straight when it is clear; else the shortest way on an h cm grid
+        (A*), pulled tight into a few straight legs. A route too hard to find: straight (and the check flags it)."""
+        import heapq
+        a, b = np.asarray(a, float), np.asarray(b, float)
+        if self.field is None or self._clear(a, b):
+            return [tuple(a), tuple(b)]
+        lo = np.minimum(a, b) - 250.0
+        nx, nz = (np.ceil((np.maximum(a, b) + 250.0 - lo) / h)).astype(int) + 1
+        gx, gz = np.meshgrid(np.arange(nx), np.arange(nz), indexing="ij")
+        cells = np.stack([gx.ravel(), gz.ravel()], 1) * h + lo
+        bad = self._blocked(cells, a, b).reshape(nx, nz)
+        ia = tuple(np.round((a - lo) / h).astype(int))
+        ib = tuple(np.round((b - lo) / h).astype(int))
+        steps = [(1, 0, 1.0), (-1, 0, 1.0), (0, 1, 1.0), (0, -1, 1.0),
+                 (1, 1, 1.414), (1, -1, 1.414), (-1, 1, 1.414), (-1, -1, 1.414)]
+        g, came, q = {ia: 0.0}, {}, [(0.0, ia)]
+        while q:
+            _, c = heapq.heappop(q)
+            if c == ib:
+                break
+            for dx, dz, w in steps:
+                n_ = (c[0] + dx, c[1] + dz)
+                if not (0 <= n_[0] < nx and 0 <= n_[1] < nz) or bad[n_]:
+                    continue
+                gn = g[c] + w
+                if gn < g.get(n_, 1e18):
+                    g[n_], came[n_] = gn, c
+                    heapq.heappush(q, (gn + math.dist(n_, ib), n_))
+        if ib not in came:
+            self.notes.append(f"no clear walking route from {a.round()} to {b.round()}: walks straight")
+            return [tuple(a), tuple(b)]
+        cell = [ib]
+        while cell[-1] != ia:
+            cell.append(came[cell[-1]])
+        pts = [a] + [np.array(c_, float) * h + lo for c_ in reversed(cell[1:-1])] + [b]
+        out, i = [a], 0                                              # pulled tight: the farthest point seen
+        while i < len(pts) - 1:
+            j = len(pts) - 1
+            while j > i + 1 and not self._clear(pts[i], pts[j]):
+                j -= 1
+            out.append(pts[j])
+            i = j
+        return [tuple(p) for p in out]
+
     def go(self, spot, sid, carry=None, parts=None):
         """Walk (or turn) to a spot if the worker is not there yet."""
         if math.dist(self.at[:2], spot[:2]) < 5.0 and abs(((spot[2] - self.at[2]) + 180) % 360 - 180) < 5:
@@ -844,7 +905,7 @@ class Task:
         if self.holding and carry is None:                    # walk with the tool held ready
             h, T = self.ready(self.holding[1])
             carry, parts = [h], dict(parts or {}, **{self.holding[0]: T})
-        fr = walk(self.w, self.sk, [self.at[:2], spot[:2]], self.at[2], spot[2], carry=carry)
+        fr = walk(self.w, self.sk, self.route(self.at[:2], spot[:2]), self.at[2], spot[2], carry=carry)
         for f in fr:
             f.label = f"{sid}:walk"
             for pid, T in (parts or {}).items():
