@@ -182,7 +182,10 @@ def rest_targets(solver):
         fingers = Rh @ np.array([sx, 0.0, 0.0])
         palm = Rh @ np.array([0.0, -1.0, 0.0])
         pt = P[f"hand_{s}"] + fingers * solver.hand_len * 0.40 + palm * 1.6
-        pt = pt + np.array([0.0, 7.0, 6.0])                      # hand at the hip, elbow eased: always reachable
+        pt = pt + np.array([0.0, 0.0, 1.5])                      # the arm hanging as the free solve has it
+        # (elbow ~25 deg, hand by the thigh; 1.5 cm clear of it). It used to be lifted 7 cm and brought 6 cm
+        # forward "to stay reachable": elbows bent ~70 deg with the hands held up in front of the belly - short,
+        # duck-like arms on every worker at ease
         out[s] = HandTarget(s, tuple(pt), tuple(fingers), tuple(palm), "relaxed", 0.3)
     solver._rest_memo = (dict(out), sol)
     return out, sol

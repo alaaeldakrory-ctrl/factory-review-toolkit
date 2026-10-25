@@ -152,7 +152,8 @@ class Retarget:
     """frt solved poses -> Mixamo bone local rotations (+ hips position), for one body and one character."""
 
     def __init__(self, sk, rig=None):
-        self.sk, self.rig = sk, rig or Rig()
+        own = getattr(sk, "rig", None)                     # (solved on a .glb character: that one, wherever it is)
+        self.sk, self.rig = sk, rig or Rig(own[0] if own and os.path.isfile(own[0]) else CHARACTER)
         self.map = {j: v for j, v in bone_map().items() if j in sk.world and PRE + v[0] in self.rig.idx}
         self.bones = [v[0] for v in self.map.values()]
         rest = dict(sk.world)

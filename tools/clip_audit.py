@@ -11,6 +11,8 @@ the things the solver's own checks never looked at - whether the body is one a p
     retarget     the character's wrist more than 1 cm from the solved one (the body shown is not the one solved)
     behind back  an elbow drawn back past 19 cm behind the shoulder, or a wrist behind it (4 cm working, 10 cm free),
                  along the chest's own forward axis: no one works with the arms behind the back
+    arms held up a hand that is not working, while standing, with its elbow bent past 45 deg: at ease the arms
+                 hang (elbow ~25 deg); held up in front of the belly they look short and duck-like
 
     python tools/clip_audit.py <kimodo.pkl | rules.pkl> [...]      (frames + sols, on the website's character)
     -> per file: counts, worst values, frames; exit 1 if any issue
@@ -27,7 +29,7 @@ sys.path[:0] = [HERE, os.path.join(HERE, "..", "exts", "frt.core")]
 
 LIMITS = {"shrug": 3.0, "arms cross": 7.0, "seat out": 14.0, "bent double": 50.0, "wrist": 55.0, "wrist side": 30.0,
           "foot slide": 2.5, "floor": 2.0, "retarget": 1.0, "behind elbow": 19.0, "behind wrist": 4.0,
-          "behind free wrist": 10.0}
+          "behind free wrist": 10.0, "arms held up": 45.0}
 
 
 def _ang(a, b):
@@ -81,6 +83,11 @@ def audit(frames, sols, sk, rt=None):
             bw = -float(np.dot(M[f"{S}Hand"] - M[f"{S}Arm"], fw))
             works = any(t.side == s_ and t.weight >= 0.5 for t in f.targets)
             lw = LIMITS["behind wrist"] if works else LIMITS["behind free wrist"]
+            idle = not any(t.side == s_ and t.weight >= 0.35 for t in f.targets)
+            if idle and getattr(f.stance, "drop", None) is None and f.root is None:
+                el = _ang(M[f"{S}ForeArm"] - M[f"{S}Arm"], M[f"{S}Hand"] - M[f"{S}ForeArm"])
+                if el > LIMITS["arms held up"]:
+                    hit("arms held up", i, el)
             if be > LIMITS["behind elbow"] or bw > lw:
                 hit("behind back", i, max(be - LIMITS["behind elbow"], bw - lw))
             e = float(np.linalg.norm(M[f"{S}Hand"] - P[f"hand_{s_}"]))
